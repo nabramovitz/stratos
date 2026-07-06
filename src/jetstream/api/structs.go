@@ -48,7 +48,8 @@ type ApiRootLinks struct {
 }
 
 type ApiRoot struct {
-	Links ApiRootLinks
+	Links   ApiRootLinks `json:"links"`
+	CFOnK8s bool         `json:"cf_on_k8s"`
 }
 
 // V2Info is the response for the Cloud Foundry /v2/info API
@@ -83,6 +84,10 @@ type CFEndpointMetadata struct {
 	SupportsV2 bool `json:"supportsV2"`
 	SupportsV3 bool `json:"supportsV3"`
 	Assumed    bool `json:"assumed"`
+	// HasUaa records whether the root doc advertised a real UAA (`uaa` link
+	// non-null). Korifi in its default configuration has none — the connect
+	// UI uses this to decide whether UAA-based auth methods are available.
+	HasUaa bool `json:"hasUaa"`
 }
 
 type EndpointInfo struct {

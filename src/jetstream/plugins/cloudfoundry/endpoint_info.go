@@ -1,6 +1,21 @@
 package cloudfoundry
 
-import "github.com/cloudfoundry/stratos/src/jetstream/api"
+import (
+	"strings"
+
+	"github.com/cloudfoundry/stratos/src/jetstream/api"
+)
+
+// SubTypeKorifi marks a CF endpoint served by Korifi (CF-on-Kubernetes).
+const SubTypeKorifi = "korifi"
+
+// isKorifi detects a Korifi endpoint from its root `/` document. Korifi
+// advertises `cf_on_k8s: true` and stamps its CC version with a `+cf-k8s`
+// suffix (a frozen constant in korifi's root handler, so fingerprint-only —
+// it does not track the real CC API level). Either signal suffices.
+func isKorifi(root api.ApiRoot) bool {
+	return root.CFOnK8s || strings.HasSuffix(root.Links.CloudControllerV3.Meta.Version, "+cf-k8s")
+}
 
 // rootEndpoints holds the CF endpoints discoverable from the unversioned
 // root `/` links — the v3-only equivalent of the /v2/info fields.

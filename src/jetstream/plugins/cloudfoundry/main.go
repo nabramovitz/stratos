@@ -102,6 +102,23 @@ func (c *CloudFoundrySpecification) Connect(ec echo.Context, cnsiRecord api.CNSI
 		connectType = api.AuthConnectTypeCreds
 	}
 
+	// Korifi endpoints connect with a pasted K8s bearer token. Creds stays
+	// allowed for the korifi subtype too — Korifi's experimental UAA mode
+	// takes the regular OAuth path below; the connect UI filters it out when
+	// the endpoint has no UAA.
+	if connectType == AuthConnectTypeKorifiToken {
+		if cnsiRecord.SubType != SubTypeKorifi {
+			return nil, false, errors.New("bearer-token connect is only supported for Korifi endpoints")
+		}
+		tokenRecord, err := c.connectKorifiToken(cnsiRecord, ec)
+		if err != nil {
+			return nil, false, err
+		}
+		c.confirmCapabilityMetadata(cnsiRecord)
+		// No admin signal exists on Korifi (see korifiUserInfo)
+		return tokenRecord, false, nil
+	}
+
 	if connectType != api.AuthConnectTypeCreds {
 		return nil, false, errors.New("Only username/password accepted for Cloud Foundry endpoints")
 	}
@@ -138,7 +155,9 @@ func (c *CloudFoundrySpecification) confirmCapabilityMetadata(cnsiRecord api.CNS
 
 	apiEndpoint := cnsiRecord.APIEndpoint.String()
 	h := c.portalProxy.GetHttpClient(cnsiRecord.SkipSSLValidation, cnsiRecord.CACert)
-	confirmed := api.CFEndpointMetadata{}
+	// Only the v2/v3 capability flags are re-probed here; carry over what
+	// registration already learned from the root doc.
+	confirmed := api.CFEndpointMetadata{HasUaa: existing.HasUaa}
 
 	uri, err := url.Parse(apiEndpoint)
 	if err != nil {
@@ -188,6 +207,9 @@ func (c *CloudFoundrySpecification) Init() error {
 	if err := c.portalProxy.AddLoginHook(0, c.cfLoginHook); err != nil {
 		return err
 	}
+
+	// Bearer-token auth for Korifi endpoints (no UAA to do OAuth against)
+	c.registerKorifiAuthProvider()
 
 	// Wire into the stratosjobs contract. Plugin load order isn't
 	// guaranteed — if stratosjobs didn't register yet we log + skip, and
@@ -342,6 +364,14 @@ func (c *CloudFoundrySpecification) Info(apiEndpoint string, skipSSLValidation b
 	}
 
 	metadata := api.CFEndpointMetadata{}
+	metadata.HasUaa = apiRootResponse.Links.Uaa.Href != ""
+
+	// Korifi serves the CF V3 API from Kubernetes without a UAA; downstream
+	// auth (connect picker, token flows) branches on the subtype. An explicit
+	// sub_type supplied at registration still wins (see DoRegisterEndpoint).
+	if isKorifi(apiRootResponse) {
+		newCNSI.SubType = SubTypeKorifi
+	}
 
 	// Capability detection — intentional dual-probe of /v2/info and /v3/info.
 	// This is NOT an unmigrated v2 callsite; it's how Stratos discovers what

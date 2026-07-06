@@ -160,7 +160,11 @@ func (p *portalProxy) DoRegisterEndpoint(cnsiName string, apiEndpoint string, sk
 	newCNSI.ClientId = clientId
 	newCNSI.ClientSecret = clientSecret
 	newCNSI.SSOAllowed = ssoAllowed
-	newCNSI.SubType = subType
+	// An explicit sub_type wins; otherwise keep whatever the endpoint plugin's
+	// fetchInfo detected (e.g. the CF plugin marking a Korifi endpoint).
+	if subType != "" {
+		newCNSI.SubType = subType
+	}
 	newCNSI.CACert = caCert
 
 	if p.GetConfig().UserEndpointsEnabled != config.UserEndpointsConfigEnum.Disabled && (!isAdmin || !createSystemEndpoint) {
