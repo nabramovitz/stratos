@@ -31,6 +31,10 @@ export interface ConnectEndpointConfig {
   // localStorage-remembered username, which only covers past connects
   // from this browser profile.
   username?: string;
+  // From the endpoint's detection metadata (endpoint_metadata.hasUaa) —
+  // whether the endpoint advertised a real UAA at registration. Drives
+  // auth-method availability for the korifi subtype.
+  hasUaa?: boolean;
 }
 
 export interface ConnectEndpointData {

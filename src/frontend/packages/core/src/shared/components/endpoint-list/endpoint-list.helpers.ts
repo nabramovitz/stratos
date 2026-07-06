@@ -128,7 +128,8 @@ export class EndpointListHelper {
               guid: item.guid,
               type: item.cnsi_type,
               subType: item.sub_type,
-              ssoAllowed: item.sso_allowed
+              ssoAllowed: item.sso_allowed,
+              hasUaa: !!item.endpoint_metadata?.hasUaa
             },
             ...CONNECT_ENDPOINT_DIALOG_OPTIONS,
           });

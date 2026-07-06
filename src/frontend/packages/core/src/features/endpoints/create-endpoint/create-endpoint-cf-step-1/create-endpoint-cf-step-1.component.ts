@@ -171,12 +171,18 @@ export class CreateEndpointCfStep1Component extends CreateEndpointHelperComponen
       caCert: this.registerForm.value.caCertField,
     });
 
+    // Registration may have detected a subtype the user didn't pick (e.g. a
+    // Korifi endpoint registered via the plain CF tile) — the register()
+    // promise resolves after the endpoint list refresh, so read the
+    // authoritative record for the subtype and detection metadata.
+    const registered = result.guid ? this.endpointsSignals.endpoints()[result.guid] : undefined;
     const data: ConnectEndpointConfig = {
       guid: result.guid ?? '',
       name,
       type: type || '',
-      subType: subType || '',
-      ssoAllowed: this.registerForm.value.ssoAllowedField ? !!this.registerForm.value.ssoAllowedField : false
+      subType: registered?.sub_type ?? subType ?? '',
+      ssoAllowed: this.registerForm.value.ssoAllowedField ? !!this.registerForm.value.ssoAllowedField : false,
+      hasUaa: !!registered?.endpoint_metadata?.hasUaa
     };
     if (!result.error) {
       this.snackBarService.show(`Successfully registered '${name}'`);

@@ -124,6 +124,9 @@ export class EndpointRowActionsService {
         ssoAllowed: ep.sso_allowed,
         // Prefills the Reconnect dialog with the live connection's user
         username: ep.user?.name,
+        // Drives auth-method availability for the korifi subtype — see
+        // ConnectEndpointConfig.hasUaa.
+        hasUaa: !!ep.endpoint_metadata?.hasUaa,
       },
       ...CONNECT_ENDPOINT_DIALOG_OPTIONS,
     });

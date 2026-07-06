@@ -8,6 +8,7 @@ import { catchError, map } from 'rxjs/operators';
 import { BaseEndpointAuth, urlValidationExpression } from '@stratosui/core';
 import {
   APIResource,
+  EndpointAuthTypeConfig,
   EndpointHealthCheck,
   EntitySchema,
   IFavoriteMetadata,
@@ -229,6 +230,18 @@ const favGuid = (e: any): string => e?.metadata?.guid ?? e?.guid ?? '';
 const favSpaceOrgGuid = (e: any): string =>
   e?.entity?.organization_guid ?? e?.entity?.organization?.metadata?.guid ?? e?.orgGuid ?? e?.organization_guid ?? '';
 
+// Korifi connects with a pasted K8s bearer token (ServiceAccount or OIDC) —
+// same form component as the generic Bearer type, but its own connect_type so
+// jetstream routes it through the Korifi /whoami identity probe.
+const korifiTokenAuth: EndpointAuthTypeConfig = {
+  ...BaseEndpointAuth.Bearer,
+  name: 'Kubernetes Token',
+  value: 'korifi-token',
+  config: {
+    helpText: 'Paste a Kubernetes bearer token for this Korifi endpoint, for example a ServiceAccount token with Korifi RBAC role bindings.',
+  },
+};
+
 export function generateCFEntities(): StratosBaseCatalogEntity[] {
   const endpointDefinition: StratosEndpointExtensionDefinition = {
     urlValidationRegexString: urlValidationExpression,
@@ -239,6 +252,21 @@ export function generateCFEntities(): StratosBaseCatalogEntity[] {
     iconFont: 'stratos-icons',
     logoUrl: '/core/assets/endpoint-icons/cloudfoundry.png',
     authTypes: [BaseEndpointAuth.UsernamePassword, BaseEndpointAuth.SSO],
+    subTypes: [{
+      // Korifi (CF-on-Kubernetes). Auto-detected at registration from the
+      // root doc fingerprint (cf_on_k8s / +cf-k8s version suffix); this tile
+      // is the manual fallback. UAA-backed auth methods are listed but the
+      // connect dialog hides them when the endpoint has no UAA (the default
+      // Korifi configuration — only the experimental UAA mode has one).
+      type: 'korifi',
+      label: 'Korifi',
+      labelShort: 'Korifi',
+      authTypes: [korifiTokenAuth, BaseEndpointAuth.UsernamePassword, BaseEndpointAuth.SSO],
+      logoUrl: '/core/assets/endpoint-icons/cloudfoundry.png',
+      icon: 'cloud_foundry',
+      iconFont: 'stratos-icons',
+      renderPriority: 2,
+    }],
     homeCard: {
       component: () => import('./features/home/cfhome-card/cfhome-card.component').then(m => m.CFHomeCardComponent),
       shortcuts: cfShortcuts,
