@@ -102,7 +102,17 @@ func newCapiClient(ctx context.Context, proxy nativeCFProxy, cnsiGUID, userGUID 
 		log.Infof("[diag refresh] OK cnsi=%s user=%s new_expiry=%d", cnsiGUID, userGUID, refreshed.TokenExpiry)
 		tokenRecord = refreshed
 	}
-	client, err := cfclient.NewWithToken(ctx, cnsiRecord.APIEndpoint.String(), tokenRecord.AuthToken)
+	// Inject Jetstream's per-endpoint HTTP client so the endpoint's TLS
+	// settings (skip_ssl_validation, pinned CA cert) apply to native API
+	// calls — capi's default transport only trusts system CAs, which 502s
+	// every native handler against self-signed endpoints (e.g. a local
+	// Korifi/kind rig) even though the proxy passthrough honors them.
+	httpClient := proxy.GetHttpClient(cnsiRecord.SkipSSLValidation, cnsiRecord.CACert)
+	client, err := cfclient.New(ctx, &capi.Config{
+		APIEndpoint: cnsiRecord.APIEndpoint.String(),
+		AccessToken: tokenRecord.AuthToken,
+		HTTPClient:  &httpClient,
+	})
 	if err != nil {
 		// Raw error so the middleware can classify (e.g. an unreachable API
 		// endpoint surfaces as a transport/net error → unreachable).
