@@ -105,6 +105,15 @@ export class ConnectEndpointComponent implements OnInit, OnDestroy {
       this.authTypesForEndpoint = baseAuthTypes.filter(authType => authType.value !== BaseEndpointAuth.SSO.value);
     }
 
+    // Korifi endpoints list UAA-backed auth methods, but they are only
+    // usable when the endpoint actually has a UAA (Korifi's experimental
+    // UAA mode) — hide them otherwise. Gated on the subtype so classic CF
+    // endpoints registered before hasUaa existed keep their auth methods.
+    if (config.subType === 'korifi' && !config.hasUaa) {
+      this.authTypesForEndpoint = this.authTypesForEndpoint.filter(authType =>
+        authType.value !== BaseEndpointAuth.UsernamePassword.value && authType.value !== BaseEndpointAuth.SSO.value);
+    }
+
     // Not all endpoint types might allow token sharing - typically types like metrics do
     this.canShareEndpointToken = endpoint.definition.tokenSharing ?? false;
 
@@ -197,7 +206,10 @@ export class ConnectEndpointComponent implements OnInit, OnDestroy {
 
     this.authFormComponentRef = this.container.createComponent<IAuthForm>(authType.component);
     this.authFormComponentRef.instance.formGroup = this.endpointForm;
-    this.authFormComponentRef.instance.config = authType.config;
+    // Auth types without a config (e.g. the generic Bearer/Token entries)
+    // must not overwrite the form component's `config = {}` default with
+    // undefined — templates read fields like config.helpText unguarded.
+    this.authFormComponentRef.instance.config = authType.config ?? {};
     if (this.pDisabled) { this.endpointForm.disable(); } else { this.endpointForm.enable(); }
   }
 
