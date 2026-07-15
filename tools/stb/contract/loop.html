@@ -1,0 +1,188 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>contract loop</title>
+    <link rel="stylesheet" href="./probe.css" />
+    <style>
+      body { font: 14px system-ui; margin: 0; height: 100vh; display: flex; flex-direction: column; }
+      header { padding: 10px 16px; border-bottom: 1px solid #ddd; display: flex; gap: 12px; align-items: center; }
+      header h1 { font-size: 14px; margin: 0; font-weight: 600; }
+      main { flex: 1; display: grid; grid-template-columns: 1fr 1fr 320px; min-height: 0; }
+      section { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid #ddd; }
+      h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #666;
+           margin: 0; padding: 8px 12px; border-bottom: 1px solid #eee; background: #fafafa; }
+      textarea { flex: 1; border: 0; padding: 12px; font: 12px/1.5 ui-monospace, monospace; resize: none; outline: none; }
+      #preview { flex: 1; overflow: auto; padding: 16px; }
+      #palette { overflow: auto; padding: 8px; }
+      .tok { display: block; width: 100%; text-align: left; border: 1px solid #e3e3e3; background: #fff;
+             border-radius: 5px; padding: 5px 8px; margin-bottom: 4px; cursor: pointer;
+             font: 11px ui-monospace, monospace; }
+      .tok:hover { border-color: #888; }
+      .tok .dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+                  vertical-align: -1px; margin-right: 6px; border: 1px solid rgba(0,0,0,.15); }
+      .grp { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: #999;
+             margin: 10px 0 4px; font-weight: 600; }
+      #why { padding: 8px 12px; background: #fffdf5; border-bottom: 1px solid #eee; font-size: 12px; color: #543; }
+      #meaning { border-top: 1px solid #ddd; padding: 10px 12px; font-size: 12px; background: #fafafa; min-height: 96px; }
+      #meaning .n { color: #b00; }
+      #meaning .i { color: #070; }
+      #meaning code { background: #eee; padding: 0 3px; border-radius: 3px; }
+      select { font: 12px system-ui; padding: 3px; }
+      .hint { color: #999; font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>contract loop</h1>
+      <label>component <select id="pick"></select></label>
+      <span class="hint" id="groups"></span>
+      <span class="hint" style="margin-left:auto">
+        markup in &rarr; render out &rarr; bind from what your groups offer
+      </span>
+    </header>
+
+    <main>
+      <section>
+        <h2>1 &middot; markup <span class="hint">(paste yours, or edit)</span></h2>
+        <textarea id="src" spellcheck="false"></textarea>
+      </section>
+
+      <section>
+        <h2>2 &middot; render <span class="hint">(live, contract applied)</span></h2>
+        <div id="preview"></div>
+      </section>
+
+      <section style="border-right:0">
+        <h2>3 &middot; what this component may style from</h2>
+        <div id="why"></div>
+        <div id="palette"></div>
+        <div id="meaning"><span class="hint">Click a token to see what it means.</span></div>
+      </section>
+    </main>
+
+    <script type="module">
+      const [tie, sem] = await Promise.all([
+        fetch('./tie.json').then((r) => r.json()),
+        fetch('./semantics.json').then((r) => r.json()),
+      ]);
+      // ?raw is an import-time suffix; fetching it returns a JS module.
+      const { default: vocabText } = await import('./vocabulary.css?raw');
+
+      // [^{]* — the block is `@theme static { … }`, not just `@theme {`.
+      const themeBlock = vocabText.match(/@theme[^{]*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+      const publicNames = [...themeBlock.matchAll(/^\s+--([a-z0-9-]+):/gm)].map((m) => m[1]);
+
+      const GROUPS = Object.keys(sem.groups);
+      // A public name belongs to a group only if its segment after the
+      // namespace is a declared group. Everything else is global.
+      const groupOf = (n) => {
+        const m = n.match(/^(?:color|font|radius|weight|shadow|text)-([a-z]+)(?:-|$)/);
+        return m && GROUPS.includes(m[1]) ? m[1] : null;
+      };
+      // token -> the utility a template would actually carry
+      const utilOf = (n) =>
+        n.startsWith('color-') ? 'bg-' + n.slice(6)
+        : n.startsWith('radius-') ? 'rounded-' + n.slice(7)
+        : n.startsWith('font-') ? 'font-' + n.slice(5)
+        : n.startsWith('shadow-') ? 'shadow-' + n.slice(7)
+        : n;
+
+      const pick = document.getElementById('pick');
+      const names = Object.keys(tie.components).sort();
+      pick.innerHTML = names.map((n) => `<option>${n}</option>`).join('');
+      pick.value = 'signal-list';
+
+      const SAMPLES = {
+        'dialog-confirm': `<div class="bg-dialog-surface text-dialog-text rounded-dialog shadow-dialog p-6 max-w-sm">
+  <h3 class="font-heading text-lg mb-2">Delete application?</h3>
+  <p class="text-text-muted mb-4">This cannot be undone.</p>
+  <button class="bg-error text-on-accent rounded-button px-3 py-1.5">Delete</button>
+  <button class="bg-surface-alt text-text rounded-button px-3 py-1.5">Cancel</button>
+</div>`,
+        'signal-list': `<div class="bg-table-surface rounded-table p-3">
+  <input class="bg-form-input-surface text-form-input-text rounded-form px-2 py-1 mb-2"
+         placeholder="Filter…" />
+  <table class="w-full text-left">
+    <thead class="bg-table-header-surface">
+      <tr><th class="p-2">Name</th><th class="p-2">Status</th></tr>
+    </thead>
+    <tbody>
+      <tr class="hover:bg-table-row-hover">
+        <td class="p-2">my-app</td>
+        <td class="p-2"><span class="bg-ok-soft rounded-status px-2 py-0.5 text-xs">running</span></td>
+      </tr>
+      <tr class="bg-table-row-stripe">
+        <td class="p-2">other-app</td>
+        <td class="p-2"><span class="bg-error-soft rounded-status px-2 py-0.5 text-xs">crashed</span></td>
+      </tr>
+    </tbody>
+  </table>
+  <button class="bg-accent text-on-accent rounded-button px-3 py-1 mt-2">Add</button>
+</div>`,
+      };
+      const fallback = (n) =>
+        `<!-- no sample for ${n} — paste real markup here -->\n<div class="bg-surface text-text rounded-surface p-4">\n  ${n}\n</div>`;
+
+      const src = document.getElementById('src');
+      const preview = document.getElementById('preview');
+      const palette = document.getElementById('palette');
+      const meaning = document.getElementById('meaning');
+
+      const render = () => {
+        // Angular control-flow syntax is inert here; the loop renders plain markup.
+        preview.innerHTML = src.value;
+      };
+      src.addEventListener('input', render);
+
+      const show = (title, e) => {
+        if (!e) { meaning.innerHTML = `<b>${title}</b><br><span class="hint">No semantics entry.</span>`; return; }
+        meaning.innerHTML =
+          `<b>${title}</b><br>${e.means ?? ''}` +
+          (e.use ? `<br><br><b>Use</b> ${e.use}` : '') +
+          (e.not ? `<br><span class="n"><b>Not</b> ${e.not}</span>` : '') +
+          (e.instead ? `<br><span class="i"><b>Instead</b> ${Object.entries(e.instead).map(([k, v]) => `${k} &rarr; <code>${v}</code>`).join('; ')}</span>` : '') +
+          (e.was ? `<br><br><span class="hint"><b>Was</b> ${e.was}</span>` : '');
+      };
+
+      const paint = () => {
+        const name = pick.value;
+        const decl = tie.components[name];
+        document.getElementById('groups').textContent = 'groups: ' + decl.groups.join(' + ');
+        document.getElementById('why').innerHTML = decl.why
+          ? `<b>Declared intent:</b> ${decl.why}`
+          : `<span class="hint">Tied to ${decl.groups.join(' + ')}. No further intent recorded.</span>`;
+
+        src.value = SAMPLES[name] ?? fallback(name);
+        render();
+
+        // Only this component's groups, plus the globals everyone may use.
+        const mine = publicNames.filter((n) => decl.groups.includes(groupOf(n)));
+        const globals = publicNames.filter((n) => groupOf(n) === null);
+        const cs = getComputedStyle(document.documentElement);
+        const btn = (n) => {
+          const v = cs.getPropertyValue('--' + n).trim();
+          const sw = n.startsWith('color-') ? `<span class="dot" style="background:${v}"></span>` : '';
+          return `<button class="tok" data-n="${n}">${sw}${utilOf(n)}</button>`;
+        };
+        palette.innerHTML =
+          decl.groups.map((g) => `<div class="grp">${g}</div>` +
+            mine.filter((n) => groupOf(n) === g).map(btn).join('')).join('') +
+          `<div class="grp">global (anyone)</div>` + globals.map(btn).join('');
+
+        palette.querySelectorAll('.tok').forEach((b) =>
+          b.addEventListener('click', () => {
+            const n = b.dataset.n;
+            const g = groupOf(n);
+            show(utilOf(n), g ? sem.groups[g] && { means: sem.groups[g].means, use: sem.groups[g].note }
+                              : sem.global[n.replace(/^(?:color|font|radius|weight|shadow|text)-/, '')]);
+            navigator.clipboard?.writeText(utilOf(n));
+          }),
+        );
+      };
+
+      pick.addEventListener('change', paint);
+      paint();
+    </script>
+  </body>
+</html>
