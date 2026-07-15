@@ -1,0 +1,169 @@
+{
+  "version": 1,
+  "$comment": [
+    "Styling contract — layer 3: semantics. What each public name MEANS.",
+    "",
+    "AUTHORED and versioned, never inferred. This is the layer the experiment",
+    "kept groping for in costumes — stba-description messages, token-meanings",
+    "json, the facet taxonomy — all of them kludges trying to record what the",
+    "author meant.",
+    "",
+    "The load-bearing field is 'not', not 'means'. A name's meaning is defined",
+    "by its edge: drift happens when an author needs a style that has no name,",
+    "stretches the nearest name past what it meant, and nobody can see that it",
+    "happened. 'means' alone cannot make that visible; 'not' + 'instead' can.",
+    "So every entry that has a plausible near-miss records it.",
+    "",
+    "'was' records what a name is being collapsed FROM, where the census found",
+    "the old naming was actively wrong. It is migration intent, and it expires",
+    "once nothing maps through it."
+  ],
+
+  "global": {
+    "page": {
+      "means": "The floor of the app — the colour you see where nothing has been placed.",
+      "use": "The app/page background, behind everything else.",
+      "not": "Anything raised or contained. If it holds content, it is a surface.",
+      "instead": { "content sits on it": "surface" },
+      "was": "Collapses app-bg + body-bg, which differed by one step for no reason anything depended on."
+    },
+    "surface": {
+      "means": "Raised content that sits ON the page — cards, dialogs, tables, panels.",
+      "use": "The default background for anything holding content.",
+      "not": "A sunken or alternating region inside a surface.",
+      "instead": { "stripes, wells, code blocks": "surface-alt" },
+      "was": "content-bg."
+    },
+    "surface-alt": {
+      "means": "A sunken or alternate region INSIDE a surface — one step back from it.",
+      "use": "Row stripes, wells, hover fills, sub-nav bars, code chips.",
+      "not": "Muted TEXT. This is a background colour and always has been.",
+      "instead": { "de-emphasised text": "text-muted" },
+      "was": "content-secondary — a misnomer the census caught: 88 of its 89 uses were bg-, and its values (#f8fafc light / #0f172a dark) are surfaces, not greys. It was never a text colour. Renamed, not collapsed."
+    },
+    "text": {
+      "means": "Primary reading text.",
+      "use": "Body copy, labels, headings, values — anything meant to be read first.",
+      "not": "Text that is deliberately secondary.",
+      "instead": { "hints, timestamps, secondary detail": "text-muted" },
+      "was": "content-text (198 uses)."
+    },
+    "text-muted": {
+      "means": "Text that is present but deliberately de-emphasised.",
+      "use": "Hints, timestamps, counts, secondary detail, disabled labels.",
+      "not": "Input placeholder text — that is a form concern with its own contrast floor.",
+      "instead": { "placeholder": "form-placeholder" },
+      "was": "content-muted (345 uses). Survived the grey collapse: it and text are the only two real text greys."
+    },
+    "border": {
+      "means": "The line between two regions.",
+      "use": "Card, table, input, and panel edges; dividers.",
+      "not": "A focus ring — that is state, not structure.",
+      "instead": { "focus outline": "focus" },
+      "was": "content-border."
+    },
+    "accent": {
+      "means": "THE brand action colour. There is exactly one.",
+      "use": "Primary buttons, links, active tabs, focus, selected state — anywhere the brand asserts itself.",
+      "not": "Conveying success or failure. Accent means 'act here', not 'this went well'.",
+      "instead": { "outcome or state": "ok / warn / error / info / neutral" },
+      "was": "Collapses primary + accent + brand. The census found a genuine split-brain: primary and accent were defined in two files with two different value sets (#3b82f6/#60a5fa vs #60a5fa/#38bdf8) and used 92 vs 26 times in templates — the same intent rendering two colours. Primary's values won on weight of use. 'secondary' is DROPPED: one consumer, dead utility classes, two conflicting definitions; gradients now carry their own stops."
+    },
+    "accent-hover": {
+      "means": "Accent under the pointer.",
+      "use": "Hover state of anything painted accent.",
+      "not": "A second brand colour. It is one relationship away from accent and moves when accent moves."
+    },
+    "on-accent": {
+      "means": "Whatever must stay legible ON TOP of accent.",
+      "use": "Label text and icons inside accent-filled controls.",
+      "not": "A text colour in its own right — it only exists in contact with accent.",
+      "instead": { "text on a normal surface": "text" }
+    },
+    "link": {
+      "means": "Navigational text — this takes you somewhere.",
+      "use": "Inline links in body copy.",
+      "not": "A button that performs an action. Looking like a link is not being one.",
+      "instead": { "performs an action": "button group + accent" }
+    },
+    "focus": {
+      "means": "The keyboard focus ring.",
+      "use": "Focus outlines, exclusively.",
+      "not": "Selected or active state, which persist after focus leaves.",
+      "instead": { "selected/active": "accent" }
+    },
+
+    "ok": {
+      "means": "It worked, or it is healthy.",
+      "use": "Success chips, healthy app state, passing checks.",
+      "not": "The affirmative button in a dialog — that is an action, not an outcome.",
+      "instead": { "confirm/submit action": "accent" },
+      "was": "success."
+    },
+    "warn": {
+      "means": "Needs attention, but nothing is broken yet.",
+      "use": "Degraded state, approaching a limit, deprecation.",
+      "not": "An actual failure.",
+      "instead": { "it failed": "error" },
+      "was": "warning."
+    },
+    "error": {
+      "means": "It failed, or it is broken.",
+      "use": "Failure state, validation errors, error dialogs, destructive confirmation.",
+      "not": "A destructive action that has not happened yet and might be routine.",
+      "was": "Collapses danger + error, which were the same colour (#ef4444) under two names."
+    },
+    "info": {
+      "means": "Neutral information worth noticing.",
+      "use": "Informational banners and notes.",
+      "not": "The brand action colour, despite sharing #3b82f6 today. They are the same value for now and may diverge — a brand may repaint accent without repainting info.",
+      "instead": { "act here": "accent" }
+    },
+    "neutral": {
+      "means": "Unknown, not applicable, or not yet determined.",
+      "use": "Tentative/unknown state, disabled or absent values.",
+      "not": "A calm success. Unknown is not good news.",
+      "instead": { "healthy": "ok" },
+      "was": "tentative."
+    },
+    "ok-soft": { "means": "A background tint behind ok content.", "use": "Fill behind a success chip or banner.", "not": "Text or an icon — the tint has nowhere near text contrast.", "instead": { "the status colour itself": "ok" } },
+    "warn-soft": { "means": "A background tint behind warn content.", "use": "Fill behind a warning chip or banner.", "not": "Text or an icon.", "instead": { "the status colour itself": "warn" } },
+    "error-soft": { "means": "A background tint behind error content.", "use": "Fill behind an error chip or banner.", "not": "Text or an icon.", "instead": { "the status colour itself": "error" } },
+    "info-soft": { "means": "A background tint behind info content.", "use": "Fill behind an info chip or banner.", "not": "Text or an icon.", "instead": { "the status colour itself": "info" } },
+    "neutral-soft": { "means": "A background tint behind neutral content.", "use": "Fill behind an unknown/disabled chip.", "not": "Text or an icon.", "instead": { "the status colour itself": "neutral" } },
+
+    "font-body": { "means": "The reading typeface.", "use": "Everything not a heading and not code." },
+    "font-heading": { "means": "The typeface for headings.", "use": "Page and section titles. Defaults to font-body — a brand may split them." },
+    "font-code": { "means": "The monospace typeface.", "use": "Code, logs, CLI commands, raw values.", "not": "Anything chosen for looking technical rather than being code." },
+    "text-size": { "means": "Base reading size. The whole type scale derives from it.", "use": "Set once per brand; density follows." },
+    "weight-body": { "means": "Normal reading weight." },
+    "weight-heading": { "means": "Heading weight." },
+
+    "radius-control": { "means": "Corner radius for things you click or type into.", "use": "Buttons, inputs, selects, chips.", "not": "Cards and dialogs, which carry their own radius.", "instead": { "a surface": "radius-surface" } },
+    "radius-surface": { "means": "Corner radius for things that hold content.", "use": "Cards, dialogs, panels.", "instead": { "a control": "radius-control" } },
+    "spacing": { "means": "The density knob. Tailwind v4's base unit — the entire spacing scale is a multiple of it.", "use": "Set once per brand to make the whole product tighter or looser.", "not": "A per-component nudge. Changing it moves everything, which is the point." }
+  },
+
+  "groups": {
+    "shell": { "means": "The frame the app lives in — side nav, header, logo, page floor.", "note": "Nav is the one region that is reliably inverted against the rest of the product, so it carries its own text and border colours rather than chaining to the globals." },
+    "page": { "means": "Everything between the shell and the content — headers, breadcrumbs, tabs, sub-nav." },
+    "card": { "means": "A bounded block of content on a page.", "note": "Cards and dialogs share a look today and differ in behaviour. Kept separate because a brand may well want a flat card and a raised dialog." },
+    "table": { "means": "Dense rows of comparable records.", "note": "Row hover and stripe are the group's own; the stripe chains to surface-alt because a stripe IS a sunken region." },
+    "dialog": { "means": "A surface that interrupts, with a backdrop." },
+    "popup": { "means": "Transient overlays that do not interrupt — tooltips, snackbars, menus.", "note": "The only group whose surface deliberately does NOT chain to the global surface: tooltips are inverted (dark on light) and inverting is the meaning, not a style choice." },
+    "form": { "means": "Anything you type into, pick from, or toggle.", "note": "Placeholder is here rather than global because it has a contrast floor that muted text does not." },
+    "button": { "means": "Anything you click to act.", "note": "Carries only shape and weight — variant colours come from global accent and status. A button is not a colour; it is a shape with a colour applied by intent." },
+    "stepper": { "means": "Multi-step flows — wizards.", "note": "Its own group rather than folded into form or dialog: the rail and indicators are structure a form has no concept of." },
+    "status": { "means": "State conveyed at a glance — chips, badges, indicators.", "note": "Carries only shape and weight. Colours come strictly from the global status set, so a state means the same thing everywhere it appears." },
+    "chart": { "means": "Plotted data.", "note": "The series palette is categorical: eight distinguishable hues carrying no meaning individually. Series-1 is not 'the good one'." },
+    "code": { "means": "Monospaced literal content — editors, logs, CLI, raw values.", "note": "Syntax colours are deliberately NOT tokens. They come as a Monaco preset pair (light+dark) a brand picks, because a syntax theme is an internally-consistent set, not a bag of independent choices." },
+    "login": { "means": "Pre-auth screens.", "note": "Its own group because it is the one surface an operator most wants to brand and the one place a user sees before any of the rest exists." }
+  },
+
+  "known_gaps": {
+    "$comment": "Recorded because an unrecorded gap is where drift starts.",
+    "per-group accent": "Each group has --color-<group>-accent defaulting to the global accent. The census found ZERO consumers — nav-active is an alpha overlay, not a hue, and the one gradient is a background paint. 13 of the contract's 136 names exist on spec, not on evidence. They cost nothing while untouched (pure var() chain) but they are the contract's largest unproven surface.",
+    "gradients": "Carry their own stops inline in group background values and may reference global accent directly. They do not depend on per-group accent. This is what replaced the dropped 'secondary'.",
+    "contract size": "136 public names against the draft's ~115 estimate. The gap is mostly per-group accent (13) plus per-group font/radius the draft counted loosely."
+  }
+}

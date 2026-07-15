@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "$comment": [
+    "Styling contract — layer 2: the tie. Which component-group vocabulary each",
+    "shared component draws from.",
+    "",
+    "AUTHORED, not inferred. Declarations are data; inference is code. These",
+    "survive a failed inference attempt and become the ground truth any later",
+    "inference engine gets validated against. Inference is deferred, possibly",
+    "forever.",
+    "",
+    "Every entry carries a group SET, never a single group. Verified on the real",
+    "tree: signal-list.component.html contains table/thead/tr/th AND",
+    "input/select/label AND button AND app-usage-gauge — one component spanning",
+    "four groups. Mono-group-per-template inference cannot describe that.",
+    "",
+    "'groups' is what the component may style from. Order carries no meaning.",
+    "'why' exists where the tie is non-obvious — it is intent, not documentation.",
+    "Coverage is partial by design: this is the shared/ tree, which is the code",
+    "that governs how everything else looks."
+  ],
+
+  "components": {
+    "signal-list": {
+      "groups": ["table", "form", "button", "chart", "status", "popup"],
+      "why": "The composite that disproves inference. Table shell, inline filter inputs and page-size select, row/header action buttons, embedded usage-gauge cells, per-row status, and column/overflow menus."
+    },
+    "signal-detail": {
+      "groups": ["table", "card"],
+      "why": "Key/value rows read as a table but sit in a card surface."
+    },
+    "stepper": {
+      "groups": ["stepper", "button", "form"],
+      "why": "Rail and step indicators are stepper's own; every step body hosts form fields and the next/back buttons are ordinary buttons."
+    },
+    "dialog-confirm": {
+      "groups": ["dialog", "button", "form"],
+      "why": "Confirm dialogs host an optional input (typed confirmation) alongside the action buttons."
+    },
+    "dialog-error": { "groups": ["dialog", "button", "status"] },
+    "sidepanel-preview": { "groups": ["dialog"], "why": "Side panels are dialog surfaces that enter from an edge." },
+
+    "app-paginator": { "groups": ["table", "form", "button"] },
+    "endpoint-list": { "groups": ["table", "status"] },
+    "list-sub-nav": { "groups": ["table", "page"], "why": "Belongs to the list it filters, but renders as page-level sub-navigation." },
+
+    "page-header": { "groups": ["page"] },
+    "page-sub-nav": { "groups": ["page"] },
+    "page-sub-nav-section": { "groups": ["page"] },
+    "breadcrumbs": { "groups": ["page"] },
+    "custom-tabs": { "groups": ["page"] },
+    "nested-tabs": { "groups": ["page"] },
+    "multiline-title": { "groups": ["page"] },
+    "entity-summary-title": { "groups": ["page"] },
+    "enumerate": { "groups": ["page"] },
+    "no-content-message": { "groups": ["page", "status"] },
+    "endpoints-missing": { "groups": ["page", "status"] },
+    "loading-page": { "groups": ["page", "status"] },
+    "profile-settings": { "groups": ["page", "form"] },
+    "user-profile-banner": { "groups": ["page", "card"] },
+
+    "custom-card": { "groups": ["card"] },
+    "cards": { "groups": ["card"] },
+    "details-card": { "groups": ["card"] },
+    "info-card": { "groups": ["card"] },
+    "meta-card": { "groups": ["card"] },
+    "metadata-item": { "groups": ["card"] },
+    "recent-entities": { "groups": ["card"] },
+    "tile": { "groups": ["card"] },
+    "tile-selector": { "groups": ["card"] },
+    "tile-selector-tile": { "groups": ["card"] },
+    "display-value": { "groups": ["card"] },
+    "card-progress-overlay": { "groups": ["card", "status"] },
+
+    "custom-form-field": { "groups": ["form"] },
+    "custom-select": { "groups": ["form"] },
+    "custom-checkbox": { "groups": ["form"] },
+    "custom-slide-toggle": { "groups": ["form"] },
+    "date-time": { "groups": ["form"] },
+    "start-end-date": { "groups": ["form"] },
+    "unlimited-input": { "groups": ["form"] },
+    "schema-widget-renderer": { "groups": ["form"], "why": "Renders arbitrary schema-driven inputs; everything it emits is a form control." },
+    "metrics-range-selector": { "groups": ["form"] },
+    "metrics-parent-range-selector": { "groups": ["form"] },
+    "editable-display-value": { "groups": ["form", "button"], "why": "Reads as a value until edited, then becomes an input plus confirm/cancel." },
+    "file-input": { "groups": ["form", "button"] },
+    "stacked-input-actions": { "groups": ["form", "button"] },
+
+    "custom-button-toggle": { "groups": ["button"] },
+    "extension-buttons": { "groups": ["button"] },
+    "copy-to-clipboard": { "groups": ["button"] },
+    "theme-toggle": { "groups": ["button"] },
+
+    "custom-tooltip": { "groups": ["popup"] },
+    "snackbar-return": { "groups": ["popup", "button"] },
+
+    "chips": { "groups": ["status"] },
+    "boolean-indicator": { "groups": ["status"] },
+    "application-state": { "groups": ["status"] },
+    "app-action-monitor-icon": { "groups": ["status"] },
+    "polling-indicator": { "groups": ["status"] },
+    "routing-indicator": { "groups": ["status"] },
+    "progress-bar": { "groups": ["status"] },
+    "progress-spinner": { "groups": ["status"] },
+    "upload-progress-indicator": { "groups": ["status"] },
+
+    "metrics-chart": { "groups": ["chart"] },
+    "ring-chart": { "groups": ["chart"] },
+    "simple-usage-chart": { "groups": ["chart"] },
+    "usage-gauge": { "groups": ["chart"] },
+
+    "monaco-editor": { "groups": ["code"] },
+    "code-block": {
+      "groups": ["code", "button"],
+      "why": "Copyable CLI/env-var widget — the copy affordance is a button. Merging with markdown-preview into one component is decided but not yet done."
+    },
+    "markdown-preview": {
+      "groups": ["code"],
+      "why": "Decided: merges with code-block (markdown mode + raw mode). Raw mode is an injection boundary — interpolated org/space names must be escaped, never parsed as markdown."
+    },
+    "log-viewer": { "groups": ["code"] },
+    "ssh-viewer": { "groups": ["code"] },
+    "json-viewer": {
+      "groups": ["code"],
+      "why": "Decided: DROPPED in favour of read-only Monaco (3 consumers). Declared so the tie stays honest until the component is actually gone."
+    },
+
+    "intro-screen": { "groups": ["login"] },
+
+    "stratos-title": { "groups": ["shell"] },
+    "user-avatar": { "groups": ["shell"] }
+  },
+
+  "undeclared": {
+    "$comment": "Present in shared/ but deliberately carrying no tie, with the reason. An empty tie is a claim; absence is not.",
+    "custom-material": "Angular Material module wiring, renders nothing of its own.",
+    "custom-tooltip-directive": "Directive, not a rendered surface."
+  }
+}
