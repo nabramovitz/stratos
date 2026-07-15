@@ -1,0 +1,453 @@
+/* Styling contract — layer 1: vocabulary.
+ *
+ * The public names. Two tiers: global semantic tokens, and per-group tokens
+ * that default to a global via var() chaining. A brand file may override
+ * either tier.
+ *
+ * Shape follows the existing Stratos chain (@theme name -> runtime var), so
+ * Tailwind v4 generates a utility per public name (--color-dialog-surface ->
+ * bg-dialog-surface) while :root/.dark-theme carry the values a theme swaps.
+ *
+ * Deliberately NOT here: `--color-*: initial`. It would delete Tailwind's
+ * default palette and make off-contract utilities fail to compile. That is a
+ * build-blocking barrier, which this work is not doing. This file describes
+ * the sanctioned set; it does not enforce it.
+ *
+ * Values below are lifted from today's theme (main.scss :root/.dark-theme)
+ * so the contract starts at parity with what Stratos already renders.
+ */
+
+@theme {
+  /* ---- Global semantic: colour (21) ---- */
+  --color-page: var(--v-page);
+  --color-surface: var(--v-surface);
+  --color-surface-alt: var(--v-surface-alt);
+  --color-text: var(--v-text);
+  --color-text-muted: var(--v-text-muted);
+  --color-border: var(--v-border);
+
+  --color-accent: var(--v-accent);
+  --color-accent-hover: var(--v-accent-hover);
+  --color-on-accent: var(--v-on-accent);
+  --color-link: var(--v-link);
+  --color-focus: var(--v-focus);
+
+  --color-ok: var(--v-ok);
+  --color-ok-soft: var(--v-ok-soft);
+  --color-warn: var(--v-warn);
+  --color-warn-soft: var(--v-warn-soft);
+  --color-error: var(--v-error);
+  --color-error-soft: var(--v-error-soft);
+  --color-info: var(--v-info);
+  --color-info-soft: var(--v-info-soft);
+  --color-neutral: var(--v-neutral);
+  --color-neutral-soft: var(--v-neutral-soft);
+
+  /* ---- Global semantic: type (6) ---- */
+  --font-body: var(--v-font-body);
+  --font-heading: var(--v-font-heading);
+  --font-code: var(--v-font-code);
+  --text-size: var(--v-text-size);
+  --weight-body: var(--v-weight-body);
+  --weight-heading: var(--v-weight-heading);
+
+  /* ---- Global semantic: shape/space (3) ---- */
+  --radius-control: var(--v-radius-control);
+  --radius-surface: var(--v-radius-surface);
+  --spacing: var(--v-spacing);
+
+  /* ---- shell ---- */
+  --color-shell-page: var(--v-shell-page);
+  --color-shell-nav-surface: var(--v-shell-nav-surface);
+  --color-shell-nav-text: var(--v-shell-nav-text);
+  --color-shell-nav-text-muted: var(--v-shell-nav-text-muted);
+  --color-shell-nav-hover: var(--v-shell-nav-hover);
+  --color-shell-nav-active: var(--v-shell-nav-active);
+  --color-shell-nav-border: var(--v-shell-nav-border);
+  --color-shell-header-surface: var(--v-shell-header-surface);
+  --color-shell-header-text: var(--v-shell-header-text);
+  --color-shell-header-border: var(--v-shell-header-border);
+  --color-shell-logo-bg: var(--v-shell-logo-bg);
+  --color-shell-accent: var(--v-shell-accent);
+
+  /* ---- page ---- */
+  --color-page-surface: var(--v-page-surface);
+  --color-page-text: var(--v-page-text);
+  --color-page-title: var(--v-page-title);
+  --color-page-tab-active: var(--v-page-tab-active);
+  --color-page-accent: var(--v-page-accent);
+  --font-page-title: var(--v-font-page-title);
+  --weight-page-title: var(--v-weight-page-title);
+  --radius-page: var(--v-radius-page);
+
+  /* ---- card ---- */
+  --color-card-surface: var(--v-card-surface);
+  --color-card-text: var(--v-card-text);
+  --color-card-border: var(--v-card-border);
+  --color-card-hover: var(--v-card-hover);
+  --color-card-accent: var(--v-card-accent);
+  --font-card: var(--v-font-card);
+  --radius-card: var(--v-radius-card);
+  --shadow-card: var(--v-shadow-card);
+
+  /* ---- table ---- */
+  --color-table-surface: var(--v-table-surface);
+  --color-table-text: var(--v-table-text);
+  --color-table-border: var(--v-table-border);
+  --color-table-row-hover: var(--v-table-row-hover);
+  --color-table-row-stripe: var(--v-table-row-stripe);
+  --color-table-header-surface: var(--v-table-header-surface);
+  --color-table-header-text: var(--v-table-header-text);
+  --color-table-accent: var(--v-table-accent);
+  --font-table: var(--v-font-table);
+  --radius-table: var(--v-radius-table);
+  --weight-table-header: var(--v-weight-table-header);
+
+  /* ---- dialog ---- */
+  --color-dialog-surface: var(--v-dialog-surface);
+  --color-dialog-text: var(--v-dialog-text);
+  --color-dialog-border: var(--v-dialog-border);
+  --color-dialog-backdrop: var(--v-dialog-backdrop);
+  --color-dialog-accent: var(--v-dialog-accent);
+  --font-dialog: var(--v-font-dialog);
+  --radius-dialog: var(--v-radius-dialog);
+  --shadow-dialog: var(--v-shadow-dialog);
+
+  /* ---- popup (tooltips/snackbars/menus — often inverted) ---- */
+  --color-popup-surface: var(--v-popup-surface);
+  --color-popup-text: var(--v-popup-text);
+  --color-popup-border: var(--v-popup-border);
+  --color-popup-accent: var(--v-popup-accent);
+  --font-popup: var(--v-font-popup);
+  --radius-popup: var(--v-radius-popup);
+  --shadow-popup: var(--v-shadow-popup);
+
+  /* ---- form ---- */
+  --color-form-input-surface: var(--v-form-input-surface);
+  --color-form-input-text: var(--v-form-input-text);
+  --color-form-input-border: var(--v-form-input-border);
+  --color-form-input-focus-border: var(--v-form-input-focus-border);
+  --color-form-input-disabled: var(--v-form-input-disabled);
+  --color-form-placeholder: var(--v-form-placeholder);
+  --color-form-accent: var(--v-form-accent);
+  --font-form: var(--v-font-form);
+  --radius-form: var(--v-radius-form);
+  --weight-form-label: var(--v-weight-form-label);
+
+  /* ---- button (variant colours come from global accent/status) ---- */
+  --color-button-accent: var(--v-button-accent);
+  --font-button: var(--v-font-button);
+  --radius-button: var(--v-radius-button);
+  --weight-button: var(--v-weight-button);
+
+  /* ---- stepper ---- */
+  --color-stepper-indicator: var(--v-stepper-indicator);
+  --color-stepper-indicator-text: var(--v-stepper-indicator-text);
+  --color-stepper-inactive: var(--v-stepper-inactive);
+  --color-stepper-inactive-text: var(--v-stepper-inactive-text);
+  --color-stepper-rail: var(--v-stepper-rail);
+  --color-stepper-accent: var(--v-stepper-accent);
+  --font-stepper: var(--v-font-stepper);
+  --radius-stepper: var(--v-radius-stepper);
+
+  /* ---- status (colours strictly from global status) ---- */
+  --color-status-accent: var(--v-status-accent);
+  --font-status: var(--v-font-status);
+  --radius-status: var(--v-radius-status);
+  --weight-status: var(--v-weight-status);
+
+  /* ---- chart ---- */
+  --color-chart-series-1: var(--v-chart-series-1);
+  --color-chart-series-2: var(--v-chart-series-2);
+  --color-chart-series-3: var(--v-chart-series-3);
+  --color-chart-series-4: var(--v-chart-series-4);
+  --color-chart-series-5: var(--v-chart-series-5);
+  --color-chart-series-6: var(--v-chart-series-6);
+  --color-chart-series-7: var(--v-chart-series-7);
+  --color-chart-series-8: var(--v-chart-series-8);
+  --color-chart-grid: var(--v-chart-grid);
+  --color-chart-axis-text: var(--v-chart-axis-text);
+  --color-chart-accent: var(--v-chart-accent);
+  --font-chart: var(--v-font-chart);
+
+  /* ---- code (syntax colours = Monaco preset pair, not tokens) ---- */
+  --color-code-surface: var(--v-code-surface);
+  --color-code-text: var(--v-code-text);
+  --color-code-border: var(--v-code-border);
+  --color-code-gutter: var(--v-code-gutter);
+  --color-code-accent: var(--v-code-accent);
+  --font-code-block: var(--v-font-code-block);
+  --radius-code: var(--v-radius-code);
+
+  /* ---- login ---- */
+  --color-login-page: var(--v-login-page);
+  --color-login-card: var(--v-login-card);
+  --color-login-text: var(--v-login-text);
+  --color-login-accent: var(--v-login-accent);
+  --font-login: var(--v-font-login);
+  --radius-login: var(--v-radius-login);
+  --shadow-login: var(--v-shadow-login);
+}
+
+/* ---------------------------------------------------------------------------
+ * Tier values. Globals carry literals; group tokens chain to a global unless
+ * the group genuinely differs. A brand file overrides either tier by
+ * redeclaring the same --v-* name.
+ * ------------------------------------------------------------------------- */
+
+:root {
+  /* Global — colour */
+  --v-page: #f8fafc;
+  --v-surface: #ffffff;
+  --v-surface-alt: #f8fafc;
+  --v-text: #1e293b;
+  --v-text-muted: #64748b;
+  --v-border: #e2e8f0;
+
+  /* accent collapses primary+accent+brand; primary's values win (92 template
+   * uses vs accent's 26 — the split was rendering inconsistently). */
+  --v-accent: #3b82f6;
+  --v-accent-hover: #2563eb;
+  --v-on-accent: #ffffff;
+  --v-link: var(--v-accent);
+  --v-focus: var(--v-accent);
+
+  --v-ok: #22c55e;
+  --v-ok-soft: #dcfce7;
+  --v-warn: #f59e0b;
+  --v-warn-soft: #fef3c7;
+  --v-error: #ef4444;
+  --v-error-soft: #fee2e2;
+  --v-info: #3b82f6;
+  --v-info-soft: #dbeafe;
+  --v-neutral: #9ca3af;
+  --v-neutral-soft: #f3f4f6;
+
+  /* Global — type */
+  --v-font-body: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --v-font-heading: var(--v-font-body);
+  --v-font-code: 'JetBrains Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  --v-text-size: 1rem;
+  --v-weight-body: 400;
+  --v-weight-heading: 600;
+
+  /* Global — shape/space */
+  --v-radius-control: 0.375rem;
+  --v-radius-surface: 0.5rem;
+  --v-spacing: 0.25rem;
+
+  /* shell */
+  --v-shell-page: var(--v-page);
+  --v-shell-nav-surface: #1e293b;
+  --v-shell-nav-text: #ffffff;
+  --v-shell-nav-text-muted: rgba(255, 255, 255, 0.7);
+  --v-shell-nav-hover: rgba(255, 255, 255, 0.1);
+  --v-shell-nav-active: rgba(255, 255, 255, 0.15);
+  --v-shell-nav-border: rgba(255, 255, 255, 0.1);
+  --v-shell-header-surface: #ffffff;
+  --v-shell-header-text: var(--v-text);
+  --v-shell-header-border: var(--v-border);
+  --v-shell-logo-bg: #ffffff;
+  --v-shell-accent: var(--v-accent);
+
+  /* page */
+  --v-page-surface: var(--v-page);
+  --v-page-text: var(--v-text);
+  --v-page-title: var(--v-text);
+  --v-page-tab-active: var(--v-accent);
+  --v-page-accent: var(--v-accent);
+  --v-font-page-title: var(--v-font-heading);
+  --v-weight-page-title: var(--v-weight-heading);
+  --v-radius-page: var(--v-radius-surface);
+
+  /* card */
+  --v-card-surface: var(--v-surface);
+  --v-card-text: var(--v-text);
+  --v-card-border: var(--v-border);
+  --v-card-hover: #f9fafb;
+  --v-card-accent: var(--v-accent);
+  --v-font-card: var(--v-font-body);
+  --v-radius-card: var(--v-radius-surface);
+  --v-shadow-card: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+
+  /* table */
+  --v-table-surface: var(--v-surface);
+  --v-table-text: var(--v-text);
+  --v-table-border: var(--v-border);
+  --v-table-row-hover: #f9fafb;
+  --v-table-row-stripe: var(--v-surface-alt);
+  --v-table-header-surface: #f9fafb;
+  --v-table-header-text: var(--v-text);
+  --v-table-accent: var(--v-accent);
+  --v-font-table: var(--v-font-body);
+  --v-radius-table: var(--v-radius-surface);
+  --v-weight-table-header: 600;
+
+  /* dialog */
+  --v-dialog-surface: var(--v-surface);
+  --v-dialog-text: var(--v-text);
+  --v-dialog-border: var(--v-border);
+  --v-dialog-backdrop: rgba(0, 0, 0, 0.5);
+  --v-dialog-accent: var(--v-accent);
+  --v-font-dialog: var(--v-font-body);
+  --v-radius-dialog: var(--v-radius-surface);
+  --v-shadow-dialog: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+
+  /* popup — inverted by default (today's tooltip is dark on light) */
+  --v-popup-surface: #374151;
+  --v-popup-text: #ffffff;
+  --v-popup-border: transparent;
+  --v-popup-accent: var(--v-accent);
+  --v-font-popup: var(--v-font-body);
+  --v-radius-popup: var(--v-radius-control);
+  --v-shadow-popup: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+
+  /* form */
+  --v-form-input-surface: #ffffff;
+  --v-form-input-text: var(--v-text);
+  --v-form-input-border: #d1d5db;
+  --v-form-input-focus-border: var(--v-accent);
+  --v-form-input-disabled: #f3f4f6;
+  --v-form-placeholder: #9ca3af;
+  --v-form-accent: var(--v-accent);
+  --v-font-form: var(--v-font-body);
+  --v-radius-form: var(--v-radius-control);
+  --v-weight-form-label: 500;
+
+  /* button */
+  --v-button-accent: var(--v-accent);
+  --v-font-button: var(--v-font-body);
+  --v-radius-button: var(--v-radius-control);
+  --v-weight-button: 500;
+
+  /* stepper */
+  --v-stepper-indicator: var(--v-accent);
+  --v-stepper-indicator-text: var(--v-on-accent);
+  --v-stepper-inactive: #e5e7eb;
+  --v-stepper-inactive-text: #4b5563;
+  --v-stepper-rail: var(--v-border);
+  --v-stepper-accent: var(--v-accent);
+  --v-font-stepper: var(--v-font-body);
+  --v-radius-stepper: var(--v-radius-control);
+
+  /* status */
+  --v-status-accent: var(--v-accent);
+  --v-font-status: var(--v-font-body);
+  --v-radius-status: 9999px;
+  --v-weight-status: 500;
+
+  /* chart */
+  --v-chart-series-1: #3b82f6;
+  --v-chart-series-2: #22c55e;
+  --v-chart-series-3: #f59e0b;
+  --v-chart-series-4: #a855f7;
+  --v-chart-series-5: #ef4444;
+  --v-chart-series-6: #14b8a6;
+  --v-chart-series-7: #ec4899;
+  --v-chart-series-8: #64748b;
+  --v-chart-grid: var(--v-border);
+  --v-chart-axis-text: var(--v-text-muted);
+  --v-chart-accent: var(--v-accent);
+  --v-font-chart: var(--v-font-body);
+
+  /* code */
+  --v-code-surface: #f3f4f6;
+  --v-code-text: var(--v-text);
+  --v-code-border: #d1d5db;
+  --v-code-gutter: var(--v-text-muted);
+  --v-code-accent: var(--v-accent);
+  --v-font-code-block: var(--v-font-code);
+  --v-radius-code: var(--v-radius-control);
+
+  /* login */
+  --v-login-page: #f5f5f5;
+  --v-login-card: #ffffff;
+  --v-login-text: var(--v-text);
+  --v-login-accent: var(--v-accent);
+  --v-font-login: var(--v-font-body);
+  --v-radius-login: var(--v-radius-surface);
+  --v-shadow-login: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+.dark-theme {
+  /* Global — colour */
+  --v-page: #0f172a;
+  --v-surface: #1e293b;
+  --v-surface-alt: #0f172a;
+  --v-text: #f1f5f9;
+  --v-text-muted: #94a3b8;
+  --v-border: #334155;
+
+  --v-accent: #60a5fa;
+  --v-accent-hover: #93c5fd;
+  --v-on-accent: #0f172a;
+
+  --v-ok: #4ade80;
+  --v-ok-soft: #14532d;
+  --v-warn: #fbbf24;
+  --v-warn-soft: #78350f;
+  --v-error: #f87171;
+  --v-error-soft: #7f1d1d;
+  --v-info: #60a5fa;
+  --v-info-soft: #1e3a8a;
+  --v-neutral: #9ca3af;
+  --v-neutral-soft: #1e293b;
+
+  /* shell */
+  --v-shell-nav-surface: #0f172a;
+  --v-shell-nav-text: #f1f5f9;
+  --v-shell-nav-text-muted: rgba(241, 245, 249, 0.7);
+  --v-shell-nav-hover: rgba(241, 245, 249, 0.1);
+  --v-shell-nav-active: rgba(241, 245, 249, 0.15);
+  --v-shell-nav-border: rgba(241, 245, 249, 0.1);
+  --v-shell-header-surface: #1e293b;
+  --v-shell-logo-bg: #1e293b;
+
+  /* card */
+  --v-card-hover: #0f172a;
+  --v-shadow-card: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+
+  /* table */
+  --v-table-row-hover: #334155;
+  --v-table-header-surface: #0f172a;
+  --v-table-header-text: #cbd5e1;
+
+  /* dialog */
+  --v-dialog-backdrop: rgba(0, 0, 0, 0.7);
+  --v-shadow-dialog: 0 20px 25px -5px rgba(0, 0, 0, 0.6);
+
+  /* popup */
+  --v-popup-surface: #1e293b;
+  --v-popup-text: #f1f5f9;
+  --v-shadow-popup: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+
+  /* form */
+  --v-form-input-surface: #1e293b;
+  --v-form-input-border: #475569;
+  --v-form-input-disabled: #0f172a;
+  --v-form-placeholder: #64748b;
+
+  /* stepper */
+  --v-stepper-inactive: #334155;
+  --v-stepper-inactive-text: #cbd5e1;
+
+  /* chart */
+  --v-chart-series-1: #60a5fa;
+  --v-chart-series-2: #4ade80;
+  --v-chart-series-3: #fbbf24;
+  --v-chart-series-4: #c084fc;
+  --v-chart-series-5: #f87171;
+  --v-chart-series-6: #2dd4bf;
+  --v-chart-series-7: #f472b6;
+  --v-chart-series-8: #94a3b8;
+
+  /* code */
+  --v-code-surface: #0f172a;
+  --v-code-text: #e2e8f0;
+  --v-code-border: #334155;
+
+  /* login */
+  --v-login-page: #0f172a;
+  --v-login-card: #1e293b;
+  --v-shadow-login: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+}
