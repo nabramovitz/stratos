@@ -1,0 +1,205 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>contract fonts — 4.9 vs today</title>
+    <style>
+      @font-face { font-family: 'Roboto'; font-weight: 300; src: url('/fonts/roboto-v18-latin-300.woff2') format('woff2'); }
+      @font-face { font-family: 'Roboto'; font-weight: 400; src: url('/fonts/roboto-v18-latin-regular.woff2') format('woff2'); }
+      @font-face { font-family: 'Roboto'; font-weight: 500; src: url('/fonts/roboto-v18-latin-500.woff2') format('woff2'); }
+      @font-face { font-family: 'Roboto'; font-weight: 700; src: url('/fonts/roboto-v18-latin-700.woff2') format('woff2'); }
+      /* Lato ships no 500. That absence is the whole point of the table below. */
+      @font-face { font-family: 'Lato'; font-weight: 300; src: url('/fonts/lato-v14-latin-300.woff2') format('woff2'); }
+      @font-face { font-family: 'Lato'; font-weight: 400; src: url('/fonts/lato-v14-latin-regular.woff2') format('woff2'); }
+      @font-face { font-family: 'Lato'; font-weight: 700; src: url('/fonts/lato-v14-latin-700.woff2') format('woff2'); }
+      @font-face { font-family: 'Lato'; font-weight: 900; src: url('/fonts/lato-v14-latin-900.woff2') format('woff2'); }
+
+      body { margin: 0; font: 14px system-ui; background: #fff; color: #1e293b; }
+      .roboto { font-family: 'Roboto', sans-serif; }
+      .lato { font-family: 'Lato', sans-serif; }
+      .tag { font: 600 10px ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase;
+             color: #64748b; margin-bottom: 10px; }
+      .tag b { color: #b91c1c; }
+      h2 { font: 600 11px ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase;
+           color: #475569; margin: 0; padding: 10px 22px; background: #f8fafc;
+           border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; }
+
+      /* ---- side by side ---- */
+      .cols { display: grid; grid-template-columns: 1fr 1fr 1fr; }
+      /* The nudge: font-medium remapped 500 -> 700. Lato's only face above
+       * regular is a real bold, so the 500 levels land on it. */
+      .nudge .title, .nudge .body2, .nudge .btn { font-weight: 700; }
+      .col { padding: 18px 22px; }
+      .col + .col { border-left: 1px solid #e2e8f0; }
+      .headline { font-size: 24px; line-height: 32px; font-weight: 400; margin: 0 0 2px; }
+      .title { font-size: 20px; line-height: 32px; font-weight: 500; margin: 14px 0 2px; }
+      .body1 { font-size: 14px; line-height: 20px; font-weight: 400; margin: 0; }
+      .body2 { font-size: 14px; line-height: 24px; font-weight: 500; margin: 0; }
+      .caption { font-size: 12px; line-height: 20px; font-weight: 400; color: #64748b; }
+      .btn { display: inline-block; font-size: 14px; line-height: 14px; font-weight: 500;
+             background: #3b82f6; color: #fff; padding: 10px 14px; border-radius: 6px; margin-top: 10px; }
+      .cols table { border-collapse: collapse; margin-top: 12px; width: 100%; }
+      .cols th { font-size: 12px; font-weight: 500; color: #64748b; text-align: left; padding: 6px 8px;
+                 border-bottom: 1px solid #e2e8f0; }
+      .cols td { font-size: 14px; padding: 6px 8px; border-bottom: 1px solid #f1f5f9; }
+      .lg { font-size: 40px; line-height: 1.15; margin: 12px 0 0; }
+      .mark { color: #b91c1c; font: 600 10px ui-monospace, monospace; }
+
+      /* ---- weight table ---- */
+      #wt { border-collapse: collapse; width: 100%; }
+      #wt th { font: 600 10px ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase;
+               color: #94a3b8; text-align: left; padding: 8px 14px; border-bottom: 1px solid #e2e8f0; }
+      #wt td { padding: 7px 14px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+      #wt .util { font: 12px ui-monospace, monospace; }
+      #wt .asks, #wt .uses { font: 12px ui-monospace, monospace; color: #64748b; }
+      #wt .samp { font-size: 19px; white-space: nowrap; }
+      #wt .verdict { font: 11px ui-monospace, monospace; }
+      .dead { color: #b91c1c; font-weight: 700; }
+      .ok { color: #047857; }
+      .warn { color: #b45309; }
+      tr.flag { background: #fff7f7; }
+      .note { padding: 12px 22px; background: #fffdf5; border-top: 1px solid #eee;
+              font-size: 12px; color: #543; line-height: 1.5; }
+      code { background: #eee; padding: 0 3px; border-radius: 3px; }
+    </style>
+  </head>
+  <body>
+    <h2>1 &middot; the same page, the same sizes, the same weights &mdash; only the family differs</h2>
+    <div class="cols">
+      <div class="col roboto">
+        <div class="tag">4.9 &mdash; Material components: <b>Roboto</b></div>
+        <p class="headline">Applications</p>
+        <p class="caption">3 running, 1 crashed</p>
+        <p class="title">my-app</p>
+        <p class="body1">Instances of this application are running in the space development.</p>
+        <p class="body2">Deployed 4 minutes ago <span class="mark">&larr; weight 500</span></p>
+        <table>
+          <tr><th>Name</th><th>Status</th></tr>
+          <tr><td>my-app</td><td>running</td></tr>
+          <tr><td>other-app</td><td>crashed</td></tr>
+        </table>
+        <span class="btn">Add application</span>
+        <p class="lg">Illegible 0O1l</p>
+      </div>
+      <div class="col lato">
+        <div class="tag">today &mdash; <b>Lato</b>, 500 falls to 400</div>
+        <p class="headline">Applications</p>
+        <p class="caption">3 running, 1 crashed</p>
+        <p class="title">my-app</p>
+        <p class="body1">Instances of this application are running in the space development.</p>
+        <p class="body2">Deployed 4 minutes ago <span class="mark">&larr; weight 500</span></p>
+        <table>
+          <tr><th>Name</th><th>Status</th></tr>
+          <tr><td>my-app</td><td>running</td></tr>
+          <tr><td>other-app</td><td>crashed</td></tr>
+        </table>
+        <span class="btn">Add application</span>
+        <p class="lg">Illegible 0O1l</p>
+      </div>
+      <div class="col lato nudge">
+        <div class="tag">the nudge &mdash; <b>Lato</b>, 500 &rarr; 700</div>
+        <p class="headline">Applications</p>
+        <p class="caption">3 running, 1 crashed</p>
+        <p class="title">my-app</p>
+        <p class="body1">Instances of this application are running in the space development.</p>
+        <p class="body2">Deployed 4 minutes ago <span class="mark">&larr; now 700</span></p>
+        <table>
+          <tr><th>Name</th><th>Status</th></tr>
+          <tr><td>my-app</td><td>running</td></tr>
+          <tr><td>other-app</td><td>crashed</td></tr>
+        </table>
+        <span class="btn">Add application</span>
+        <p class="lg">Illegible 0O1l</p>
+      </div>
+    </div>
+
+    <h2>1b &middot; is the nudge close to Roboto? the same line, adjacent</h2>
+    <div style="padding:14px 22px">
+      <div style="display:grid;grid-template-columns:230px 1fr;gap:4px 14px;align-items:baseline">
+        <span style="font:600 10px ui-monospace,monospace;color:#64748b">4.9 &mdash; Roboto 500</span>
+        <span class="roboto" style="font-size:23px;font-weight:500">Deployed 4 minutes ago</span>
+        <span style="font:600 10px ui-monospace,monospace;color:#b91c1c">the nudge &mdash; Lato 700</span>
+        <span class="lato" style="font-size:23px;font-weight:700">Deployed 4 minutes ago</span>
+        <span style="font:600 10px ui-monospace,monospace;color:#64748b">today &mdash; Lato 400</span>
+        <span class="lato" style="font-size:23px;font-weight:400">Deployed 4 minutes ago</span>
+        <span style="font:600 10px ui-monospace,monospace;color:#64748b">for scale &mdash; Roboto 700</span>
+        <span class="roboto" style="font-size:23px;font-weight:700">Deployed 4 minutes ago</span>
+      </div>
+      <p style="font-size:12px;color:#543;margin:12px 0 0">
+        Weight numbers do not compare across families. Lato&rsquo;s bold is restrained and Roboto&rsquo;s is
+        heavy, so <b>Lato&nbsp;700 lands next to Roboto&nbsp;500, not next to Roboto&nbsp;700</b> &mdash; which is
+        what the nudge is trading on. Read the rows, not the numbers: the number said 700=700 and the
+        number was wrong.
+      </p>
+    </div>
+
+    <h2>2 &middot; what each weight actually renders as &mdash; measured on this page, not asserted</h2>
+    <table id="wt">
+      <thead>
+        <tr>
+          <th>Tailwind utility</th><th>asks</th><th>uses in Stratos</th>
+          <th>Roboto (4.9)</th><th>Lato (today)</th><th>in Lato it renders as</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div class="note" id="note"></div>
+
+    <script>
+      // Usage counts are the measured census of src/frontend templates + ts.
+      const ROWS = [
+        { util: 'font-light',    w: 300, uses: 1 },
+        { util: 'font-normal',   w: 400, uses: 8 },
+        { util: 'font-medium',   w: 500, uses: 135 },
+        { util: 'font-semibold', w: 600, uses: 93 },
+        { util: 'font-bold',     w: 700, uses: 19 },
+        { util: 'font-black',    w: 900, uses: 0 },
+      ];
+      const SAMPLE = 'Deployed 4 minutes ago';
+
+      document.querySelector('#wt tbody').innerHTML = ROWS.map(
+        (r) => `<tr data-w="${r.w}">
+          <td class="util">${r.util}</td>
+          <td class="asks">${r.w}</td>
+          <td class="uses">${r.uses || '—'}</td>
+          <td><span class="samp roboto" data-f="r" data-w="${r.w}" style="font-weight:${r.w}">${SAMPLE}</span></td>
+          <td><span class="samp lato" data-f="l" data-w="${r.w}" style="font-weight:${r.w}">${SAMPLE}</span></td>
+          <td class="verdict" id="v${r.w}"></td>
+        </tr>`,
+      ).join('');
+
+      document.fonts.ready.then(() => {
+        // A weight that resolves to another face renders at that face's exact
+        // width. Identical width = same physical face = the request did nothing.
+        const width = (f, w) =>
+          document.querySelector(`[data-f="${f}"][data-w="${w}"]`).getBoundingClientRect().width;
+        const LATO_HAS = [300, 400, 700, 900];
+        let dead = 0;
+        for (const r of ROWS) {
+          const mine = width('l', r.w);
+          const twin = LATO_HAS.find((h) => h !== r.w && Math.abs(width('l', h) - mine) < 0.01);
+          const cell = document.getElementById('v' + r.w);
+          const tr = document.querySelector(`tr[data-w="${r.w}"]`);
+          if (!twin) {
+            cell.innerHTML = `<span class="ok">${r.w} — real face</span>`;
+          } else if (twin === 400) {
+            cell.innerHTML = `<span class="dead">400 — NO VISIBLE CHANGE</span>`;
+            tr.classList.add('flag');
+            dead += r.uses;
+          } else {
+            cell.innerHTML = `<span class="warn">${twin} — same as font-bold</span>`;
+          }
+        }
+        const total = ROWS.reduce((n, r) => n + r.uses, 0);
+        document.getElementById('note').innerHTML =
+          `Both faces are the repo's own files (<code>core/assets/fonts/</code>). Widths are measured live above: ` +
+          `identical width means the same physical face rendered, so the requested weight resolved to another one.<br><br>` +
+          `<b>Lato ships 300/400/700/900 and has no 500.</b> Roboto ships 300/400/500/700 — which is why 4.9's ` +
+          `Material surface, whose <code>body-2</code>, <code>title</code> and <code>button</code> levels are all weight 500, ` +
+          `looked the way it did. Today <b>${dead} of ${total} weight-utility uses (${Math.round(100*dead/total)}%)</b> ` +
+          `ask for 500 and render as plain 400, plus 10 raw <code>font-weight: 500</code> declarations in SCSS. ` +
+          `A further 93 <code>font-semibold</code> collapse onto 700, so semibold and bold are the same pixels.`;
+      });
+    </script>
+  </body>
+</html>
