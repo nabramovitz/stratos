@@ -1,0 +1,264 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>contract brand</title>
+    <link rel="stylesheet" href="./probe.css" />
+    <style>
+      body { font: 14px system-ui; margin: 0; height: 100vh; display: flex; flex-direction: column; }
+      header { padding: 10px 16px; border-bottom: 1px solid #ddd; display: flex; gap: 10px; align-items: center; }
+      header h1 { font-size: 14px; margin: 0; font-weight: 600; }
+      main { flex: 1; display: grid; grid-template-columns: 300px 1fr 320px; min-height: 0; }
+      section { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid #ddd; }
+      h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #666;
+           margin: 0; padding: 8px 12px; border-bottom: 1px solid #eee; background: #fafafa; }
+      #tokens { overflow: auto; padding: 6px; }
+      #stage { flex: 1; overflow: auto; padding: 16px; }
+      #reach { overflow: auto; padding: 10px 12px; font-size: 12px; }
+      .row { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 5px; cursor: pointer; }
+      .row:hover { background: #f4f4f4; }
+      .row.sel { background: #eef3ff; outline: 1px solid #b9ccff; }
+      .row input[type=color] { width: 26px; height: 20px; padding: 0; border: 1px solid #ccc; background: none; }
+      .row input[type=text] { width: 92px; font: 10px ui-monospace, monospace; }
+      .row .nm { flex: 1; font: 11px ui-monospace, monospace; }
+      .row .ov { color: #c60; font-weight: 700; }
+      .grp { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: #999;
+             margin: 8px 0 3px 4px; font-weight: 600; }
+      button { font: 12px system-ui; padding: 3px 8px; }
+      .hint { color: #999; font-size: 11px; }
+      .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #999; margin: 10px 0 3px; font-weight: 600; }
+      code { background: #eee; padding: 0 3px; border-radius: 3px; font-size: 11px; }
+      .pill { display: inline-block; background: #eef; border: 1px solid #dde; border-radius: 9px;
+              padding: 0 6px; margin: 0 3px 3px 0; font-size: 11px; }
+      .none { color: #999; font-style: italic; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>contract brand</h1>
+      <input id="bname" value="Acme Cloud" style="font:12px system-ui;padding:3px;width:120px" />
+      <label class="hint"><input type="checkbox" id="dark" /> dark</label>
+      <button id="export">export theme.css</button>
+      <label class="hint" style="cursor:pointer">
+        import <input type="file" id="import" accept=".css" style="display:none" />
+      </label>
+      <span class="hint" id="status"></span>
+      <span class="hint" style="margin-left:auto">brand values in &rarr; theme.css out &rarr; back in</span>
+    </header>
+
+    <main>
+      <section>
+        <h2>1 &middot; brand <span class="hint">(the 30 globals)</span></h2>
+        <div id="tokens"></div>
+      </section>
+
+      <section>
+        <h2>2 &middot; what it looks like <span class="hint">(live)</span></h2>
+        <div id="stage"></div>
+      </section>
+
+      <section style="border-right:0">
+        <h2>3 &middot; what this name reaches</h2>
+        <div id="reach"><span class="hint">Pick a name to see what it affects.</span></div>
+      </section>
+    </main>
+
+    <script type="module">
+      import { publicTier, affects, brandToValues, valuesToBrand } from '../src/contract/brand.ts';
+      import { groupOf } from '../src/contract/resolve.ts';
+      import { emitCss } from '../src/parse/css-emitter.ts';
+      import { parseCss } from '../src/parse/css-parser.ts';
+
+      const [tie, sem] = await Promise.all([
+        fetch('./tie.json').then((r) => r.json()),
+        fetch('./semantics.json').then((r) => r.json()),
+      ]);
+      // ?raw is an import-time suffix; fetching it returns a JS module.
+      const { default: vocab } = await import('./vocabulary.css?raw');
+
+      const pub = publicTier(vocab);
+      // The 30 globals ARE the brand tier, and semantics.json's keys are now
+      // exactly those public names — so the contract hands us the list.
+      const GLOBALS = Object.keys(sem.global);
+
+      const brand = { contractVersion: 1, name: 'Acme Cloud', light: {}, dark: {} };
+      const mode = () => (document.getElementById('dark').checked ? 'dark' : 'light');
+
+      const stage = document.getElementById('stage');
+      const tokens = document.getElementById('tokens');
+      const reach = document.getElementById('reach');
+      const status = document.getElementById('status');
+      let selected = null;
+
+      // Two samples is all the contract ships. The reach panel is honest about
+      // the rest: it names the components a token touches even where there is
+      // no sample to show them in.
+      stage.innerHTML = `
+        <div class="bg-page p-4 rounded-page" style="display:grid;gap:14px">
+          <div class="bg-card-surface text-card-text rounded-card shadow-card p-4 border border-card-border">
+            <h3 class="font-heading text-lg">Applications</h3>
+            <p class="text-text-muted text-sm">3 running, 1 crashed</p>
+            <table class="w-full text-left mt-2 bg-table-surface rounded-table">
+              <thead class="bg-table-header-surface"><tr>
+                <th class="p-2 text-table-header-text text-sm">Name</th>
+                <th class="p-2 text-table-header-text text-sm">Status</th>
+              </tr></thead>
+              <tbody class="text-table-text">
+                <tr class="hover:bg-table-row-hover"><td class="p-2">my-app</td>
+                  <td class="p-2"><span class="bg-ok-soft rounded-status px-2 py-0.5 text-xs">running</span></td></tr>
+                <tr class="bg-table-row-stripe"><td class="p-2">other-app</td>
+                  <td class="p-2"><span class="bg-error-soft rounded-status px-2 py-0.5 text-xs">crashed</span></td></tr>
+              </tbody>
+            </table>
+            <div class="mt-3" style="display:flex;gap:8px;align-items:center">
+              <button class="bg-accent text-on-accent rounded-button px-3 py-1">Add</button>
+              <input class="bg-form-input-surface text-form-input-text border border-form-input-border rounded-form px-2 py-1"
+                     placeholder="Filter…" />
+              <a class="text-link text-sm" href="#">docs</a>
+            </div>
+          </div>
+          <div class="bg-dialog-surface text-dialog-text rounded-dialog shadow-dialog p-4 border border-dialog-border">
+            <h3 class="font-heading">Delete application?</h3>
+            <p class="text-text-muted text-sm mb-2">This cannot be undone.</p>
+            <button class="bg-error text-on-accent rounded-button px-3 py-1">Delete</button>
+            <span class="bg-popup-surface text-popup-text rounded-popup px-2 py-1 text-xs">tooltip</span>
+          </div>
+        </div>`;
+
+      // The root, NOT the stage. vocabulary.css declares the chain in :root
+      // (`--v-card-surface: var(--v-surface)`), and a var() is substituted at
+      // the element the declaration lives on — so --v-card-surface computes to
+      // a literal AT :root and descendants inherit that literal, not the
+      // reference. Setting --v-surface on a subtree therefore moves nothing
+      // that chains to it. Measured: card/table/dialog stayed white. A brand
+      // has to land where the chain is declared, which is also why the live
+      // Stratos service writes its vars onto <html>.
+      const root = document.documentElement;
+      const applyBrand = () => {
+        // Both :root and .dark-theme match <html>; equal specificity, so the
+        // later block (.dark-theme) wins. Inline then beats both.
+        root.classList.toggle('dark-theme', mode() === 'dark');
+        for (const priv of pub.values()) root.style.removeProperty(priv);
+        for (const [name, value] of Object.entries(brand[mode()])) {
+          const priv = pub.get(name);
+          if (priv) root.style.setProperty(priv, value);
+        }
+      };
+
+      const effective = (name) => getComputedStyle(root).getPropertyValue(pub.get(name)).trim();
+
+      // "Show me what this paints." No instrumentation and no static analysis —
+      // set the name to a sentinel and let the cascade answer. It follows the
+      // var() chain for free, which is exactly what a description cannot do.
+      let flashTimer = null;
+      const flash = (name) => {
+        clearTimeout(flashTimer);
+        applyBrand();
+        root.style.setProperty(pub.get(name), '#ff00ff');
+        flashTimer = setTimeout(applyBrand, 900);
+      };
+
+      const showReach = (name) => {
+        const hit = affects(vocab, name, mode());
+        const others = hit.filter((n) => n !== name);
+        const groups = [...new Set(others.map((n) => groupOf(sem, n)).filter(Boolean))];
+        const comps = Object.entries(tie.components)
+          .filter(([, c]) => c.groups.some((g) => groups.includes(g)))
+          .map(([n]) => n);
+        const e = sem.global[name];
+
+        reach.innerHTML =
+          `<b>${name}</b> <code>${effective(name)}</code>` +
+          `<div class="lbl">means</div>${e?.means ?? ''}` +
+          (e?.not ? `<div class="lbl">not</div>${e.not}` : '') +
+          `<div class="lbl">moves ${others.length} other name${others.length === 1 ? '' : 's'} (${mode()})</div>` +
+          (others.length ? others.map((n) => `<span class="pill">${n}</span>`).join('')
+                         : `<span class="none">nothing chains to it</span>`) +
+          `<div class="lbl">reaching ${comps.length} component${comps.length === 1 ? '' : 's'}</div>` +
+          (comps.length ? comps.map((c) => `<span class="pill">${c}</span>`).join('')
+                        : `<span class="none">no component declares those groups</span>`) +
+          `<div class="lbl">show me</div>` +
+          `<button id="flash">flash it magenta</button> ` +
+          `<span class="hint">only where a sample renders it</span>`;
+        document.getElementById('flash').onclick = () => flash(name);
+      };
+
+      const paintList = () => {
+        const kind = (n) => (n.startsWith('color-') ? 'colour' : n.startsWith('font-') ? 'type' : 'shape & size');
+        let html = '';
+        let last = null;
+        for (const n of GLOBALS) {
+          const k = kind(n);
+          if (k !== last) { html += `<div class="grp">${k}</div>`; last = k; }
+          const set = brand[mode()][n];
+          const val = set ?? effective(n);
+          const input = n.startsWith('color-')
+            ? `<input type="color" data-n="${n}" value="${/^#[0-9a-f]{6}$/i.test(val) ? val : '#000000'}" />`
+            : `<input type="text" data-n="${n}" value="${val}" />`;
+          html += `<div class="row${selected === n ? ' sel' : ''}" data-row="${n}">
+                     ${input}<span class="nm">${n}</span>${set ? '<span class="ov">•</span>' : ''}</div>`;
+        }
+        tokens.innerHTML = html;
+
+        tokens.querySelectorAll('.row').forEach((r) =>
+          r.addEventListener('click', (ev) => {
+            if (ev.target.tagName === 'INPUT') return;
+            selected = r.dataset.row;
+            paintList();
+            showReach(selected);
+            flash(selected);
+          }),
+        );
+        tokens.querySelectorAll('input').forEach((i) =>
+          i.addEventListener('input', () => {
+            brand[mode()][i.dataset.n] = i.value;
+            applyBrand();
+            if (selected) showReach(selected);
+            // Re-render the dots, but not while typing in a text field.
+            if (i.type === 'color') paintList();
+            status.textContent = '';
+          }),
+        );
+      };
+
+      /* ---- round trip ---- */
+      document.getElementById('export').addEventListener('click', () => {
+        brand.name = document.getElementById('bname').value;
+        const { root, dark } = brandToValues(brand, pub);
+        // The private tier only. @theme is build-time; a dropped-in file
+        // carrying it would never be compiled, so a brand never ships one.
+        const css = `/* ${brand.name} — contract v${brand.contractVersion} */\n` + emitCss(root, dark);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([css], { type: 'text/css' }));
+        a.download = 'theme.css';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        status.textContent = `exported ${root.size} light / ${dark.size} dark`;
+      });
+
+      document.getElementById('import').addEventListener('change', async (ev) => {
+        const file = ev.target.files[0];
+        if (!file) return;
+        const back = valuesToBrand(parseCss(await file.text()), pub, {
+          contractVersion: brand.contractVersion,
+          name: brand.name,
+        });
+        brand.light = back.light;
+        brand.dark = back.dark;
+        applyBrand();
+        paintList();
+        if (selected) showReach(selected);
+        status.textContent = `imported ${Object.keys(back.light).length} light / ${Object.keys(back.dark).length} dark`;
+      });
+
+      document.getElementById('dark').addEventListener('change', () => {
+        applyBrand();
+        paintList();
+        if (selected) showReach(selected);
+      });
+
+      applyBrand();
+      paintList();
+    </script>
+  </body>
+</html>
