@@ -32,7 +32,16 @@
       code { background: #eee; padding: 0 3px; border-radius: 3px; font-size: 11px; }
       .pill { display: inline-block; background: #eef; border: 1px solid #dde; border-radius: 9px;
               padding: 0 6px; margin: 0 3px 3px 0; font-size: 11px; }
+      .cpill { display: inline-block; background: #f4f4f4; border: 1px solid #e4e4e4; border-radius: 9px;
+               padding: 0 6px; margin: 0 3px 3px 0; font-size: 10px; color: #555; }
       .none { color: #999; font-style: italic; }
+      details { border-bottom: 1px solid #f0f0f0; }
+      summary { cursor: pointer; padding: 4px 2px; font: 11px ui-monospace, monospace; }
+      summary:hover { background: #f7f7f7; }
+      summary::marker { color: #bbb; }
+      .ct { color: #999; font-size: 10px; margin-left: 8px; }
+      .det { padding: 3px 0 7px 16px; }
+      .lbl2 { font-size: 9px; text-transform: uppercase; letter-spacing: .05em; color: #aaa; margin: 4px 0 2px; }
     </style>
   </head>
   <body>
@@ -160,25 +169,56 @@
         flashTimer = setTimeout(applyBrand, 900);
       };
 
+      const compsOf = (g) =>
+        Object.entries(tie.components)
+          .filter(([, c]) => c.groups.includes(g))
+          .map(([n]) => n)
+          .sort();
+
+      const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+
       const showReach = (name) => {
-        const hit = affects(vocab, name, mode());
-        const others = hit.filter((n) => n !== name);
-        const groups = [...new Set(others.map((n) => groupOf(sem, n)).filter(Boolean))];
-        const comps = Object.entries(tie.components)
-          .filter(([, c]) => c.groups.some((g) => groups.includes(g)))
-          .map(([n]) => n);
+        const others = affects(vocab, name, mode()).filter((n) => n !== name);
         const e = sem.global[name];
+
+        // A name never reaches a component directly — it reaches it THROUGH a
+        // group, which is the contract's own structure. Bucketing by group
+        // turns one flat wall of every name and every component into a dozen
+        // lines you can actually scan, and says WHY each one is in the list.
+        const byGroup = new Map();
+        const globals = [];
+        for (const n of others) {
+          const g = groupOf(sem, n);
+          if (!g) globals.push(n);
+          else byGroup.set(g, [...(byGroup.get(g) ?? []), n]);
+        }
+
+        // Distinct: a component declaring several affected groups is reached
+        // once, but is listed under each group that reaches it.
+        const all = new Set();
+        for (const g of byGroup.keys()) for (const c of compsOf(g)) all.add(c);
+
+        const pills = (xs, cls) => xs.map((x) => `<span class="${cls}">${x}</span>`).join('');
+        const section = (label, names, comps) => `
+          <details>
+            <summary>${label}<span class="ct">${plural(names.length, 'name')}${
+              comps ? ` &middot; ${plural(comps.length, 'component')}` : ''
+            }</span></summary>
+            <div class="det">
+              ${pills(names, 'pill')}
+              ${comps?.length ? `<div class="lbl2">in</div>${pills(comps, 'cpill')}` : ''}
+            </div>
+          </details>`;
 
         reach.innerHTML =
           `<b>${name}</b> <code>${effective(name)}</code>` +
           `<div class="lbl">means</div>${e?.means ?? ''}` +
           (e?.not ? `<div class="lbl">not</div>${e.not}` : '') +
-          `<div class="lbl">moves ${others.length} other name${others.length === 1 ? '' : 's'} (${mode()})</div>` +
-          (others.length ? others.map((n) => `<span class="pill">${n}</span>`).join('')
-                         : `<span class="none">nothing chains to it</span>`) +
-          `<div class="lbl">reaching ${comps.length} component${comps.length === 1 ? '' : 's'}</div>` +
-          (comps.length ? comps.map((c) => `<span class="pill">${c}</span>`).join('')
-                        : `<span class="none">no component declares those groups</span>`) +
+          `<div class="lbl">moves ${plural(others.length, 'name')} &middot; reaches ${plural(all.size, 'component')} (${mode()})</div>` +
+          (others.length
+            ? (globals.length ? section('global', globals.sort(), null) : '') +
+              [...byGroup.keys()].sort().map((g) => section(g, byGroup.get(g).sort(), compsOf(g))).join('')
+            : `<span class="none">nothing chains to it</span>`) +
           `<div class="lbl">show me</div>` +
           `<button id="flash">flash it magenta</button> ` +
           `<span class="hint">only where a sample renders it</span>`;
