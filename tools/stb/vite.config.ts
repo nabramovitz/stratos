@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import { playwright } from '@vitest/browser-playwright';
+import tailwindcss from '@tailwindcss/vite';
 import { resolve } from 'node:path';
 
 /**
@@ -13,6 +14,11 @@ import { resolve } from 'node:path';
 export default defineConfig({
   root: '.',
   publicDir: 'public',
+  // stb authors and previews the styling contract, whose binding is
+  // token -> utility -> class. Without Tailwind processing the @theme block,
+  // stb sees the token values but never the utilities they generate — i.e.
+  // exactly the half that does the binding.
+  plugins: [tailwindcss()],
   build: {
     outDir: 'dist',
     sourcemap: true,
