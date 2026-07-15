@@ -16,121 +16,138 @@
     "",
     "'was' records what a name is being collapsed FROM, where the census found",
     "the old naming was actively wrong. It is migration intent, and it expires",
-    "once nothing maps through it."
+    "once nothing maps through it.",
+    "",
+    "KEYS. Every key here is a full public name, minus the leading '--', exactly",
+    "as vocabulary.css declares it: 'color-surface', not 'surface'. This is not",
+    "cosmetic — it is what makes the next rule decidable.",
+    "",
+    "RESOLUTION. Given a public name, a consumer decides global-vs-group like so:",
+    "  1. Exact match against a key of 'global' -> it is global. Globals win.",
+    "  2. Otherwise the segment after the type namespace (color-/font-/radius-/",
+    "     weight-/shadow-/text-), if it is a key of 'groups', is its group.",
+    "  3. Otherwise it is unresolved, and that is a contract bug worth surfacing.",
+    "Step 1 must come first because a group name can also BE a global name:",
+    "'page' and 'code' are both. Prefix-matching alone reads --color-page (the",
+    "global floor colour) as a 'page' group token and --font-code (the global",
+    "monospace face) as a 'code' group token, while --radius-page and",
+    "--font-code-block really are group tokens. Only the closed global set can",
+    "tell those apart, so the set is the authority and the prefix is the",
+    "fallback."
   ],
 
   "global": {
-    "page": {
+    "color-page": {
       "means": "The floor of the app — the colour you see where nothing has been placed.",
       "use": "The app/page background, behind everything else.",
       "not": "Anything raised or contained. If it holds content, it is a surface.",
       "instead": { "content sits on it": "surface" },
       "was": "Collapses app-bg + body-bg, which differed by one step for no reason anything depended on."
     },
-    "surface": {
+    "color-surface": {
       "means": "Raised content that sits ON the page — cards, dialogs, tables, panels.",
       "use": "The default background for anything holding content.",
       "not": "A sunken or alternating region inside a surface.",
       "instead": { "stripes, wells, code blocks": "surface-alt" },
       "was": "content-bg."
     },
-    "surface-alt": {
+    "color-surface-alt": {
       "means": "A sunken or alternate region INSIDE a surface — one step back from it.",
       "use": "Row stripes, wells, hover fills, sub-nav bars, code chips.",
       "not": "Muted TEXT. This is a background colour and always has been.",
       "instead": { "de-emphasised text": "text-muted" },
       "was": "content-secondary — a misnomer the census caught: 88 of its 89 uses were bg-, and its values (#f8fafc light / #0f172a dark) are surfaces, not greys. It was never a text colour. Renamed, not collapsed."
     },
-    "text": {
+    "color-text": {
       "means": "Primary reading text.",
       "use": "Body copy, labels, headings, values — anything meant to be read first.",
       "not": "Text that is deliberately secondary.",
       "instead": { "hints, timestamps, secondary detail": "text-muted" },
       "was": "content-text (198 uses)."
     },
-    "text-muted": {
+    "color-text-muted": {
       "means": "Text that is present but deliberately de-emphasised.",
       "use": "Hints, timestamps, counts, secondary detail, disabled labels.",
       "not": "Input placeholder text — that is a form concern with its own contrast floor.",
       "instead": { "placeholder": "form-placeholder" },
       "was": "content-muted (345 uses). Survived the grey collapse: it and text are the only two real text greys."
     },
-    "border": {
+    "color-border": {
       "means": "The line between two regions.",
       "use": "Card, table, input, and panel edges; dividers.",
       "not": "A focus ring — that is state, not structure.",
       "instead": { "focus outline": "focus" },
       "was": "content-border."
     },
-    "accent": {
+    "color-accent": {
       "means": "THE brand action colour. There is exactly one.",
       "use": "Primary buttons, links, active tabs, focus, selected state — anywhere the brand asserts itself.",
       "not": "Conveying success or failure. Accent means 'act here', not 'this went well'.",
       "instead": { "outcome or state": "ok / warn / error / info / neutral" },
       "was": "Collapses primary + accent + brand. The census found a genuine split-brain: primary and accent were defined in two files with two different value sets (#3b82f6/#60a5fa vs #60a5fa/#38bdf8) and used 92 vs 26 times in templates — the same intent rendering two colours. Primary's values won on weight of use. 'secondary' is DROPPED: one consumer, dead utility classes, two conflicting definitions; gradients now carry their own stops."
     },
-    "accent-hover": {
+    "color-accent-hover": {
       "means": "Accent under the pointer.",
       "use": "Hover state of anything painted accent.",
       "not": "A second brand colour. It is one relationship away from accent and moves when accent moves."
     },
-    "on-accent": {
+    "color-on-accent": {
       "means": "Whatever must stay legible ON TOP of accent.",
       "use": "Label text and icons inside accent-filled controls.",
       "not": "A text colour in its own right — it only exists in contact with accent.",
       "instead": { "text on a normal surface": "text" }
     },
-    "link": {
+    "color-link": {
       "means": "Navigational text — this takes you somewhere.",
       "use": "Inline links in body copy.",
       "not": "A button that performs an action. Looking like a link is not being one.",
       "instead": { "performs an action": "button group + accent" }
     },
-    "focus": {
+    "color-focus": {
       "means": "The keyboard focus ring.",
       "use": "Focus outlines, exclusively.",
       "not": "Selected or active state, which persist after focus leaves.",
       "instead": { "selected/active": "accent" }
     },
 
-    "ok": {
+    "color-ok": {
       "means": "It worked, or it is healthy.",
       "use": "Success chips, healthy app state, passing checks.",
       "not": "The affirmative button in a dialog — that is an action, not an outcome.",
       "instead": { "confirm/submit action": "accent" },
       "was": "success."
     },
-    "warn": {
+    "color-warn": {
       "means": "Needs attention, but nothing is broken yet.",
       "use": "Degraded state, approaching a limit, deprecation.",
       "not": "An actual failure.",
       "instead": { "it failed": "error" },
       "was": "warning."
     },
-    "error": {
+    "color-error": {
       "means": "It failed, or it is broken.",
       "use": "Failure state, validation errors, error dialogs, destructive confirmation.",
       "not": "A destructive action that has not happened yet and might be routine.",
       "was": "Collapses danger + error, which were the same colour (#ef4444) under two names."
     },
-    "info": {
+    "color-info": {
       "means": "Neutral information worth noticing.",
       "use": "Informational banners and notes.",
       "not": "The brand action colour, despite sharing #3b82f6 today. They are the same value for now and may diverge — a brand may repaint accent without repainting info.",
       "instead": { "act here": "accent" }
     },
-    "neutral": {
+    "color-neutral": {
       "means": "Unknown, not applicable, or not yet determined.",
       "use": "Tentative/unknown state, disabled or absent values.",
       "not": "A calm success. Unknown is not good news.",
       "instead": { "healthy": "ok" },
       "was": "tentative."
     },
-    "ok-soft": { "means": "A background tint behind ok content.", "use": "Fill behind a success chip or banner.", "not": "Text or an icon — the tint has nowhere near text contrast.", "instead": { "the status colour itself": "ok" } },
-    "warn-soft": { "means": "A background tint behind warn content.", "use": "Fill behind a warning chip or banner.", "not": "Text or an icon.", "instead": { "the status colour itself": "warn" } },
-    "error-soft": { "means": "A background tint behind error content.", "use": "Fill behind an error chip or banner.", "not": "Text or an icon.", "instead": { "the status colour itself": "error" } },
-    "info-soft": { "means": "A background tint behind info content.", "use": "Fill behind an info chip or banner.", "not": "Text or an icon.", "instead": { "the status colour itself": "info" } },
-    "neutral-soft": { "means": "A background tint behind neutral content.", "use": "Fill behind an unknown/disabled chip.", "not": "Text or an icon.", "instead": { "the status colour itself": "neutral" } },
+    "color-ok-soft": { "means": "A background tint behind ok content.", "use": "Fill behind a success chip or banner.", "not": "Text or an icon — the tint has nowhere near text contrast.", "instead": { "the status colour itself": "ok" } },
+    "color-warn-soft": { "means": "A background tint behind warn content.", "use": "Fill behind a warning chip or banner.", "not": "Text or an icon.", "instead": { "the status colour itself": "warn" } },
+    "color-error-soft": { "means": "A background tint behind error content.", "use": "Fill behind an error chip or banner.", "not": "Text or an icon.", "instead": { "the status colour itself": "error" } },
+    "color-info-soft": { "means": "A background tint behind info content.", "use": "Fill behind an info chip or banner.", "not": "Text or an icon.", "instead": { "the status colour itself": "info" } },
+    "color-neutral-soft": { "means": "A background tint behind neutral content.", "use": "Fill behind an unknown/disabled chip.", "not": "Text or an icon.", "instead": { "the status colour itself": "neutral" } },
 
     "font-body": { "means": "The reading typeface.", "use": "Everything not a heading and not code." },
     "font-heading": { "means": "The typeface for headings.", "use": "Page and section titles. Defaults to font-body — a brand may split them." },
