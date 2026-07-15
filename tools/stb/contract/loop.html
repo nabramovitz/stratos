@@ -62,6 +62,8 @@
     </main>
 
     <script type="module">
+      import { isGlobal as isGlobalIn, groupOf as groupOfIn } from '../src/contract/resolve.ts';
+
       const [tie, sem] = await Promise.all([
         fetch('./tie.json').then((r) => r.json()),
         fetch('./semantics.json').then((r) => r.json()),
@@ -73,19 +75,9 @@
       const themeBlock = vocabText.match(/@theme[^{]*\{([\s\S]*?)\n\}/)?.[1] ?? '';
       const publicNames = [...themeBlock.matchAll(/^\s+--([a-z0-9-]+):/gm)].map((m) => m[1]);
 
-      const GROUPS = Object.keys(sem.groups);
-      // Resolution order is the contract's own (semantics.json $comment): the
-      // closed global set wins on exact match, prefix-matching is the fallback.
-      // The two only disagree where a group name is ALSO a global name — 'page'
-      // and 'code' are both — and there the prefix is wrong: --color-page and
-      // --font-code are globals, while --radius-page and --font-code-block are
-      // genuinely group tokens.
-      const isGlobal = (n) => Object.hasOwn(sem.global, n);
-      const groupOf = (n) => {
-        if (isGlobal(n)) return null;
-        const m = n.match(/^(?:color|font|radius|weight|shadow|text)-([a-z]+)(?:-|$)/);
-        return m && GROUPS.includes(m[1]) ? m[1] : null;
-      };
+      // The contract's resolution rule, not this page's reading of it.
+      const isGlobal = (n) => isGlobalIn(sem, n);
+      const groupOf = (n) => groupOfIn(sem, n);
       // token -> the utility a template would actually carry
       const utilOf = (n) =>
         n.startsWith('color-') ? 'bg-' + n.slice(6)

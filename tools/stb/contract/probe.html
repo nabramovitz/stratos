@@ -46,6 +46,7 @@
       // ?raw is an import-time suffix, not a fetch one — fetching it returns a
       // JS module ("export default ..."), so the file has to be imported.
       import vocabText from './vocabulary.css?raw';
+      import { isGlobal, prefixGroup } from '../src/contract/resolve.ts';
 
       const row = (t, label, got, cls) =>
         (t.innerHTML += `<tr><td>${label}</td><td class="${cls}">${got}</td></tr>`);
@@ -105,29 +106,22 @@
       const withWas = g.filter((e) => e.was).length;
       row(co, 'global names carrying migration intent ("was")', `${withWas}`, 'good');
 
-      // Does every public name land in exactly one place? Nothing above asks.
-      // These three rows encode the contract's resolution rule (semantics.json
-      // $comment) so a consumer never has to guess it — and they are what a
-      // human otherwise has to simulate by hand.
-      const groupKeys = new Set(Object.keys(sem.groups));
-      const isGlobal = (n) => Object.hasOwn(sem.global, n);
-      const prefixGroup = (n) => {
-        const m = n.match(/^(?:color|font|radius|weight|shadow|text)-([a-z]+)(?:-|$)/);
-        return m && groupKeys.has(m[1]) ? m[1] : null;
-      };
+      // Does every public name land in exactly one place? Nothing above asks,
+      // which is how the resolution bug stayed invisible until someone
+      // simulated it by hand.
 
       // Red here means a semantics key names a token the vocabulary does not
       // declare — the mis-key that leaves a name with a silently empty meaning.
       const stale = Object.keys(sem.global).filter((k) => !publicNames.includes(k));
       row(co, 'semantics globals naming no public token', stale.length ? stale.join(' ') : 'none', stale.length ? 'bad' : 'good');
 
-      const unresolved = publicNames.filter((n) => !isGlobal(n) && !prefixGroup(n));
+      const unresolved = publicNames.filter((n) => !isGlobal(sem, n) && !prefixGroup(sem, n));
       row(co, 'public names resolving to neither global nor group', unresolved.length ? unresolved.join(' ') : 'none', unresolved.length ? 'bad' : 'good');
 
       // Expected, not a fault: the names where the closed global set is the only
       // thing that can outvote a prefix-match. Listed so a third one is visible
       // the day someone adds it.
-      const shadowed = publicNames.filter((n) => isGlobal(n) && prefixGroup(n));
+      const shadowed = publicNames.filter((n) => isGlobal(sem, n) && prefixGroup(sem, n));
       row(co, 'globals a prefix-match alone would misread', shadowed.length ? shadowed.join(' ') : 'none', 'note');
     </script>
   </body>
