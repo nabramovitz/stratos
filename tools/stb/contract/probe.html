@@ -73,7 +73,8 @@
 
       // Public names actually declared in @theme. Match the block itself — the
       // word "@theme" also appears in the file's header comment.
-      const themeBlock = vocabText.match(/@theme\s*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+      // [^{]* — the block is `@theme static { … }`, not just `@theme {`.
+      const themeBlock = vocabText.match(/@theme[^{]*\{([\s\S]*?)\n\}/)?.[1] ?? '';
       const publicNames = [...themeBlock.matchAll(/^\s+--([a-z0-9-]+):/gm)].map((m) => m[1]);
       const groupsInVocab = new Set(
         publicNames.map((n) => n.match(/^(?:color|font|radius|weight|shadow)-([a-z]+)-/)?.[1]).filter(Boolean),

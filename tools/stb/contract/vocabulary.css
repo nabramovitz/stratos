@@ -17,7 +17,13 @@
  * so the contract starts at parity with what Stratos already renders.
  */
 
-@theme {
+/* `static` — without it Tailwind emits only the theme variables a *used*
+ * utility happens to reference, and tree-shakes the rest. Measured on this
+ * contract: 31 of 136 names survived to runtime. A contract that only exists
+ * where it is already used cannot be read by an operator tool, previewed, or
+ * offered as a palette — the unused names are exactly the ones somebody needs
+ * to discover. `static` emits all of them. */
+@theme static {
   /* ---- Global semantic: colour (21) ---- */
   --color-page: var(--v-page);
   --color-surface: var(--v-surface);

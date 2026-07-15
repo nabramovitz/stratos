@@ -1,4 +1,52 @@
-/* Probe entry: Tailwind + the contract, the same order Stratos uses
+/* Probe/loop entry: Tailwind + the contract, the same order Stratos uses
  * (tailwind.css does `@import 'tailwindcss'` then declares @theme). */
 @import 'tailwindcss';
 @import './vocabulary.css';
+
+/* Force every contract utility to exist, whether or not a source file happens
+ * to mention it.
+ *
+ * Tailwind is a build-time compiler: it generates a utility only for class
+ * strings it scanned. That is right for Stratos, where unused utilities should
+ * tree-shake out of the bundle. It is wrong for a TOOL whose whole job is to
+ * render markup pasted at runtime and to offer the vocabulary as a palette —
+ * there, the utilities nobody has used yet are precisely the ones the tool must
+ * be able to show. Measured before this: pasting `bg-stepper-rail`, a perfectly
+ * legal contract token, painted nothing.
+ *
+ * This lives in the tool's entry, NOT in vocabulary.css, so Stratos keeps its
+ * tree-shaking. It is not a lockdown: it adds utilities, forbids nothing.
+ */
+@source inline(
+  "{bg,text,border}-{page,surface,surface-alt,text,text-muted,border,accent,accent-hover,on-accent,link,focus,ok,ok-soft,warn,warn-soft,error,error-soft,info,info-soft,neutral,neutral-soft}"
+);
+@source inline(
+  "{bg,text,border}-{shell-page,shell-nav-surface,shell-nav-text,shell-nav-text-muted,shell-nav-hover,shell-nav-active,shell-nav-border,shell-header-surface,shell-header-text,shell-header-border,shell-logo-bg,shell-accent}"
+);
+@source inline(
+  "{bg,text,border}-{page-surface,page-text,page-title,page-tab-active,page-accent,card-surface,card-text,card-border,card-hover,card-accent}"
+);
+@source inline(
+  "{bg,text,border}-{table-surface,table-text,table-border,table-row-hover,table-row-stripe,table-header-surface,table-header-text,table-accent}"
+);
+@source inline(
+  "{bg,text,border}-{dialog-surface,dialog-text,dialog-border,dialog-backdrop,dialog-accent,popup-surface,popup-text,popup-border,popup-accent}"
+);
+@source inline(
+  "{bg,text,border}-{form-input-surface,form-input-text,form-input-border,form-input-focus-border,form-input-disabled,form-placeholder,form-accent,button-accent}"
+);
+@source inline(
+  "{bg,text,border}-{stepper-indicator,stepper-indicator-text,stepper-inactive,stepper-inactive-text,stepper-rail,stepper-accent,status-accent}"
+);
+@source inline(
+  "{bg,text,border}-{chart-series-1,chart-series-2,chart-series-3,chart-series-4,chart-series-5,chart-series-6,chart-series-7,chart-series-8,chart-grid,chart-axis-text,chart-accent}"
+);
+@source inline(
+  "{bg,text,border}-{code-surface,code-text,code-border,code-gutter,code-accent,login-page,login-card,login-text,login-accent}"
+);
+@source inline(
+  "rounded-{control,surface,page,card,table,dialog,popup,form,button,stepper,status,code,login}"
+);
+@source inline("font-{body,heading,code,page-title,card,table,dialog,popup,form,button,stepper,status,chart,code-block,login}");
+@source inline("shadow-{card,dialog,popup,login}");
+@source inline("hover:bg-{table-row-hover,card-hover,accent-hover,shell-nav-hover}");
