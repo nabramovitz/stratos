@@ -1,0 +1,4 @@
+/* Probe entry: Tailwind + the contract, the same order Stratos uses
+ * (tailwind.css does `@import 'tailwindcss'` then declares @theme). */
+@import 'tailwindcss';
+@import './vocabulary.css';

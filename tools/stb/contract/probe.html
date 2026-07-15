@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>contract probe</title>
+    <link rel="stylesheet" href="./probe.css" />
+    <style>
+      body { font: 14px system-ui; margin: 24px; max-width: 1000px; }
+      td { padding: 3px 10px; font-family: ui-monospace, monospace; font-size: 12px; }
+      .bad { color: #b00; font-weight: 600; }
+      .good { color: #070; font-weight: 600; }
+      .note { color: #a60; font-weight: 600; }
+      h3 { margin: 22px 0 4px; }
+      p.sub { color: #555; margin: 2px 0 8px; font-size: 13px; }
+      /* No border-radius here — it would shadow the radius utilities being probed. */
+      .sw { display: inline-block; padding: 4px 10px; margin-right: 6px; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <h2>Styling contract — probe</h2>
+    <p class="sub">
+      Reports what the contract does. It does not enforce anything and nothing here can fail a build.
+    </p>
+
+    <h3>1. Do the utilities paint? (the tie: token &rarr; utility &rarr; class)</h3>
+    <div>
+      <span class="sw bg-surface" style="border:1px solid #ddd">bg-surface</span>
+      <span class="sw bg-dialog-surface" style="border:1px solid #ddd">bg-dialog-surface</span>
+      <span class="sw bg-accent text-on-accent">bg-accent</span>
+      <span class="sw bg-popup-surface text-popup-text">bg-popup-surface</span>
+      <span class="sw bg-ok-soft">bg-ok-soft</span>
+      <span class="sw bg-error-soft">bg-error-soft</span>
+      <span class="sw rounded-dialog bg-surface-alt">rounded-dialog</span>
+      <span class="sw bg-blue-500" style="color:#fff">bg-blue-500 (off-contract)</span>
+    </div>
+    <table id="paint"></table>
+
+    <h3>2. Intent-layer coherence</h3>
+    <p class="sub">
+      Whether the three layers still describe the same thing. Drift is shown, not blocked &mdash;
+      an inconsistency here is information, not a failure.
+    </p>
+    <table id="coherence"></table>
+
+    <script type="module">
+      // ?raw is an import-time suffix, not a fetch one — fetching it returns a
+      // JS module ("export default ..."), so the file has to be imported.
+      import vocabText from './vocabulary.css?raw';
+
+      const row = (t, label, got, cls) =>
+        (t.innerHTML += `<tr><td>${label}</td><td class="${cls}">${got}</td></tr>`);
+
+      /* ---- 1. paint ---- */
+      const paint = document.getElementById('paint');
+      const painted = (cls, prop) => {
+        const el = document.querySelector('.' + cls);
+        const v = getComputedStyle(el)[prop];
+        const inert = v === 'rgba(0, 0, 0, 0)' || v === 'transparent' || v === '' || v === '0px';
+        row(paint, `.${cls} → ${prop}`, inert ? 'INERT (utility does not exist)' : v, inert ? 'bad' : 'good');
+      };
+      ['bg-surface', 'bg-dialog-surface', 'bg-accent', 'bg-popup-surface', 'bg-ok-soft'].forEach((c) =>
+        painted(c, 'backgroundColor'),
+      );
+      painted('rounded-dialog', 'borderRadius');
+      painted('bg-blue-500', 'backgroundColor');
+
+      /* ---- 2. coherence ---- */
+      const co = document.getElementById('coherence');
+      const [tie, sem] = await Promise.all([
+        fetch('./tie.json').then((r) => r.json()),
+        fetch('./semantics.json').then((r) => r.json()),
+      ]);
+
+      // Public names actually declared in @theme. Match the block itself — the
+      // word "@theme" also appears in the file's header comment.
+      const themeBlock = vocabText.match(/@theme\s*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+      const publicNames = [...themeBlock.matchAll(/^\s+--([a-z0-9-]+):/gm)].map((m) => m[1]);
+      const groupsInVocab = new Set(
+        publicNames.map((n) => n.match(/^(?:color|font|radius|weight|shadow)-([a-z]+)-/)?.[1]).filter(Boolean),
+      );
+
+      const declaredGroups = new Set(Object.values(tie.components).flatMap((c) => c.groups));
+      const semGroups = new Set(Object.keys(sem.groups));
+
+      row(co, 'public names in @theme', publicNames.length, 'good');
+      row(co, 'components declared in tie', Object.keys(tie.components).length, 'good');
+      row(co, 'components with a multi-group set', Object.values(tie.components).filter((c) => c.groups.length > 1).length, 'good');
+      row(co, 'groups used by tie', [...declaredGroups].sort().join(' '), 'good');
+
+      const tieNotInVocab = [...declaredGroups].filter((g) => !groupsInVocab.has(g));
+      row(co, 'tie groups with NO tokens in vocabulary', tieNotInVocab.length ? tieNotInVocab.join(' ') : 'none', tieNotInVocab.length ? 'bad' : 'good');
+
+      const tieNotInSem = [...declaredGroups].filter((g) => !semGroups.has(g));
+      row(co, 'tie groups with NO semantics entry', tieNotInSem.length ? tieNotInSem.join(' ') : 'none', tieNotInSem.length ? 'bad' : 'good');
+
+      const semNotUsed = [...semGroups].filter((g) => !declaredGroups.has(g));
+      row(co, 'groups defined but tied to no component', semNotUsed.length ? semNotUsed.join(' ') : 'none', semNotUsed.length ? 'note' : 'good');
+
+      // The semantics layer's own quality signal: how many names carry a boundary.
+      const g = Object.values(sem.global);
+      row(co, 'global names with semantics', `${g.length}`, 'good');
+      const withNot = g.filter((e) => e.not).length;
+      row(co, 'global names recording a boundary ("not")', `${withNot}/${g.length}`, withNot === g.length ? 'good' : 'note');
+      const withWas = g.filter((e) => e.was).length;
+      row(co, 'global names carrying migration intent ("was")', `${withWas}`, 'good');
+    </script>
+  </body>
+</html>
