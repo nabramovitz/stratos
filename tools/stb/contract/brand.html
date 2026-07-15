@@ -45,6 +45,10 @@
       #sizes .delta { font: 10px ui-monospace, monospace; white-space: nowrap; }
       #sizes .samp { white-space: nowrap; line-height: 1.15; }
       #sizes input { width: 62px; font: 10px ui-monospace, monospace; padding: 1px 3px; }
+      #sizes .means { font: 10px ui-monospace, monospace; white-space: nowrap; }
+      /* Icon uses are marked, not merged: resizing a rung for reading also
+         resizes every glyph riding it. base is 64% glyphs. */
+      #sizes .glyph { color: #7c3aed; }
       .flatmark { color: #b91c1c; font-weight: 700; }
       .okmark { color: #047857; }
       .mapped { color: #b45309; font-weight: 700; }
@@ -378,17 +382,29 @@
       // ladder — whether 14 and 16 are one step or two is a judgement, and the
       // only instrument for it is looking. The % below is a hint about where to
       // look, not a verdict.
+      // Uses are split text vs icon because the scale does two jobs, and only
+      // one of them is type. main.scss:26-33 defaults every .material-icons /
+      // .custom-icon / .icon to text-2xl, so any glyph that is not 24px
+      // overrides with a text-* class — 86 of the 690 uses size a glyph. It
+      // matters most at base, which is 64% icons: resize it for reading and you
+      // resize 57 icons.
+      //
+      // `means` is not invented here. main.scss:14-19 declares it —
+      // h1 { @apply text-2xl font-semibold } down to h4 { text-base } — which
+      // is the only place in Stratos a rung's intent is written down, and it
+      // arrives via the ELEMENT, not the class. The rungs with no entry have no
+      // declared meaning anywhere.
       const SIZES = [
-        { n: 'xs', uses: 128 },
-        { n: 'sm', uses: 388 },
-        { n: 'base', uses: 89 },
-        { n: 'lg', uses: 45 },
-        { n: 'xl', uses: 27 },
-        { n: '2xl', uses: 7 },
-        { n: '3xl', uses: 2 },
-        { n: '4xl', uses: 1 },
-        { n: '5xl', uses: 0 },
-        { n: '6xl', uses: 3 },
+        { n: 'xs', text: 128, icon: 0 },
+        { n: 'sm', text: 377, icon: 11 },
+        { n: 'base', text: 32, icon: 57, means: 'h4' },
+        { n: 'lg', text: 41, icon: 4, means: 'h3' },
+        { n: 'xl', text: 20, icon: 7, means: 'h2' },
+        { n: '2xl', text: 4, icon: 3, means: 'h1 · icon default' },
+        { n: '3xl', text: 2, icon: 0 },
+        { n: '4xl', text: 0, icon: 1 },
+        { n: '5xl', text: 0, icon: 0 },
+        { n: '6xl', text: 0, icon: 3 },
       ];
       const CLOSE_PCT = 20; // below this, a rung is worth eyeballing against its neighbour
 
@@ -405,7 +421,7 @@
       const paintSizes = () => {
         const familyList = brand[mode()]['font-body'] ?? brand.light['font-body'] ?? effective('font-body');
         let prev = null;
-        document.getElementById('sizes').innerHTML = SIZES.map(({ n, uses }) => {
+        document.getElementById('sizes').innerHTML = SIZES.map(({ n, text, icon, means }) => {
           const px = pxOf(n);
           const set = brand.sizes?.[n] !== undefined;
           const d = prev === null ? null : ((px - prev) / prev) * 100;
@@ -413,7 +429,8 @@
           const close = d !== null && d < CLOSE_PCT;
           return `<tr class="${close ? 'close' : ''}">
             <td class="nm">text-${n}</td>
-            <td class="use">${uses || '—'}</td>
+            <td class="use">${text || '—'}${icon ? `<span class="glyph"> +${icon}&#9673;</span>` : ''}</td>
+            <td class="means">${means ? `<span class="okmark">${means}</span>` : '<span class="hint">—</span>'}</td>
             <td class="px">${Math.round(px * 100) / 100}px</td>
             <td class="delta">${
               d === null
