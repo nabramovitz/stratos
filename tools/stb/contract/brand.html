@@ -34,6 +34,9 @@
               padding: 0 6px; margin: 0 3px 3px 0; font-size: 11px; }
       .cpill { display: inline-block; background: #f4f4f4; border: 1px solid #e4e4e4; border-radius: 9px;
                padding: 0 6px; margin: 0 3px 3px 0; font-size: 10px; color: #555; }
+      .cpill.dup { border-style: dashed; border-color: #b9a; background: #faf7fa; }
+      .why { color: #777; font-size: 11px; margin: 2px 0 4px; }
+      .why code { background: #eee; padding: 0 3px; border-radius: 3px; font-size: 10px; }
       .none { color: #999; font-style: italic; }
       details { border-bottom: 1px solid #f0f0f0; }
       summary { cursor: pointer; padding: 4px 2px; font: 11px ui-monospace, monospace; }
@@ -193,12 +196,34 @@
           else byGroup.set(g, [...(byGroup.get(g) ?? []), n]);
         }
 
-        // Distinct: a component declaring several affected groups is reached
-        // once, but is listed under each group that reaches it.
-        const all = new Set();
-        for (const g of byGroup.keys()) for (const c of compsOf(g)) all.add(c);
+        // A component declaring several affected groups is reached once but
+        // listed under each group that reaches it, so the rows sum higher than
+        // the total. That is honest on both counts and reads as an error
+        // unless it is said out loud — hence the note below.
+        const listedIn = new Map(); // component -> the affected groups reaching it
+        for (const g of byGroup.keys())
+          for (const c of compsOf(g)) listedIn.set(c, [...(listedIn.get(c) ?? []), g]);
+        const shared = [...listedIn].filter(([, gs]) => gs.length > 1);
+        const listings = [...listedIn.values()].reduce((n, gs) => n + gs.length, 0);
+
+        const overlap = !shared.length
+          ? ''
+          : `<div class="why">${
+              shared.length === 1
+                ? `<code>${shared[0][0]}</code> is in ${shared[0][1].length} of these groups`
+                : `${plural(shared.length, 'component')} are in more than one group`
+            }, so the rows below sum to ${listings}.</div>`;
 
         const pills = (xs, cls) => xs.map((x) => `<span class="${cls}">${x}</span>`).join('');
+        const cpills = (xs) =>
+          xs
+            .map((c) => {
+              const gs = listedIn.get(c) ?? [];
+              return gs.length > 1
+                ? `<span class="cpill dup" title="reached through ${gs.join(' + ')}">${c}</span>`
+                : `<span class="cpill">${c}</span>`;
+            })
+            .join('');
         const section = (label, names, comps) => `
           <details>
             <summary>${label}<span class="ct">${plural(names.length, 'name')}${
@@ -206,7 +231,7 @@
             }</span></summary>
             <div class="det">
               ${pills(names, 'pill')}
-              ${comps?.length ? `<div class="lbl2">in</div>${pills(comps, 'cpill')}` : ''}
+              ${comps?.length ? `<div class="lbl2">in</div>${cpills(comps)}` : ''}
             </div>
           </details>`;
 
@@ -214,7 +239,8 @@
           `<b>${name}</b> <code>${effective(name)}</code>` +
           `<div class="lbl">means</div>${e?.means ?? ''}` +
           (e?.not ? `<div class="lbl">not</div>${e.not}` : '') +
-          `<div class="lbl">moves ${plural(others.length, 'name')} &middot; reaches ${plural(all.size, 'component')} (${mode()})</div>` +
+          `<div class="lbl">moves ${plural(others.length, 'name')} &middot; reaches ${plural(listedIn.size, 'component')} (${mode()})</div>` +
+          overlap +
           (others.length
             ? (globals.length ? section('global', globals.sort(), null) : '') +
               [...byGroup.keys()].sort().map((g) => section(g, byGroup.get(g).sort(), compsOf(g))).join('')
