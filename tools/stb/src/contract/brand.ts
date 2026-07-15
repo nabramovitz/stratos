@@ -18,7 +18,29 @@ export interface Brand {
   name: string;
   light: Record<string, string>;
   dark: Record<string, string>;
+  /**
+   * Which real face each of Tailwind's weight names resolves to, e.g.
+   * { medium: '700' }. Keyed by the name, valued by the weight.
+   *
+   * This exists because the browser's own fallback is NUMERIC and therefore
+   * wrong: ask Lato for 500, which it does not ship, and you get 400 — the
+   * regular — so `font-medium` renders identically to body text and nothing
+   * says so. The right fallback is by APPEARANCE, and appearance cannot be
+   * computed: Lato's 700 reads like Roboto's 500 because Lato's bold is
+   * restrained, which no arithmetic over the numbers predicts. So the map is
+   * authored by eye, per family, and travels with the brand.
+   *
+   * Not mode-split — a face is a face in light and dark alike.
+   */
+  weights?: Record<string, string>;
 }
+
+/** Tailwind's weight ladder: the names a template already carries. */
+export const WEIGHT_NAMES = [
+  'thin', 'extralight', 'light', 'normal', 'medium', 'semibold', 'bold', 'extrabold', 'black',
+] as const;
+
+const weightVar = (name: string) => `--font-weight-${name}`;
 
 export type Mode = 'light' | 'dark';
 
@@ -106,7 +128,15 @@ export function brandToValues(brand: Brand, pub: Map<string, string>) {
     }
     return out;
   };
-  return { root: tier(brand.light), dark: tier(brand.dark) };
+  const root = tier(brand.light);
+  // The weight map rides the same channel. Tailwind compiles font-medium to
+  // `font-weight: var(--font-weight-medium)`, so redeclaring that at :root
+  // retargets every existing use with no rebuild and no template edit.
+  // Verified live: font-medium moved 500 -> 700 from an inline :root property.
+  for (const [name, value] of Object.entries(brand.weights ?? {})) {
+    if ((WEIGHT_NAMES as readonly string[]).includes(name)) root.set(weightVar(name), value);
+  }
+  return { root, dark: tier(brand.dark) };
 }
 
 /** The way back: parsed `:root`/`.dark-theme` values -> a brand file. */
@@ -124,5 +154,12 @@ export function valuesToBrand(
     }
     return out;
   };
-  return { ...meta, light: tier(parsed.root), dark: tier(parsed.dark) };
+  const weights: Record<string, string> = {};
+  for (const name of WEIGHT_NAMES) {
+    const v = parsed.root.get(weightVar(name));
+    if (v) weights[name] = v;
+  }
+  const brand: Brand = { ...meta, light: tier(parsed.root), dark: tier(parsed.dark) };
+  if (Object.keys(weights).length) brand.weights = weights;
+  return brand;
 }

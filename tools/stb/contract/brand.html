@@ -19,7 +19,23 @@
       main > section > h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #666;
            margin: 0; padding: 8px 12px; border-bottom: 1px solid #eee; background: #fafafa; }
       #tokens { overflow: auto; padding: 6px; }
-      #stage { flex: 1; overflow: auto; padding: 16px; }
+      #stage { flex: 1; overflow: auto; padding: 16px; min-height: 0; }
+      /* The weight ladder sits under the page, deliberately: the decision is
+       * "does this look right on my product", which needs both in one view. */
+      #type { border-top: 1px solid #ddd; background: #fcfcfc; padding: 8px 12px 10px; flex: none; max-height: 46%; overflow: auto; }
+      #type .th { font: 600 10px ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase;
+                  color: #64748b; margin-bottom: 6px; }
+      #ladder { border-collapse: collapse; width: 100%; }
+      #ladder td { padding: 3px 8px 3px 0; border-bottom: 1px solid #f2f2f2; vertical-align: middle; }
+      #ladder .nm { font: 12px ui-monospace, monospace; white-space: nowrap; }
+      #ladder .use { font: 10px ui-monospace, monospace; color: #aaa; text-align: right; white-space: nowrap; }
+      #ladder .samp { font-size: 17px; white-space: nowrap; }
+      #ladder .lands { font: 10px ui-monospace, monospace; white-space: nowrap; }
+      #ladder select { font: 11px ui-monospace, monospace; padding: 1px; }
+      #ladder tr.flat { background: #fff5f5; }
+      .flatmark { color: #b91c1c; font-weight: 700; }
+      .okmark { color: #047857; }
+      .mapped { color: #b45309; font-weight: 700; }
       #reach { overflow: auto; padding: 10px 12px; font-size: 12px; }
       .row { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 5px; cursor: pointer; }
       .row:hover { background: #f4f4f4; }
@@ -75,6 +91,13 @@
       <section>
         <h2>2 &middot; page <select id="scene"></select> <span class="hint">(live)</span></h2>
         <div id="stage"></div>
+        <div id="type">
+          <div class="th">
+            weights &mdash; <span id="famname"></span>
+            <span class="hint" id="famfaces"></span>
+          </div>
+          <table id="ladder"></table>
+        </div>
       </section>
 
       <section style="border-right:0">
@@ -84,7 +107,7 @@
     </main>
 
     <script type="module">
-      import { publicTier, affects, brandToValues, valuesToBrand } from '../src/contract/brand.ts';
+      import { publicTier, affects, brandToValues, valuesToBrand, WEIGHT_NAMES } from '../src/contract/brand.ts';
       import { groupOf } from '../src/contract/resolve.ts';
       import { emitCss } from '../src/parse/css-emitter.ts';
       import { parseCss } from '../src/parse/css-parser.ts';
@@ -101,7 +124,18 @@
       // exactly those public names — so the contract hands us the list.
       const GLOBALS = Object.keys(sem.global);
 
-      const brand = { contractVersion: 1, name: 'Acme Cloud', light: {}, dark: {} };
+      // Seeded with what Stratos actually renders, not with what the contract
+      // defaults to. The contract's font-body value was lifted from --font-sans,
+      // which names Inter — a face nothing loads and no class uses. The product
+      // really renders Lato, via body { font-family: 'Inter','Lato',sans-serif }
+      // falling through. Opening on the truth is the point of the tool.
+      const brand = {
+        contractVersion: 1,
+        name: 'Acme Cloud',
+        light: { 'font-body': 'Lato, sans-serif' },
+        dark: {},
+        weights: {},
+      };
       const mode = () => (document.getElementById('dark').checked ? 'dark' : 'light');
 
       const stage = document.getElementById('stage');
@@ -118,18 +152,18 @@
       const input = (ph, extra = '') =>
         `<input class="bg-form-input-surface text-form-input-text border border-form-input-border rounded-form px-2 py-1 text-sm ${extra}" placeholder="${ph}" />`;
       const chip = (tone, text) =>
-        `<span class="bg-${tone}-soft text-${tone} rounded-status font-status weight-status px-2 py-0.5 text-xs">${text}</span>`;
+        `<span class="bg-${tone}-soft text-${tone} rounded-status font-status font-medium px-2 py-0.5 text-xs">${text}</span>`;
 
       const SCENES = {
         'sign in': `
           <div class="bg-login-page rounded-page p-8" style="display:grid;place-items:center;min-height:340px">
             <div class="bg-login-card rounded-login shadow-login p-6" style="width:290px">
               <div class="bg-shell-logo-bg rounded-surface mb-4" style="width:34px;height:34px"></div>
-              <h2 class="font-login weight-heading text-login-text text-lg">Sign in</h2>
+              <h2 class="font-login font-semibold text-login-text text-lg">Sign in</h2>
               <p class="text-text-muted text-sm mb-4">Use your Cloud Foundry account</p>
               ${input('Username', 'w-full mb-2')}
               ${input('Password', 'w-full')}
-              <button class="bg-login-accent text-on-accent rounded-button font-button weight-button px-3 py-1.5 w-full mt-3">Sign in</button>
+              <button class="bg-login-accent text-on-accent rounded-button font-button font-medium px-3 py-1.5 w-full mt-3">Sign in</button>
               <p class="text-error text-xs mt-2">Those credentials were not recognised.</p>
               <a class="text-link text-xs" href="#">Forgotten your password?</a>
             </div>
@@ -148,21 +182,21 @@
                 console.example.com
               </header>
               <div class="bg-page-surface text-page-text p-4">
-                <h1 class="font-page-title text-page-title weight-page-title text-xl">Applications</h1>
+                <h1 class="font-page-title text-page-title font-semibold text-xl">Applications</h1>
                 <div class="border-b border-border mt-2 mb-3" style="display:flex;gap:14px">
                   <span class="text-page-tab-active border-b-2 border-page-tab-active text-sm pb-1">All</span>
                   <span class="text-text-muted text-sm pb-1">Running</span>
                 </div>
                 <div class="bg-card-surface text-card-text border border-card-border rounded-card shadow-card p-3">
                   <div class="mb-2" style="display:flex;gap:8px;align-items:center">
-                    <button class="bg-accent text-on-accent rounded-button font-button weight-button px-3 py-1 text-sm">Add</button>
+                    <button class="bg-accent text-on-accent rounded-button font-button font-medium px-3 py-1 text-sm">Add</button>
                     ${input('Filter…')}
                     <a class="text-link text-sm" href="#">docs</a>
                   </div>
                   <table class="w-full text-left bg-table-surface rounded-table font-table">
                     <thead class="bg-table-header-surface"><tr>
-                      <th class="p-2 text-table-header-text text-sm weight-table-header">Name</th>
-                      <th class="p-2 text-table-header-text text-sm weight-table-header">Status</th>
+                      <th class="p-2 text-table-header-text text-sm font-semibold">Name</th>
+                      <th class="p-2 text-table-header-text text-sm font-semibold">Status</th>
                     </tr></thead>
                     <tbody class="text-table-text text-sm">
                       <tr class="hover:bg-table-row-hover"><td class="p-2">my-app</td><td class="p-2">${chip('ok', 'running')}</td></tr>
@@ -179,13 +213,13 @@
         'delete dialog': `
           <div class="bg-page rounded-page p-8" style="display:grid;place-items:center;min-height:340px">
             <div class="bg-dialog-surface text-dialog-text border border-dialog-border rounded-dialog shadow-dialog p-5" style="width:330px">
-              <h3 class="font-dialog weight-heading text-lg">Delete application?</h3>
+              <h3 class="font-dialog font-semibold text-lg">Delete application?</h3>
               <p class="text-text-muted text-sm mt-1 mb-4">
                 <code class="bg-code-surface text-code-text rounded-code px-1 font-code">my-app</code> will be removed. This cannot be undone.
               </p>
               <div style="display:flex;gap:8px;align-items:center">
-                <button class="bg-error text-on-accent rounded-button font-button weight-button px-3 py-1 text-sm">Delete</button>
-                <button class="bg-surface-alt text-text rounded-button font-button weight-button px-3 py-1 text-sm">Cancel</button>
+                <button class="bg-error text-on-accent rounded-button font-button font-medium px-3 py-1 text-sm">Delete</button>
+                <button class="bg-surface-alt text-text rounded-button font-button font-medium px-3 py-1 text-sm">Cancel</button>
                 <span class="bg-popup-surface text-popup-text rounded-popup shadow-popup px-2 py-1 text-xs" style="margin-left:auto">
                   Permanently deletes it
                 </span>
@@ -195,7 +229,7 @@
 
         'new endpoint': `
           <div class="bg-page-surface text-page-text rounded-page p-5" style="min-height:340px">
-            <h1 class="font-page-title text-page-title weight-page-title text-xl mb-4">Register endpoint</h1>
+            <h1 class="font-page-title text-page-title font-semibold text-xl mb-4">Register endpoint</h1>
             <div class="font-stepper mb-4" style="display:flex;align-items:center;gap:6px">
               <span class="bg-stepper-indicator text-stepper-indicator-text rounded-stepper px-2 py-0.5 text-xs">1</span>
               <span class="text-sm">Details</span>
@@ -204,21 +238,21 @@
               <span class="text-text-muted text-sm">Connect</span>
             </div>
             <div class="bg-card-surface border border-card-border rounded-card p-4" style="display:grid;gap:8px;max-width:380px">
-              <label class="font-form text-sm weight-form-label">Name</label>
+              <label class="font-form text-sm font-medium">Name</label>
               ${input('production', 'w-full')}
-              <label class="font-form text-sm weight-form-label mt-1">API endpoint</label>
+              <label class="font-form text-sm font-medium mt-1">API endpoint</label>
               ${input('https://api.example.com', 'w-full')}
               <pre class="bg-code-surface text-code-text border border-code-border rounded-code font-code text-xs p-2 mt-1"><span class="text-code-gutter">1</span>  cf api https://api.example.com</pre>
               <div class="mt-2" style="display:flex;gap:8px">
-                <button class="bg-accent text-on-accent rounded-button font-button weight-button px-3 py-1 text-sm">Next</button>
-                <button class="bg-form-input-disabled text-text-muted rounded-button font-button weight-button px-3 py-1 text-sm">Back</button>
+                <button class="bg-accent text-on-accent rounded-button font-button font-medium px-3 py-1 text-sm">Next</button>
+                <button class="bg-form-input-disabled text-text-muted rounded-button font-button font-medium px-3 py-1 text-sm">Back</button>
               </div>
             </div>
           </div>`,
 
         usage: `
           <div class="bg-page-surface text-page-text rounded-page p-5" style="min-height:340px">
-            <h1 class="font-page-title text-page-title weight-page-title text-xl mb-3">Usage</h1>
+            <h1 class="font-page-title text-page-title font-semibold text-xl mb-3">Usage</h1>
             <div class="bg-card-surface border border-card-border rounded-card shadow-card p-4 font-chart">
               <div style="display:flex;align-items:flex-end;gap:6px;height:120px">
                 ${[1, 2, 3, 4, 5, 6, 7, 8]
@@ -231,6 +265,94 @@
               </div>
             </div>
           </div>`,
+      };
+
+      /* ---- the weight ladder ---- */
+
+      // Tailwind's stock ladder, and how often each rung is used in Stratos
+      // today (measured over src/frontend templates + ts). The counts are here
+      // because "135 places" is what makes a dead rung worth looking at.
+      const LADDER = [
+        { n: 'light', d: 300, uses: 1 },
+        { n: 'normal', d: 400, uses: 8 },
+        { n: 'medium', d: 500, uses: 135 },
+        { n: 'semibold', d: 600, uses: 93 },
+        { n: 'bold', d: 700, uses: 19 },
+        { n: 'black', d: 900, uses: 0 },
+      ];
+
+      // Which faces are actually loaded for a family. Not measured and not
+      // guessed — the FontFaceSet knows, because @font-face declared it.
+      const facesOf = (familyList) => {
+        const first = (familyList ?? '').split(',')[0].trim().replace(/^['"]|['"]$/g, '');
+        const w = [...document.fonts]
+          .filter((f) => f.family.replace(/^['"]|['"]$/g, '') === first)
+          .map((f) => parseInt(f.weight, 10))
+          .filter((n) => !Number.isNaN(n));
+        return { family: first, faces: [...new Set(w)].sort((a, b) => a - b) };
+      };
+
+      // The browser's own matching rule, reproduced so the tool can SAY what it
+      // will do. This is the rule that quietly turns 500 into 400.
+      const resolveFace = (want, have) => {
+        if (!have.length) return null;
+        if (have.includes(want)) return want;
+        const below = have.filter((w) => w < want).sort((a, b) => b - a);
+        const above = have.filter((w) => w > want).sort((a, b) => a - b);
+        if (want >= 400 && want <= 500) {
+          const mid = above.filter((w) => w <= 500);
+          return mid[0] ?? below[0] ?? above[0];
+        }
+        if (want < 400) return below[0] ?? above[0];
+        return above[0] ?? below[0];
+      };
+
+      const paintLadder = () => {
+        const familyList = brand[mode()]['font-body'] ?? brand.light['font-body'] ?? effective('font-body');
+        const { family, faces } = facesOf(familyList);
+        document.getElementById('famname').textContent = family || '(unknown)';
+        document.getElementById('famfaces').textContent = faces.length
+          ? `ships ${faces.join(' / ')}`
+          : 'no @font-face loaded — the tool cannot tell what it ships';
+
+        const normalFace = resolveFace(Number(brand.weights.normal ?? 400), faces);
+        document.getElementById('ladder').innerHTML = LADDER.map(({ n, d, uses }) => {
+          const want = Number(brand.weights[n] ?? d);
+          const lands = resolveFace(want, faces);
+          const mapped = brand.weights[n] !== undefined;
+          // The failure worth flagging: an emphasis rung that renders as body.
+          const flat = lands !== null && lands === normalFace && n !== 'normal';
+          // Selected by what it LANDS on, not by what it asks for. The asked-for
+          // value is often not a face at all — that is the whole problem — and
+          // matching on it leaves the picker showing the first option, which
+          // reads as a choice nobody made.
+          const opts = faces
+            .map((f) => `<option value="${f}"${f === lands ? ' selected' : ''}>${f}</option>`)
+            .join('');
+          return `<tr class="${flat ? 'flat' : ''}">
+            <td class="nm">font-${n}</td>
+            <td class="use">${uses || '—'}</td>
+            <td><span class="samp" data-w="${n}" style="font-family:${familyList};font-weight:${want}">Deployed 4 minutes ago</span></td>
+            <td class="lands">${
+              lands === null
+                ? '<span class="hint">?</span>'
+                : flat
+                  ? `<span class="flatmark">${lands} &mdash; same as body</span>`
+                  : `<span class="okmark">${lands}</span>`
+            }</td>
+            <td>${faces.length ? `<select data-n="${n}">${opts}</select>` : ''}
+                ${mapped ? '<span class="mapped">&bull;</span>' : ''}</td>
+          </tr>`;
+        }).join('');
+
+        document.querySelectorAll('#ladder select').forEach((s) =>
+          s.addEventListener('change', () => {
+            brand.weights[s.dataset.n] = s.value;
+            applyBrand();
+            paintLadder();
+            status.textContent = '';
+          }),
+        );
       };
 
       const scenePick = document.getElementById('scene');
@@ -263,6 +385,10 @@
           const priv = pub.get(name);
           if (priv) root.style.setProperty(priv, value);
         }
+        // Tailwind compiles font-medium to font-weight: var(--font-weight-medium),
+        // so the map takes effect at runtime from here. Measured: 500 -> 700.
+        for (const n of WEIGHT_NAMES) root.style.removeProperty(`--font-weight-${n}`);
+        for (const [n, v] of Object.entries(brand.weights)) root.style.setProperty(`--font-weight-${n}`, v);
       };
 
       const effective = (name) => getComputedStyle(root).getPropertyValue(pub.get(name)).trim();
@@ -433,6 +559,7 @@
         // A colour the engine cannot parse is flagged, not swallowed.
         if (text) text.classList.toggle('bad', n.startsWith('color-') && !isColour(value));
         if (selected === n) showReach(n);
+        if (n === 'font-body') paintLadder(); // the family changed: new faces, new ladder
         status.textContent = '';
       };
 
@@ -475,18 +602,23 @@
         });
         brand.light = back.light;
         brand.dark = back.dark;
+        brand.weights = back.weights ?? {};
         applyBrand();
         paintList(); // whole list changed at once — the one time a rebuild is right
+        paintLadder();
         status.textContent = `imported ${Object.keys(back.light).length} light / ${Object.keys(back.dark).length} dark`;
       });
 
       document.getElementById('dark').addEventListener('change', () => {
         applyBrand();
         paintList();
+        paintLadder();
       });
 
       applyBrand();
       paintList();
+      // document.fonts is only authoritative once the faces have loaded.
+      document.fonts.ready.then(paintLadder);
     </script>
   </body>
 </html>

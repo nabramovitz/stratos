@@ -111,6 +111,32 @@ describe('round trip', () => {
     expect(valuesToBrand(parseCss(css), pub, { contractVersion: 1, name: 'Modern' })).toEqual(modern);
   });
 
+  it('carries the weight map, which is how a font-less value gets a face', () => {
+    // Lato ships no 500, so the browser's numeric fallback hands back 400 and
+    // font-medium renders as body text. The map points the name at a face that
+    // exists, chosen by eye. It must survive the round trip like anything else.
+    const mapped: Brand = {
+      contractVersion: 1,
+      name: 'Lato brand',
+      light: { 'font-body': 'Lato, sans-serif' },
+      dark: {},
+      weights: { medium: '700', semibold: '700' },
+    };
+    const pub = publicTier(vocab);
+    const { root, dark } = brandToValues(mapped, pub);
+    const css = emitCss(root, dark);
+    // Emitted at :root, where Tailwind's utility reads it — not into @theme.
+    expect(css).toContain('--font-weight-medium: 700;');
+    expect(css).not.toContain('@theme');
+    expect(valuesToBrand(parseCss(css), pub, { contractVersion: 1, name: 'Lato brand' })).toEqual(mapped);
+  });
+
+  it('ignores a weight name Tailwind does not have', () => {
+    const rogue: Brand = { contractVersion: 1, name: 'x', light: {}, dark: {}, weights: { chunky: '700' } };
+    const { root } = brandToValues(rogue, publicTier(vocab));
+    expect([...root.keys()].some((k) => k.includes('chunky'))).toBe(false);
+  });
+
   it('drops names outside the contract instead of emitting them', () => {
     const rogue: Brand = { ...brand, light: { 'color-accent': '#fff', 'color-invented': '#000' } };
     const { root } = brandToValues(rogue, publicTier(vocab));

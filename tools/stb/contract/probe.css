@@ -3,6 +3,24 @@
 @import 'tailwindcss';
 @import './vocabulary.css';
 
+/* Stratos's own faces, copied from core/assets/fonts.
+ *
+ * The tool cannot judge a font by name. Whether `font-medium` renders as
+ * anything at all is a property of the FACES that are loaded, not of the family
+ * string — Lato ships 300/400/700/900 and no 500, so a request for 500 silently
+ * returns the regular. To show that, the tool has to hold the same faces the
+ * product does. Roboto is here because 4.9 rendered its Material surface in it,
+ * which is the comparison an operator is making.
+ */
+@font-face { font-family: 'Lato'; font-weight: 300; font-display: block; src: url('/fonts/lato-v14-latin-300.woff2') format('woff2'); }
+@font-face { font-family: 'Lato'; font-weight: 400; font-display: block; src: url('/fonts/lato-v14-latin-regular.woff2') format('woff2'); }
+@font-face { font-family: 'Lato'; font-weight: 700; font-display: block; src: url('/fonts/lato-v14-latin-700.woff2') format('woff2'); }
+@font-face { font-family: 'Lato'; font-weight: 900; font-display: block; src: url('/fonts/lato-v14-latin-900.woff2') format('woff2'); }
+@font-face { font-family: 'Roboto'; font-weight: 300; font-display: block; src: url('/fonts/roboto-v18-latin-300.woff2') format('woff2'); }
+@font-face { font-family: 'Roboto'; font-weight: 400; font-display: block; src: url('/fonts/roboto-v18-latin-regular.woff2') format('woff2'); }
+@font-face { font-family: 'Roboto'; font-weight: 500; font-display: block; src: url('/fonts/roboto-v18-latin-500.woff2') format('woff2'); }
+@font-face { font-family: 'Roboto'; font-weight: 700; font-display: block; src: url('/fonts/roboto-v18-latin-700.woff2') format('woff2'); }
+
 /* Force every contract utility to exist, whether or not a source file happens
  * to mention it.
  *
@@ -49,5 +67,8 @@
 );
 @source inline("font-{body,heading,code,page-title,card,table,dialog,popup,form,button,stepper,status,chart,code-block,login}");
 @source inline("weight-{body,heading,page-title,table-header,form-label,button,status}");
+/* Tailwind's own weight ladder — the names a template already carries. The tool
+ * has to render them to show what each one resolves to in a given family. */
+@source inline("font-{thin,extralight,light,normal,medium,semibold,bold,extrabold,black}");
 @source inline("shadow-{card,dialog,popup,login}");
 @source inline("hover:bg-{table-row-hover,card-hover,accent-hover,shell-nav-hover}");
