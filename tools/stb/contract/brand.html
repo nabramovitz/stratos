@@ -10,7 +10,13 @@
       header h1 { font-size: 14px; margin: 0; font-weight: 600; }
       main { flex: 1; display: grid; grid-template-columns: 340px 1fr 320px; min-height: 0; }
       section { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid #ddd; }
-      h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #666;
+      /* Every chrome rule below is scoped so it cannot reach into #stage. The
+       * stage renders contract markup, and a scene inheriting the tool's own
+       * h2/button/code styling is a preview that lies about what the contract
+       * paints — the "Sign in" heading came out uppercase on a grey slab. The
+       * direct-child combinator does the work: the section's own h2 matches,
+       * a scene's h2 is deeper and does not. */
+      main > section > h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #666;
            margin: 0; padding: 8px 12px; border-bottom: 1px solid #eee; background: #fafafa; }
       #tokens { overflow: auto; padding: 6px; }
       #stage { flex: 1; overflow: auto; padding: 16px; }
@@ -26,10 +32,10 @@
       .row .ov { color: #c60; font-weight: 700; width: 8px; flex: none; }
       .grp { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: #999;
              margin: 8px 0 3px 4px; font-weight: 600; }
-      button { font: 12px system-ui; padding: 3px 8px; }
+      header button, #reach button { font: 12px system-ui; padding: 3px 8px; }
       .hint { color: #999; font-size: 11px; }
       .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #999; margin: 10px 0 3px; font-weight: 600; }
-      code { background: #eee; padding: 0 3px; border-radius: 3px; font-size: 11px; }
+      #reach code { background: #eee; padding: 0 3px; border-radius: 3px; font-size: 11px; }
       .pill { display: inline-block; background: #eef; border: 1px solid #dde; border-radius: 9px;
               padding: 0 6px; margin: 0 3px 3px 0; font-size: 11px; }
       .cpill { display: inline-block; background: #f4f4f4; border: 1px solid #e4e4e4; border-radius: 9px;
@@ -67,7 +73,7 @@
       </section>
 
       <section>
-        <h2>2 &middot; what it looks like <span class="hint">(live)</span></h2>
+        <h2>2 &middot; page <select id="scene"></select> <span class="hint">(live)</span></h2>
         <div id="stage"></div>
       </section>
 
@@ -104,40 +110,140 @@
       const status = document.getElementById('status');
       let selected = null;
 
-      // Two samples is all the contract ships. The reach panel is honest about
-      // the rest: it names the components a token touches even where there is
-      // no sample to show them in.
-      stage.innerHTML = `
-        <div class="bg-page p-4 rounded-page" style="display:grid;gap:14px">
-          <div class="bg-card-surface text-card-text rounded-card shadow-card p-4 border border-card-border">
-            <h3 class="font-heading text-lg">Applications</h3>
-            <p class="text-text-muted text-sm">3 running, 1 crashed</p>
-            <table class="w-full text-left mt-2 bg-table-surface rounded-table">
-              <thead class="bg-table-header-surface"><tr>
-                <th class="p-2 text-table-header-text text-sm">Name</th>
-                <th class="p-2 text-table-header-text text-sm">Status</th>
-              </tr></thead>
-              <tbody class="text-table-text">
-                <tr class="hover:bg-table-row-hover"><td class="p-2">my-app</td>
-                  <td class="p-2"><span class="bg-ok-soft rounded-status px-2 py-0.5 text-xs">running</span></td></tr>
-                <tr class="bg-table-row-stripe"><td class="p-2">other-app</td>
-                  <td class="p-2"><span class="bg-error-soft rounded-status px-2 py-0.5 text-xs">crashed</span></td></tr>
-              </tbody>
-            </table>
-            <div class="mt-3" style="display:flex;gap:8px;align-items:center">
-              <button class="bg-accent text-on-accent rounded-button px-3 py-1">Add</button>
-              <input class="bg-form-input-surface text-form-input-text border border-form-input-border rounded-form px-2 py-1"
-                     placeholder="Filter…" />
-              <a class="text-link text-sm" href="#">docs</a>
+      // Operators brand pages, not components, so the stage is scenes. These
+      // are hand-written contract markup, and between them they render all 13
+      // groups — so every global has somewhere to show itself. They are not
+      // Stratos: generating scenes from real components is the scaffold's job,
+      // and until it exists these stand in.
+      const input = (ph, extra = '') =>
+        `<input class="bg-form-input-surface text-form-input-text border border-form-input-border rounded-form px-2 py-1 text-sm ${extra}" placeholder="${ph}" />`;
+      const chip = (tone, text) =>
+        `<span class="bg-${tone}-soft text-${tone} rounded-status font-status px-2 py-0.5 text-xs">${text}</span>`;
+
+      const SCENES = {
+        'sign in': `
+          <div class="bg-login-page rounded-page p-8" style="display:grid;place-items:center;min-height:340px">
+            <div class="bg-login-card rounded-login shadow-login p-6" style="width:290px">
+              <div class="bg-shell-logo-bg rounded-surface mb-4" style="width:34px;height:34px"></div>
+              <h2 class="font-login font-heading text-login-text text-lg">Sign in</h2>
+              <p class="text-text-muted text-sm mb-4">Use your Cloud Foundry account</p>
+              ${input('Username', 'w-full mb-2')}
+              ${input('Password', 'w-full')}
+              <button class="bg-login-accent text-on-accent rounded-button font-button px-3 py-1.5 w-full mt-3">Sign in</button>
+              <p class="text-error text-xs mt-2">Those credentials were not recognised.</p>
+              <a class="text-link text-xs" href="#">Forgotten your password?</a>
             </div>
-          </div>
-          <div class="bg-dialog-surface text-dialog-text rounded-dialog shadow-dialog p-4 border border-dialog-border">
-            <h3 class="font-heading">Delete application?</h3>
-            <p class="text-text-muted text-sm mb-2">This cannot be undone.</p>
-            <button class="bg-error text-on-accent rounded-button px-3 py-1">Delete</button>
-            <span class="bg-popup-surface text-popup-text rounded-popup px-2 py-1 text-xs">tooltip</span>
-          </div>
-        </div>`;
+          </div>`,
+
+        applications: `
+          <div class="bg-page rounded-page" style="display:flex;min-height:360px;overflow:hidden">
+            <nav class="bg-shell-nav-surface text-shell-nav-text border-r border-shell-nav-border p-3" style="width:150px">
+              <div class="bg-shell-logo-bg rounded-surface mb-4" style="width:26px;height:26px"></div>
+              <div class="bg-shell-nav-active rounded-control px-2 py-1 text-sm mb-1">Applications</div>
+              <div class="text-shell-nav-text-muted hover:bg-shell-nav-hover rounded-control px-2 py-1 text-sm mb-1">Endpoints</div>
+              <div class="text-shell-nav-text-muted hover:bg-shell-nav-hover rounded-control px-2 py-1 text-sm">Services</div>
+            </nav>
+            <div style="flex:1;min-width:0">
+              <header class="bg-shell-header-surface text-shell-header-text border-b border-shell-header-border px-4 py-2 text-sm">
+                console.example.com
+              </header>
+              <div class="bg-page-surface text-page-text p-4">
+                <h1 class="font-page-title text-page-title font-heading text-xl">Applications</h1>
+                <div class="border-b border-border mt-2 mb-3" style="display:flex;gap:14px">
+                  <span class="text-page-tab-active border-b-2 border-page-tab-active text-sm pb-1">All</span>
+                  <span class="text-text-muted text-sm pb-1">Running</span>
+                </div>
+                <div class="bg-card-surface text-card-text border border-card-border rounded-card shadow-card p-3">
+                  <div class="mb-2" style="display:flex;gap:8px;align-items:center">
+                    <button class="bg-accent text-on-accent rounded-button font-button px-3 py-1 text-sm">Add</button>
+                    ${input('Filter…')}
+                    <a class="text-link text-sm" href="#">docs</a>
+                  </div>
+                  <table class="w-full text-left bg-table-surface rounded-table font-table">
+                    <thead class="bg-table-header-surface"><tr>
+                      <th class="p-2 text-table-header-text text-sm">Name</th>
+                      <th class="p-2 text-table-header-text text-sm">Status</th>
+                    </tr></thead>
+                    <tbody class="text-table-text text-sm">
+                      <tr class="hover:bg-table-row-hover"><td class="p-2">my-app</td><td class="p-2">${chip('ok', 'running')}</td></tr>
+                      <tr class="bg-table-row-stripe"><td class="p-2">other-app</td><td class="p-2">${chip('error', 'crashed')}</td></tr>
+                      <tr class="hover:bg-table-row-hover"><td class="p-2">worker</td><td class="p-2">${chip('warn', 'degraded')}</td></tr>
+                      <tr class="bg-table-row-stripe"><td class="p-2">legacy</td><td class="p-2">${chip('neutral', 'unknown')}</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>`,
+
+        'delete dialog': `
+          <div class="bg-page rounded-page p-8" style="display:grid;place-items:center;min-height:340px">
+            <div class="bg-dialog-surface text-dialog-text border border-dialog-border rounded-dialog shadow-dialog p-5" style="width:330px">
+              <h3 class="font-dialog font-heading text-lg">Delete application?</h3>
+              <p class="text-text-muted text-sm mt-1 mb-4">
+                <code class="bg-code-surface text-code-text rounded-code px-1 font-code">my-app</code> will be removed. This cannot be undone.
+              </p>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button class="bg-error text-on-accent rounded-button font-button px-3 py-1 text-sm">Delete</button>
+                <button class="bg-surface-alt text-text rounded-button font-button px-3 py-1 text-sm">Cancel</button>
+                <span class="bg-popup-surface text-popup-text rounded-popup shadow-popup px-2 py-1 text-xs" style="margin-left:auto">
+                  Permanently deletes it
+                </span>
+              </div>
+            </div>
+          </div>`,
+
+        'new endpoint': `
+          <div class="bg-page-surface text-page-text rounded-page p-5" style="min-height:340px">
+            <h1 class="font-page-title text-page-title font-heading text-xl mb-4">Register endpoint</h1>
+            <div class="font-stepper mb-4" style="display:flex;align-items:center;gap:6px">
+              <span class="bg-stepper-indicator text-stepper-indicator-text rounded-stepper px-2 py-0.5 text-xs">1</span>
+              <span class="text-sm">Details</span>
+              <span class="bg-stepper-rail" style="flex:1;height:2px"></span>
+              <span class="bg-stepper-inactive text-stepper-inactive-text rounded-stepper px-2 py-0.5 text-xs">2</span>
+              <span class="text-text-muted text-sm">Connect</span>
+            </div>
+            <div class="bg-card-surface border border-card-border rounded-card p-4" style="display:grid;gap:8px;max-width:380px">
+              <label class="font-form text-sm">Name</label>
+              ${input('production', 'w-full')}
+              <label class="font-form text-sm mt-1">API endpoint</label>
+              ${input('https://api.example.com', 'w-full')}
+              <pre class="bg-code-surface text-code-text border border-code-border rounded-code font-code text-xs p-2 mt-1"><span class="text-code-gutter">1</span>  cf api https://api.example.com</pre>
+              <div class="mt-2" style="display:flex;gap:8px">
+                <button class="bg-accent text-on-accent rounded-button font-button px-3 py-1 text-sm">Next</button>
+                <button class="bg-form-input-disabled text-text-muted rounded-button font-button px-3 py-1 text-sm">Back</button>
+              </div>
+            </div>
+          </div>`,
+
+        usage: `
+          <div class="bg-page-surface text-page-text rounded-page p-5" style="min-height:340px">
+            <h1 class="font-page-title text-page-title font-heading text-xl mb-3">Usage</h1>
+            <div class="bg-card-surface border border-card-border rounded-card shadow-card p-4 font-chart">
+              <div style="display:flex;align-items:flex-end;gap:6px;height:120px">
+                ${[1, 2, 3, 4, 5, 6, 7, 8]
+                  .map((i) => `<div class="bg-chart-series-${i}" style="flex:1;height:${25 + i * 9}%"></div>`)
+                  .join('')}
+              </div>
+              <div class="bg-chart-grid" style="height:1px"></div>
+              <div class="text-chart-axis-text text-xs mt-1" style="display:flex;justify-content:space-between">
+                <span>Mon</span><span>Sun</span>
+              </div>
+            </div>
+          </div>`,
+      };
+
+      const scenePick = document.getElementById('scene');
+      scenePick.innerHTML = Object.keys(SCENES).map((n) => `<option>${n}</option>`).join('');
+      scenePick.value = 'applications';
+      const paintScene = () => {
+        stage.innerHTML = SCENES[scenePick.value];
+      };
+      scenePick.addEventListener('change', () => {
+        paintScene();
+        if (selected) flash(selected); // show it again on the scene just opened
+      });
+      paintScene();
 
       // The root, NOT the stage. vocabulary.css declares the chain in :root
       // (`--v-card-surface: var(--v-surface)`), and a var() is substituted at
