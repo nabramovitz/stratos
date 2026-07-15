@@ -137,6 +137,24 @@ describe('round trip', () => {
     expect([...root.keys()].some((k) => k.includes('chunky'))).toBe(false);
   });
 
+  it('carries the size ladder too — same channel, same round trip', () => {
+    const sized: Brand = {
+      contractVersion: 1, name: 'Sized', light: {}, dark: {},
+      sizes: { sm: '15px', base: '17px' },
+    };
+    const pub = publicTier(vocab);
+    const { root, dark } = brandToValues(sized, pub);
+    const css = emitCss(root, dark);
+    expect(css).toContain('--text-sm: 15px;');
+    expect(valuesToBrand(parseCss(css), pub, { contractVersion: 1, name: 'Sized' })).toEqual(sized);
+  });
+
+  it('ignores a size step Tailwind does not have', () => {
+    const rogue: Brand = { contractVersion: 1, name: 'x', light: {}, dark: {}, sizes: { humongous: '99px' } };
+    const { root } = brandToValues(rogue, publicTier(vocab));
+    expect([...root.keys()].some((k) => k.includes('humongous'))).toBe(false);
+  });
+
   it('drops names outside the contract instead of emitting them', () => {
     const rogue: Brand = { ...brand, light: { 'color-accent': '#fff', 'color-invented': '#000' } };
     const { root } = brandToValues(rogue, publicTier(vocab));

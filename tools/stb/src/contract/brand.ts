@@ -33,7 +33,20 @@ export interface Brand {
    * Not mode-split — a face is a face in light and dark alike.
    */
   weights?: Record<string, string>;
+  /**
+   * Which value each of Tailwind's size steps takes, e.g. { sm: '15px' }.
+   *
+   * A size fails differently from a weight. A weight dies because the family
+   * ships no face; a size dies because two rungs sit too close to read as
+   * different levels — 12/14/16/18/20 is a 2px ladder. Whether 14 and 16 are
+   * one step or two cannot be computed from the numbers, so this is authored
+   * too, and the tool's job is to render the rungs so the judgement can be made.
+   */
+  sizes?: Record<string, string>;
 }
+
+/** Tailwind's size ladder: the steps a template already carries. */
+export const SIZE_NAMES = ['xs', 'sm', 'base', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl', '6xl'] as const;
 
 /** Tailwind's weight ladder: the names a template already carries. */
 export const WEIGHT_NAMES = [
@@ -41,6 +54,7 @@ export const WEIGHT_NAMES = [
 ] as const;
 
 const weightVar = (name: string) => `--font-weight-${name}`;
+const sizeVar = (name: string) => `--text-${name}`;
 
 export type Mode = 'light' | 'dark';
 
@@ -136,6 +150,10 @@ export function brandToValues(brand: Brand, pub: Map<string, string>) {
   for (const [name, value] of Object.entries(brand.weights ?? {})) {
     if ((WEIGHT_NAMES as readonly string[]).includes(name)) root.set(weightVar(name), value);
   }
+  // Same channel again: text-sm compiles to font-size: var(--text-sm).
+  for (const [name, value] of Object.entries(brand.sizes ?? {})) {
+    if ((SIZE_NAMES as readonly string[]).includes(name)) root.set(sizeVar(name), value);
+  }
   return { root, dark: tier(brand.dark) };
 }
 
@@ -159,7 +177,13 @@ export function valuesToBrand(
     const v = parsed.root.get(weightVar(name));
     if (v) weights[name] = v;
   }
+  const sizes: Record<string, string> = {};
+  for (const name of SIZE_NAMES) {
+    const v = parsed.root.get(sizeVar(name));
+    if (v) sizes[name] = v;
+  }
   const brand: Brand = { ...meta, light: tier(parsed.root), dark: tier(parsed.dark) };
   if (Object.keys(weights).length) brand.weights = weights;
+  if (Object.keys(sizes).length) brand.sizes = sizes;
   return brand;
 }

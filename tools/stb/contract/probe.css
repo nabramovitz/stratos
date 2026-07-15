@@ -70,5 +70,10 @@
 /* Tailwind's own weight ladder — the names a template already carries. The tool
  * has to render them to show what each one resolves to in a given family. */
 @source inline("font-{thin,extralight,light,normal,medium,semibold,bold,extrabold,black}");
+/* And its size ladder. Measured: without this, Tailwind tree-shakes its OWN
+ * default theme — base/2xl/3xl/4xl/5xl/6xl were absent at runtime here because
+ * no scene happened to use them. A tool that shows a ladder must hold all of
+ * its rungs, including the ones nothing has used yet. */
+@source inline("text-{xs,sm,base,lg,xl,2xl,3xl,4xl,5xl,6xl}");
 @source inline("shadow-{card,dialog,popup,login}");
 @source inline("hover:bg-{table-row-hover,card-hover,accent-hover,shell-nav-hover}");

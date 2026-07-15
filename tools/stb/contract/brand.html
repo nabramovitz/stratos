@@ -32,7 +32,19 @@
       #ladder .samp { font-size: 17px; white-space: nowrap; }
       #ladder .lands { font: 10px ui-monospace, monospace; white-space: nowrap; }
       #ladder select { font: 11px ui-monospace, monospace; padding: 1px; }
-      #ladder tr.flat { background: #fff5f5; }
+      #ladder tr.flat, #sizes tr.close { background: #fff5f5; }
+      #type .tab { font: 600 10px ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase;
+                   border: 1px solid #ddd; background: #fff; color: #888; padding: 2px 8px; cursor: pointer;
+                   border-radius: 4px; margin-right: 3px; }
+      #type .tab.on { background: #eef3ff; border-color: #b9ccff; color: #234; }
+      #sizes { border-collapse: collapse; width: 100%; }
+      #sizes td { padding: 2px 8px 2px 0; border-bottom: 1px solid #f2f2f2; vertical-align: baseline; }
+      #sizes .nm { font: 12px ui-monospace, monospace; white-space: nowrap; }
+      #sizes .use { font: 10px ui-monospace, monospace; color: #aaa; text-align: right; white-space: nowrap; }
+      #sizes .px { font: 10px ui-monospace, monospace; color: #64748b; white-space: nowrap; }
+      #sizes .delta { font: 10px ui-monospace, monospace; white-space: nowrap; }
+      #sizes .samp { white-space: nowrap; line-height: 1.15; }
+      #sizes input { width: 62px; font: 10px ui-monospace, monospace; padding: 1px 3px; }
       .flatmark { color: #b91c1c; font-weight: 700; }
       .okmark { color: #047857; }
       .mapped { color: #b45309; font-weight: 700; }
@@ -93,10 +105,13 @@
         <div id="stage"></div>
         <div id="type">
           <div class="th">
-            weights &mdash; <span id="famname"></span>
+            <button class="tab on" data-tab="weights">weights</button>
+            <button class="tab" data-tab="sizes">sizes</button>
+            &mdash; <span id="famname"></span>
             <span class="hint" id="famfaces"></span>
           </div>
           <table id="ladder"></table>
+          <table id="sizes" hidden></table>
         </div>
       </section>
 
@@ -107,7 +122,7 @@
     </main>
 
     <script type="module">
-      import { publicTier, affects, brandToValues, valuesToBrand, WEIGHT_NAMES } from '../src/contract/brand.ts';
+      import { publicTier, affects, brandToValues, valuesToBrand, WEIGHT_NAMES, SIZE_NAMES } from '../src/contract/brand.ts';
       import { groupOf } from '../src/contract/resolve.ts';
       import { emitCss } from '../src/parse/css-emitter.ts';
       import { parseCss } from '../src/parse/css-parser.ts';
@@ -355,6 +370,84 @@
         );
       };
 
+      /* ---- the size ladder ---- */
+
+      // A size collapses for a different reason than a weight does. A weight
+      // dies because the family ships no face; a size dies because two rungs
+      // sit too close to read as different levels. 12/14/16/18/20 is a 2px
+      // ladder — whether 14 and 16 are one step or two is a judgement, and the
+      // only instrument for it is looking. The % below is a hint about where to
+      // look, not a verdict.
+      const SIZES = [
+        { n: 'xs', uses: 128 },
+        { n: 'sm', uses: 388 },
+        { n: 'base', uses: 89 },
+        { n: 'lg', uses: 45 },
+        { n: 'xl', uses: 27 },
+        { n: '2xl', uses: 7 },
+        { n: '3xl', uses: 2 },
+        { n: '4xl', uses: 1 },
+        { n: '5xl', uses: 0 },
+        { n: '6xl', uses: 3 },
+      ];
+      const CLOSE_PCT = 20; // below this, a rung is worth eyeballing against its neighbour
+
+      const sizeProbe = document.createElement('span');
+      sizeProbe.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap';
+      document.body.appendChild(sizeProbe);
+      // Read the rendered size rather than the declaration: a rem is not a px
+      // until something resolves it, and a remap has to show up here.
+      const pxOf = (name) => {
+        sizeProbe.className = `text-${name}`;
+        return parseFloat(getComputedStyle(sizeProbe).fontSize);
+      };
+
+      const paintSizes = () => {
+        const familyList = brand[mode()]['font-body'] ?? brand.light['font-body'] ?? effective('font-body');
+        let prev = null;
+        document.getElementById('sizes').innerHTML = SIZES.map(({ n, uses }) => {
+          const px = pxOf(n);
+          const set = brand.sizes?.[n] !== undefined;
+          const d = prev === null ? null : ((px - prev) / prev) * 100;
+          prev = px;
+          const close = d !== null && d < CLOSE_PCT;
+          return `<tr class="${close ? 'close' : ''}">
+            <td class="nm">text-${n}</td>
+            <td class="use">${uses || '—'}</td>
+            <td class="px">${Math.round(px * 100) / 100}px</td>
+            <td class="delta">${
+              d === null
+                ? '<span class="hint">—</span>'
+                : close
+                  ? `<span class="flatmark">+${d.toFixed(0)}% &mdash; look</span>`
+                  : `<span class="okmark">+${d.toFixed(0)}%</span>`
+            }</td>
+            <td><span class="samp" style="font-family:${familyList};font-size:${px}px">Applications</span></td>
+            <td><input data-s="${n}" value="${Math.round(px * 100) / 100}px" spellcheck="false" />
+                ${set ? '<span class="mapped">&bull;</span>' : ''}</td>
+          </tr>`;
+        }).join('');
+
+        document.querySelectorAll('#sizes input').forEach((i) =>
+          i.addEventListener('input', () => {
+            brand.sizes = brand.sizes ?? {};
+            brand.sizes[i.dataset.s] = i.value;
+            applyBrand();
+            status.textContent = '';
+          }),
+        );
+      };
+
+      document.querySelectorAll('#type .tab').forEach((b) =>
+        b.addEventListener('click', () => {
+          const sizes = b.dataset.tab === 'sizes';
+          document.querySelectorAll('#type .tab').forEach((x) => x.classList.toggle('on', x === b));
+          document.getElementById('ladder').hidden = sizes;
+          document.getElementById('sizes').hidden = !sizes;
+          if (sizes) paintSizes();
+        }),
+      );
+
       const scenePick = document.getElementById('scene');
       scenePick.innerHTML = Object.keys(SCENES).map((n) => `<option>${n}</option>`).join('');
       scenePick.value = 'applications';
@@ -389,6 +482,8 @@
         // so the map takes effect at runtime from here. Measured: 500 -> 700.
         for (const n of WEIGHT_NAMES) root.style.removeProperty(`--font-weight-${n}`);
         for (const [n, v] of Object.entries(brand.weights)) root.style.setProperty(`--font-weight-${n}`, v);
+        for (const n of SIZE_NAMES) root.style.removeProperty(`--text-${n}`);
+        for (const [n, v] of Object.entries(brand.sizes ?? {})) root.style.setProperty(`--text-${n}`, v);
       };
 
       const effective = (name) => getComputedStyle(root).getPropertyValue(pub.get(name)).trim();
@@ -603,6 +698,7 @@
         brand.light = back.light;
         brand.dark = back.dark;
         brand.weights = back.weights ?? {};
+        brand.sizes = back.sizes ?? {};
         applyBrand();
         paintList(); // whole list changed at once — the one time a rebuild is right
         paintLadder();
