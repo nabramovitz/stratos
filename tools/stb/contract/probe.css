@@ -48,5 +48,6 @@
   "rounded-{control,surface,page,card,table,dialog,popup,form,button,stepper,status,code,login}"
 );
 @source inline("font-{body,heading,code,page-title,card,table,dialog,popup,form,button,stepper,status,chart,code-block,login}");
+@source inline("weight-{body,heading,page-title,table-header,form-label,button,status}");
 @source inline("shadow-{card,dialog,popup,login}");
 @source inline("hover:bg-{table-row-hover,card-hover,accent-hover,shell-nav-hover}");

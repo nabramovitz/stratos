@@ -31,6 +31,8 @@
       <span class="sw bg-ok-soft">bg-ok-soft</span>
       <span class="sw bg-error-soft">bg-error-soft</span>
       <span class="sw rounded-dialog bg-surface-alt">rounded-dialog</span>
+      <span class="sw weight-button">weight-button</span>
+      <span class="sw weight-status">weight-status</span>
       <span class="sw bg-blue-500" style="color:#fff">bg-blue-500 (off-contract)</span>
     </div>
     <table id="paint"></table>
@@ -64,6 +66,20 @@
       );
       painted('rounded-dialog', 'borderRadius');
       painted('bg-blue-500', 'backgroundColor');
+
+      // Weight is the one tier with no Tailwind namespace of its own, so the
+      // contract defines these utilities itself (@utility, vocabulary.css).
+      // Before that they were inert, and inertness here is invisible: an
+      // unstyled weight is 400, which is a legitimate value. So compare the
+      // painted weight against the token rather than against "looks unset".
+      const weightPaints = (cls) => {
+        const got = getComputedStyle(document.querySelector('.' + cls)).fontWeight;
+        const want = getComputedStyle(document.documentElement).getPropertyValue('--' + cls).trim();
+        const ok = got === want;
+        row(paint, `.${cls} → fontWeight`, ok ? got : `${got} — token says ${want}`, ok ? 'good' : 'bad');
+      };
+      weightPaints('weight-button');
+      weightPaints('weight-status');
 
       /* ---- 2. coherence ---- */
       const co = document.getElementById('coherence');

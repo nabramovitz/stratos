@@ -118,18 +118,18 @@
       const input = (ph, extra = '') =>
         `<input class="bg-form-input-surface text-form-input-text border border-form-input-border rounded-form px-2 py-1 text-sm ${extra}" placeholder="${ph}" />`;
       const chip = (tone, text) =>
-        `<span class="bg-${tone}-soft text-${tone} rounded-status font-status px-2 py-0.5 text-xs">${text}</span>`;
+        `<span class="bg-${tone}-soft text-${tone} rounded-status font-status weight-status px-2 py-0.5 text-xs">${text}</span>`;
 
       const SCENES = {
         'sign in': `
           <div class="bg-login-page rounded-page p-8" style="display:grid;place-items:center;min-height:340px">
             <div class="bg-login-card rounded-login shadow-login p-6" style="width:290px">
               <div class="bg-shell-logo-bg rounded-surface mb-4" style="width:34px;height:34px"></div>
-              <h2 class="font-login font-heading text-login-text text-lg">Sign in</h2>
+              <h2 class="font-login weight-heading text-login-text text-lg">Sign in</h2>
               <p class="text-text-muted text-sm mb-4">Use your Cloud Foundry account</p>
               ${input('Username', 'w-full mb-2')}
               ${input('Password', 'w-full')}
-              <button class="bg-login-accent text-on-accent rounded-button font-button px-3 py-1.5 w-full mt-3">Sign in</button>
+              <button class="bg-login-accent text-on-accent rounded-button font-button weight-button px-3 py-1.5 w-full mt-3">Sign in</button>
               <p class="text-error text-xs mt-2">Those credentials were not recognised.</p>
               <a class="text-link text-xs" href="#">Forgotten your password?</a>
             </div>
@@ -148,21 +148,21 @@
                 console.example.com
               </header>
               <div class="bg-page-surface text-page-text p-4">
-                <h1 class="font-page-title text-page-title font-heading text-xl">Applications</h1>
+                <h1 class="font-page-title text-page-title weight-page-title text-xl">Applications</h1>
                 <div class="border-b border-border mt-2 mb-3" style="display:flex;gap:14px">
                   <span class="text-page-tab-active border-b-2 border-page-tab-active text-sm pb-1">All</span>
                   <span class="text-text-muted text-sm pb-1">Running</span>
                 </div>
                 <div class="bg-card-surface text-card-text border border-card-border rounded-card shadow-card p-3">
                   <div class="mb-2" style="display:flex;gap:8px;align-items:center">
-                    <button class="bg-accent text-on-accent rounded-button font-button px-3 py-1 text-sm">Add</button>
+                    <button class="bg-accent text-on-accent rounded-button font-button weight-button px-3 py-1 text-sm">Add</button>
                     ${input('Filter…')}
                     <a class="text-link text-sm" href="#">docs</a>
                   </div>
                   <table class="w-full text-left bg-table-surface rounded-table font-table">
                     <thead class="bg-table-header-surface"><tr>
-                      <th class="p-2 text-table-header-text text-sm">Name</th>
-                      <th class="p-2 text-table-header-text text-sm">Status</th>
+                      <th class="p-2 text-table-header-text text-sm weight-table-header">Name</th>
+                      <th class="p-2 text-table-header-text text-sm weight-table-header">Status</th>
                     </tr></thead>
                     <tbody class="text-table-text text-sm">
                       <tr class="hover:bg-table-row-hover"><td class="p-2">my-app</td><td class="p-2">${chip('ok', 'running')}</td></tr>
@@ -179,13 +179,13 @@
         'delete dialog': `
           <div class="bg-page rounded-page p-8" style="display:grid;place-items:center;min-height:340px">
             <div class="bg-dialog-surface text-dialog-text border border-dialog-border rounded-dialog shadow-dialog p-5" style="width:330px">
-              <h3 class="font-dialog font-heading text-lg">Delete application?</h3>
+              <h3 class="font-dialog weight-heading text-lg">Delete application?</h3>
               <p class="text-text-muted text-sm mt-1 mb-4">
                 <code class="bg-code-surface text-code-text rounded-code px-1 font-code">my-app</code> will be removed. This cannot be undone.
               </p>
               <div style="display:flex;gap:8px;align-items:center">
-                <button class="bg-error text-on-accent rounded-button font-button px-3 py-1 text-sm">Delete</button>
-                <button class="bg-surface-alt text-text rounded-button font-button px-3 py-1 text-sm">Cancel</button>
+                <button class="bg-error text-on-accent rounded-button font-button weight-button px-3 py-1 text-sm">Delete</button>
+                <button class="bg-surface-alt text-text rounded-button font-button weight-button px-3 py-1 text-sm">Cancel</button>
                 <span class="bg-popup-surface text-popup-text rounded-popup shadow-popup px-2 py-1 text-xs" style="margin-left:auto">
                   Permanently deletes it
                 </span>
@@ -195,7 +195,7 @@
 
         'new endpoint': `
           <div class="bg-page-surface text-page-text rounded-page p-5" style="min-height:340px">
-            <h1 class="font-page-title text-page-title font-heading text-xl mb-4">Register endpoint</h1>
+            <h1 class="font-page-title text-page-title weight-page-title text-xl mb-4">Register endpoint</h1>
             <div class="font-stepper mb-4" style="display:flex;align-items:center;gap:6px">
               <span class="bg-stepper-indicator text-stepper-indicator-text rounded-stepper px-2 py-0.5 text-xs">1</span>
               <span class="text-sm">Details</span>
@@ -204,21 +204,21 @@
               <span class="text-text-muted text-sm">Connect</span>
             </div>
             <div class="bg-card-surface border border-card-border rounded-card p-4" style="display:grid;gap:8px;max-width:380px">
-              <label class="font-form text-sm">Name</label>
+              <label class="font-form text-sm weight-form-label">Name</label>
               ${input('production', 'w-full')}
-              <label class="font-form text-sm mt-1">API endpoint</label>
+              <label class="font-form text-sm weight-form-label mt-1">API endpoint</label>
               ${input('https://api.example.com', 'w-full')}
               <pre class="bg-code-surface text-code-text border border-code-border rounded-code font-code text-xs p-2 mt-1"><span class="text-code-gutter">1</span>  cf api https://api.example.com</pre>
               <div class="mt-2" style="display:flex;gap:8px">
-                <button class="bg-accent text-on-accent rounded-button font-button px-3 py-1 text-sm">Next</button>
-                <button class="bg-form-input-disabled text-text-muted rounded-button font-button px-3 py-1 text-sm">Back</button>
+                <button class="bg-accent text-on-accent rounded-button font-button weight-button px-3 py-1 text-sm">Next</button>
+                <button class="bg-form-input-disabled text-text-muted rounded-button font-button weight-button px-3 py-1 text-sm">Back</button>
               </div>
             </div>
           </div>`,
 
         usage: `
           <div class="bg-page-surface text-page-text rounded-page p-5" style="min-height:340px">
-            <h1 class="font-page-title text-page-title font-heading text-xl mb-3">Usage</h1>
+            <h1 class="font-page-title text-page-title weight-page-title text-xl mb-3">Usage</h1>
             <div class="bg-card-surface border border-card-border rounded-card shadow-card p-4 font-chart">
               <div style="display:flex;align-items:flex-end;gap:6px;height:120px">
                 ${[1, 2, 3, 4, 5, 6, 7, 8]

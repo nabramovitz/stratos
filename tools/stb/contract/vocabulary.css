@@ -195,6 +195,31 @@
   --shadow-login: var(--v-shadow-login);
 }
 
+/* The weight tier needs utilities of its own.
+ *
+ * Every other tier rides a Tailwind namespace: --color-* generates bg-/text-,
+ * --radius-* generates rounded-, --font-* generates font-, --text-* generates
+ * the size. There is no --weight-* namespace, so these seven names were
+ * variables no class consumed — declared, brandable, and unusable. Measured:
+ * `rounded-button` painted 6px while `weight-button` painted nothing.
+ *
+ * Tailwind's weight namespace is --font-weight-*, which generates font-*
+ * classes — the same classes the per-group families already claim, so
+ * --font-weight-button and --font-button would both want `font-button`.
+ * Renaming into it trades a missing utility for a collision on five of the
+ * seven. So the contract defines its own, which is what @utility is for, and
+ * the names match the contract's own token->utility rule: weight-body is
+ * `weight-body`. Tailwind still tree-shakes them, so Stratos pays for what it
+ * uses.
+ */
+@utility weight-body { font-weight: var(--weight-body); }
+@utility weight-heading { font-weight: var(--weight-heading); }
+@utility weight-page-title { font-weight: var(--weight-page-title); }
+@utility weight-table-header { font-weight: var(--weight-table-header); }
+@utility weight-form-label { font-weight: var(--weight-form-label); }
+@utility weight-button { font-weight: var(--weight-button); }
+@utility weight-status { font-weight: var(--weight-status); }
+
 /* ---------------------------------------------------------------------------
  * Tier values. Globals carry literals; group tokens chain to a global unless
  * the group genuinely differs. A brand file overrides either tier by
