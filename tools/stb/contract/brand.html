@@ -8,7 +8,7 @@
       body { font: 14px system-ui; margin: 0; height: 100vh; display: flex; flex-direction: column; }
       header { padding: 10px 16px; border-bottom: 1px solid #ddd; display: flex; gap: 10px; align-items: center; }
       header h1 { font-size: 14px; margin: 0; font-weight: 600; }
-      main { flex: 1; display: grid; grid-template-columns: 300px 1fr 320px; min-height: 0; }
+      main { flex: 1; display: grid; grid-template-columns: 340px 1fr 320px; min-height: 0; }
       section { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid #ddd; }
       h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #666;
            margin: 0; padding: 8px 12px; border-bottom: 1px solid #eee; background: #fafafa; }
@@ -18,10 +18,12 @@
       .row { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 5px; cursor: pointer; }
       .row:hover { background: #f4f4f4; }
       .row.sel { background: #eef3ff; outline: 1px solid #b9ccff; }
-      .row input[type=color] { width: 26px; height: 20px; padding: 0; border: 1px solid #ccc; background: none; }
-      .row input[type=text] { width: 92px; font: 10px ui-monospace, monospace; }
-      .row .nm { flex: 1; font: 11px ui-monospace, monospace; }
-      .row .ov { color: #c60; font-weight: 700; }
+      .row input[type=color] { width: 24px; height: 20px; padding: 0; border: 1px solid #ccc; background: none; flex: none; }
+      .row .sp { width: 24px; flex: none; }
+      .row input[type=text] { width: 116px; flex: none; font: 10px ui-monospace, monospace; padding: 2px 3px; }
+      .row input.bad { background: #fff0f0; border-color: #d88; }
+      .row .nm { flex: 1; font: 11px ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; }
+      .row .ov { color: #c60; font-weight: 700; width: 8px; flex: none; }
       .grp { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: #999;
              margin: 8px 0 3px 4px; font-weight: 600; }
       button { font: 12px system-ui; padding: 3px 8px; }
@@ -48,7 +50,7 @@
 
     <main>
       <section>
-        <h2>1 &middot; brand <span class="hint">(the 30 globals)</span></h2>
+        <h2>1 &middot; brand <span class="hint">(30 globals &mdash; type any CSS colour: oklch, oklab, hwb&hellip;)</span></h2>
         <div id="tokens"></div>
       </section>
 
@@ -183,41 +185,97 @@
         document.getElementById('flash').onclick = () => flash(name);
       };
 
+      // The browser is the colour parser AND the colour converter. It already
+      // understands every CSS colour form — oklch, oklab, hwb, color-mix,
+      // named — so a value is stored exactly as typed and only converted for
+      // the native swatch, which can show #rrggbb and nothing else. A parser
+      // written here would understand strictly less than the engine that is
+      // about to render the value.
+      const isColour = (css) => CSS.supports('color', css);
+
+      // Painting one pixel is what converts. Nothing else does: computed style
+      // and canvas fillStyle serialisation both KEEP oklch/oklab in their own
+      // space rather than resolving to sRGB, and a cleared style computes to
+      // the INHERITED colour, so an invalid value reads back as a real black.
+      // Measured both — hence CSS.supports for validity, pixels for value.
+      const px = document.createElement('canvas');
+      px.width = px.height = 1;
+      const ctx = px.getContext('2d', { willReadFrequently: true });
+      const asHex = (css) => {
+        if (!isColour(css)) return null;
+        ctx.clearRect(0, 0, 1, 1);
+        ctx.fillStyle = css;
+        ctx.fillRect(0, 0, 1, 1);
+        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+        return '#' + [r, g, b].map((n) => n.toString(16).padStart(2, '0')).join('');
+      };
+
+      const kind = (n) => (n.startsWith('color-') ? 'colour' : n.startsWith('font-') ? 'type' : 'shape & size');
+
+      // Built once. Editing mutates rows in place — re-rendering the list on
+      // input destroys the very <input> the open picker is attached to, which
+      // closes it the moment you drag a slider or type a digit.
       const paintList = () => {
-        const kind = (n) => (n.startsWith('color-') ? 'colour' : n.startsWith('font-') ? 'type' : 'shape & size');
         let html = '';
         let last = null;
         for (const n of GLOBALS) {
           const k = kind(n);
           if (k !== last) { html += `<div class="grp">${k}</div>`; last = k; }
-          const set = brand[mode()][n];
-          const val = set ?? effective(n);
-          const input = n.startsWith('color-')
-            ? `<input type="color" data-n="${n}" value="${/^#[0-9a-f]{6}$/i.test(val) ? val : '#000000'}" />`
-            : `<input type="text" data-n="${n}" value="${val}" />`;
-          html += `<div class="row${selected === n ? ' sel' : ''}" data-row="${n}">
-                     ${input}<span class="nm">${n}</span>${set ? '<span class="ov">•</span>' : ''}</div>`;
+          const val = brand[mode()][n] ?? effective(n);
+          const swatch = n.startsWith('color-')
+            ? `<input type="color" data-sw="${n}" value="${asHex(val) ?? '#000000'}" />`
+            : `<span class="sp"></span>`;
+          html += `<div class="row" data-row="${n}">${swatch}
+                     <input type="text" data-n="${n}" value="${val}" spellcheck="false" />
+                     <span class="nm">${n}</span><span class="ov" data-ov="${n}"></span></div>`;
         }
         tokens.innerHTML = html;
+        for (const n of GLOBALS) markOverride(n);
+        wire();
+        select(selected, false);
+      };
 
+      const markOverride = (n) => {
+        const dot = tokens.querySelector(`[data-ov="${n}"]`);
+        if (dot) dot.textContent = brand[mode()][n] === undefined ? '' : '•';
+      };
+
+      const select = (n, doFlash = true) => {
+        selected = n;
+        tokens.querySelectorAll('.row').forEach((r) => r.classList.toggle('sel', r.dataset.row === n));
+        if (!n) return;
+        showReach(n);
+        if (doFlash) flash(n);
+      };
+
+      // One value changed. Touch only what that implies — never the list.
+      const edit = (n, value, from) => {
+        brand[mode()][n] = value;
+        applyBrand();
+        markOverride(n);
+        const text = tokens.querySelector(`input[type=text][data-n="${n}"]`);
+        const sw = tokens.querySelector(`input[type=color][data-sw="${n}"]`);
+        const hex = asHex(value);
+        if (from !== 'text' && text) text.value = value;
+        if (from !== 'swatch' && sw && hex) sw.value = hex;
+        // A colour the engine cannot parse is flagged, not swallowed.
+        if (text) text.classList.toggle('bad', n.startsWith('color-') && !isColour(value));
+        if (selected === n) showReach(n);
+        status.textContent = '';
+      };
+
+      const wire = () => {
         tokens.querySelectorAll('.row').forEach((r) =>
           r.addEventListener('click', (ev) => {
             if (ev.target.tagName === 'INPUT') return;
-            selected = r.dataset.row;
-            paintList();
-            showReach(selected);
-            flash(selected);
+            select(r.dataset.row);
           }),
         );
-        tokens.querySelectorAll('input').forEach((i) =>
-          i.addEventListener('input', () => {
-            brand[mode()][i.dataset.n] = i.value;
-            applyBrand();
-            if (selected) showReach(selected);
-            // Re-render the dots, but not while typing in a text field.
-            if (i.type === 'color') paintList();
-            status.textContent = '';
-          }),
+        tokens.querySelectorAll('input[type=color]').forEach((i) =>
+          i.addEventListener('input', () => edit(i.dataset.sw, i.value, 'swatch')),
+        );
+        tokens.querySelectorAll('input[type=text]').forEach((i) =>
+          i.addEventListener('input', () => edit(i.dataset.n, i.value, 'text')),
         );
       };
 
@@ -246,15 +304,13 @@
         brand.light = back.light;
         brand.dark = back.dark;
         applyBrand();
-        paintList();
-        if (selected) showReach(selected);
+        paintList(); // whole list changed at once — the one time a rebuild is right
         status.textContent = `imported ${Object.keys(back.light).length} light / ${Object.keys(back.dark).length} dark`;
       });
 
       document.getElementById('dark').addEventListener('change', () => {
         applyBrand();
         paintList();
-        if (selected) showReach(selected);
       });
 
       applyBrand();

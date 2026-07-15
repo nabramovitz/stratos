@@ -90,6 +90,27 @@ describe('round trip', () => {
     expect(css).not.toContain('--color-accent'); // the public tier is the app's, not the brand's
   });
 
+  it('carries modern colour values through verbatim', () => {
+    // The brand stores what the operator typed. oklch/oklab are never
+    // downgraded to hex on the way through, and color-mix's commas must not
+    // fool the declaration splitter.
+    const modern: Brand = {
+      contractVersion: 1,
+      name: 'Modern',
+      light: {
+        'color-accent': 'oklch(0.62 0.21 292)',
+        'color-ok': 'oklab(0.55 0.16 -0.2)',
+        'color-info': 'color-mix(in oklch, red, blue)',
+      },
+      dark: { 'color-accent': 'oklch(0.72 0.16 292)' },
+    };
+    const pub = publicTier(vocab);
+    const { root, dark } = brandToValues(modern, pub);
+    const css = emitCss(root, dark);
+    expect(css).toContain('--v-accent: oklch(0.62 0.21 292);');
+    expect(valuesToBrand(parseCss(css), pub, { contractVersion: 1, name: 'Modern' })).toEqual(modern);
+  });
+
   it('drops names outside the contract instead of emitting them', () => {
     const rogue: Brand = { ...brand, light: { 'color-accent': '#fff', 'color-invented': '#000' } };
     const { root } = brandToValues(rogue, publicTier(vocab));
