@@ -2,8 +2,17 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>contract fonts — 4.9 vs today</title>
+    <title>contract fonts — 4.9, today, and the candidates</title>
     <style>
+      /* Every family here is vendored under public/fonts, latin subset, from
+       * google-webfonts-helper. What is vendored per family is what that family
+       * actually ships across the rungs this page shows — with one exception,
+       * marked below, which is deliberate.
+       *
+       * EXCEPTION: Roboto is pinned to v18, the four faces 4.9 itself shipped.
+       * Modern Roboto is variable and has 600 and 900 too. This column is 4.9's
+       * files, not today's Roboto, because the question it answers is what 4.9
+       * rendered. Read its "no 600 face" as a fact about 4.9, not about Roboto. */
       @font-face { font-family: 'Roboto'; font-weight: 300; src: url('/fonts/roboto-v18-latin-300.woff2') format('woff2'); }
       @font-face { font-family: 'Roboto'; font-weight: 400; src: url('/fonts/roboto-v18-latin-regular.woff2') format('woff2'); }
       @font-face { font-family: 'Roboto'; font-weight: 500; src: url('/fonts/roboto-v18-latin-500.woff2') format('woff2'); }
@@ -13,10 +22,32 @@
       @font-face { font-family: 'Lato'; font-weight: 400; src: url('/fonts/lato-v14-latin-regular.woff2') format('woff2'); }
       @font-face { font-family: 'Lato'; font-weight: 700; src: url('/fonts/lato-v14-latin-700.woff2') format('woff2'); }
       @font-face { font-family: 'Lato'; font-weight: 900; src: url('/fonts/lato-v14-latin-900.woff2') format('woff2'); }
+      /* The candidates — all three have a real 500 and a real 600, the two rungs
+       * Lato cannot render. All OFL. IBM Plex Sans has no 900 in the family. */
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 300; src: url('/fonts/ibm-plex-sans-v23-latin-300.woff2') format('woff2'); }
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 400; src: url('/fonts/ibm-plex-sans-v23-latin-regular.woff2') format('woff2'); }
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 500; src: url('/fonts/ibm-plex-sans-v23-latin-500.woff2') format('woff2'); }
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 600; src: url('/fonts/ibm-plex-sans-v23-latin-600.woff2') format('woff2'); }
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 700; src: url('/fonts/ibm-plex-sans-v23-latin-700.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 300; src: url('/fonts/source-sans-3-v19-latin-300.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 400; src: url('/fonts/source-sans-3-v19-latin-regular.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 500; src: url('/fonts/source-sans-3-v19-latin-500.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 600; src: url('/fonts/source-sans-3-v19-latin-600.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 700; src: url('/fonts/source-sans-3-v19-latin-700.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 900; src: url('/fonts/source-sans-3-v19-latin-900.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 300; src: url('/fonts/fira-sans-v18-latin-300.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 400; src: url('/fonts/fira-sans-v18-latin-regular.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 500; src: url('/fonts/fira-sans-v18-latin-500.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 600; src: url('/fonts/fira-sans-v18-latin-600.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 700; src: url('/fonts/fira-sans-v18-latin-700.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 900; src: url('/fonts/fira-sans-v18-latin-900.woff2') format('woff2'); }
 
       body { margin: 0; font: 14px system-ui; background: #fff; color: #1e293b; }
       .roboto { font-family: 'Roboto', sans-serif; }
       .lato { font-family: 'Lato', sans-serif; }
+      .plex { font-family: 'IBM Plex Sans', sans-serif; }
+      .source { font-family: 'Source Sans 3', sans-serif; }
+      .fira { font-family: 'Fira Sans', sans-serif; }
       .tag { font: 600 10px ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase;
              color: #64748b; margin-bottom: 10px; }
       .tag b { color: #b91c1c; }
@@ -25,7 +56,11 @@
            border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; }
 
       /* ---- side by side ---- */
-      .cols { display: grid; grid-template-columns: 1fr 1fr 1fr; }
+      /* Six columns do not fit a laptop. They scroll rather than shrink: a
+       * narrowed column changes the line breaks, and then the comparison is
+       * measuring the column width instead of the face. */
+      .cols { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(265px, 1fr);
+              overflow-x: auto; }
       /* The nudge: font-medium remapped 500 -> 700. Lato's only face above
        * regular is a real bold, so the 500 levels land on it. */
       .nudge .title, .nudge .body2, .nudge .btn { font-weight: 700; }
@@ -65,53 +100,7 @@
   </head>
   <body>
     <h2>1 &middot; the same page, the same sizes, the same weights &mdash; only the family differs</h2>
-    <div class="cols">
-      <div class="col roboto">
-        <div class="tag">4.9 &mdash; Material components: <b>Roboto</b></div>
-        <p class="headline">Applications</p>
-        <p class="caption">3 running, 1 crashed</p>
-        <p class="title">my-app</p>
-        <p class="body1">Instances of this application are running in the space development.</p>
-        <p class="body2">Deployed 4 minutes ago <span class="mark">&larr; weight 500</span></p>
-        <table>
-          <tr><th>Name</th><th>Status</th></tr>
-          <tr><td>my-app</td><td>running</td></tr>
-          <tr><td>other-app</td><td>crashed</td></tr>
-        </table>
-        <span class="btn">Add application</span>
-        <p class="lg">Illegible 0O1l</p>
-      </div>
-      <div class="col lato">
-        <div class="tag">today &mdash; <b>Lato</b>, 500 falls to 400</div>
-        <p class="headline">Applications</p>
-        <p class="caption">3 running, 1 crashed</p>
-        <p class="title">my-app</p>
-        <p class="body1">Instances of this application are running in the space development.</p>
-        <p class="body2">Deployed 4 minutes ago <span class="mark">&larr; weight 500</span></p>
-        <table>
-          <tr><th>Name</th><th>Status</th></tr>
-          <tr><td>my-app</td><td>running</td></tr>
-          <tr><td>other-app</td><td>crashed</td></tr>
-        </table>
-        <span class="btn">Add application</span>
-        <p class="lg">Illegible 0O1l</p>
-      </div>
-      <div class="col lato nudge">
-        <div class="tag">the nudge &mdash; <b>Lato</b>, 500 &rarr; 700</div>
-        <p class="headline">Applications</p>
-        <p class="caption">3 running, 1 crashed</p>
-        <p class="title">my-app</p>
-        <p class="body1">Instances of this application are running in the space development.</p>
-        <p class="body2">Deployed 4 minutes ago <span class="mark">&larr; now 700</span></p>
-        <table>
-          <tr><th>Name</th><th>Status</th></tr>
-          <tr><td>my-app</td><td>running</td></tr>
-          <tr><td>other-app</td><td>crashed</td></tr>
-        </table>
-        <span class="btn">Add application</span>
-        <p class="lg">Illegible 0O1l</p>
-      </div>
-    </div>
+    <div class="cols" id="cols"></div>
 
     <h2>1b &middot; is the nudge close to Roboto? the same line, adjacent</h2>
     <div style="padding:14px 22px">
@@ -135,17 +124,49 @@
 
     <h2>2 &middot; what each weight actually renders as &mdash; measured on this page, not asserted</h2>
     <table id="wt">
-      <thead>
-        <tr>
-          <th>Tailwind utility</th><th>asks</th><th>uses in Stratos</th>
-          <th>Roboto (4.9)</th><th>Lato (today)</th><th>in Lato it renders as</th>
-        </tr>
-      </thead>
+      <thead><tr id="wthead"><th>Tailwind utility</th><th>asks</th><th>uses in Stratos</th></tr></thead>
       <tbody></tbody>
     </table>
     <div class="note" id="note"></div>
 
     <script>
+      // One list drives both the columns and the table. `has` is the faces the
+      // family ships across the rungs below — which is also exactly what is
+      // vendored for it, so the page never renders a face it does not own.
+      // Roboto is the exception noted in the stylesheet: 4.9's four files.
+      const FAMILIES = [
+        { cls: 'roboto', name: 'Roboto', has: [300, 400, 500, 700],
+          tag: '4.9 &mdash; Material components: <b>Roboto</b>', col: '4.9 &mdash; Roboto' },
+        { cls: 'lato', name: 'Lato', has: [300, 400, 700, 900],
+          tag: 'today &mdash; <b>Lato</b>, 500 falls to 400', col: 'today &mdash; Lato' },
+        { cls: 'lato', name: 'Lato', has: [300, 400, 700, 900], nudge: true,
+          tag: 'the nudge &mdash; <b>Lato</b>, 500 &rarr; 700' },
+        { cls: 'plex', name: 'IBM Plex Sans', has: [300, 400, 500, 600, 700],
+          tag: 'candidate &mdash; <b>IBM Plex Sans</b>', col: 'IBM Plex Sans' },
+        { cls: 'source', name: 'Source Sans 3', has: [300, 400, 500, 600, 700, 900],
+          tag: 'candidate &mdash; <b>Source Sans 3</b>', col: 'Source Sans 3' },
+        { cls: 'fira', name: 'Fira Sans', has: [300, 400, 500, 600, 700, 900],
+          tag: 'candidate &mdash; <b>Fira Sans</b>', col: 'Fira Sans' },
+      ];
+
+      document.getElementById('cols').innerHTML = FAMILIES.map((f) => `
+        <div class="col ${f.cls}${f.nudge ? ' nudge' : ''}">
+          <div class="tag">${f.tag}</div>
+          <p class="headline">Applications</p>
+          <p class="caption">3 running, 1 crashed</p>
+          <p class="title">my-app</p>
+          <p class="body1">Instances of this application are running in the space development.</p>
+          <p class="body2">Deployed 4 minutes ago
+            <span class="mark">&larr; ${f.nudge ? 'now 700' : 'weight 500'}</span></p>
+          <table>
+            <tr><th>Name</th><th>Status</th></tr>
+            <tr><td>my-app</td><td>running</td></tr>
+            <tr><td>other-app</td><td>crashed</td></tr>
+          </table>
+          <span class="btn">Add application</span>
+          <p class="lg">Illegible 0O1l</p>
+        </div>`).join('');
+
       // Usage counts are the measured census of src/frontend templates + ts.
       const ROWS = [
         { util: 'font-light',    w: 300, uses: 1 },
@@ -156,15 +177,23 @@
         { util: 'font-black',    w: 900, uses: 0 },
       ];
       const SAMPLE = 'Deployed 4 minutes ago';
+      // The columns are the real families — the nudge is a remap of Lato, not a
+      // face, so it has nothing of its own to measure here.
+      const COLS = FAMILIES.filter((f) => !f.nudge);
+
+      document.getElementById('wthead').insertAdjacentHTML('beforeend',
+        COLS.map((f) => `<th>${f.col}</th>`).join(''));
 
       document.querySelector('#wt tbody').innerHTML = ROWS.map(
         (r) => `<tr data-w="${r.w}">
           <td class="util">${r.util}</td>
           <td class="asks">${r.w}</td>
           <td class="uses">${r.uses || '—'}</td>
-          <td><span class="samp roboto" data-f="r" data-w="${r.w}" style="font-weight:${r.w}">${SAMPLE}</span></td>
-          <td><span class="samp lato" data-f="l" data-w="${r.w}" style="font-weight:${r.w}">${SAMPLE}</span></td>
-          <td class="verdict" id="v${r.w}"></td>
+          ${COLS.map((f) => `<td>
+            <span class="samp ${f.cls}" data-f="${f.cls}" data-w="${r.w}"
+                  style="font-weight:${r.w}">${SAMPLE}</span>
+            <div class="verdict" id="v-${f.cls}-${r.w}"></div>
+          </td>`).join('')}
         </tr>`,
       ).join('');
 
@@ -173,32 +202,41 @@
         // width. Identical width = same physical face = the request did nothing.
         const width = (f, w) =>
           document.querySelector(`[data-f="${f}"][data-w="${w}"]`).getBoundingClientRect().width;
-        const LATO_HAS = [300, 400, 700, 900];
         let dead = 0;
         for (const r of ROWS) {
-          const mine = width('l', r.w);
-          const twin = LATO_HAS.find((h) => h !== r.w && Math.abs(width('l', h) - mine) < 0.01);
-          const cell = document.getElementById('v' + r.w);
-          const tr = document.querySelector(`tr[data-w="${r.w}"]`);
-          if (!twin) {
-            cell.innerHTML = `<span class="ok">${r.w} — real face</span>`;
-          } else if (twin === 400) {
-            cell.innerHTML = `<span class="dead">400 — NO VISIBLE CHANGE</span>`;
-            tr.classList.add('flag');
-            dead += r.uses;
-          } else {
-            cell.innerHTML = `<span class="warn">${twin} — same as font-bold</span>`;
+          for (const f of COLS) {
+            const mine = width(f.cls, r.w);
+            const twin = f.has.find((h) => h !== r.w && Math.abs(width(f.cls, h) - mine) < 0.01);
+            const cell = document.getElementById(`v-${f.cls}-${r.w}`);
+            if (!twin) {
+              cell.innerHTML = `<span class="ok">${r.w} — real face</span>`;
+            } else if (twin === 400) {
+              cell.innerHTML = `<span class="dead">400 — NO VISIBLE CHANGE</span>`;
+              // Only Lato's dead rungs are counted: it is the one in the product.
+              if (f.cls === 'lato') {
+                document.querySelector(`tr[data-w="${r.w}"]`).classList.add('flag');
+                dead += r.uses;
+              }
+            } else {
+              cell.innerHTML = `<span class="warn">${twin} — same as font-${twin === 700 ? 'bold' : twin}</span>`;
+            }
           }
         }
         const total = ROWS.reduce((n, r) => n + r.uses, 0);
         document.getElementById('note').innerHTML =
-          `Both faces are the repo's own files (<code>core/assets/fonts/</code>). Widths are measured live above: ` +
-          `identical width means the same physical face rendered, so the requested weight resolved to another one.<br><br>` +
+          `Roboto and Lato are the two faces the product has had; Roboto is pinned to the four files 4.9 ` +
+          `shipped, so its empty rungs describe 4.9 and not today's Roboto. The three candidates are vendored ` +
+          `beside them in <code>tools/stb/public/fonts/</code>, latin subset, all OFL. Widths are measured live ` +
+          `above: identical width means the same physical face rendered, so the requested weight resolved to ` +
+          `another one.<br><br>` +
           `<b>Lato ships 300/400/700/900 and has no 500.</b> Roboto ships 300/400/500/700 — which is why 4.9's ` +
           `Material surface, whose <code>body-2</code>, <code>title</code> and <code>button</code> levels are all weight 500, ` +
           `looked the way it did. Today <b>${dead} of ${total} weight-utility uses (${Math.round(100*dead/total)}%)</b> ` +
           `ask for 500 and render as plain 400, plus 10 raw <code>font-weight: 500</code> declarations in SCSS. ` +
-          `A further 93 <code>font-semibold</code> collapse onto 700, so semibold and bold are the same pixels.`;
+          `A further 93 <code>font-semibold</code> collapse onto 700, so semibold and bold are the same pixels.<br><br>` +
+          `<b>Every candidate renders 500 and 600 as authored.</b> That is the rung Lato cannot reach and the ` +
+          `reason the nudge has to spend 700 to reach it: on a family with a real 500, buttons, labels and chips ` +
+          `stay distinct from both body text and headings without any remap at all.`;
       });
     </script>
   </body>
