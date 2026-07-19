@@ -12,10 +12,11 @@
        * PROVENANCE: the -upstream- files are subset from the families' own
        * releases (IBM plex-sans 1.1.0, Adobe source-sans 3.052R, Mozilla Fira
        * master), latin range, ALL OpenType layout features kept — the Google
-       * Fonts pipeline strips zero/ss*/salt/cv*, so its static files cannot
-       * disambiguate a 0 from an O even when the family can. Lato, Roboto and
-       * Atkinson stay google-webfonts-helper subsets (Atkinson slashes its
-       * zero by default; the other two have nothing to unlock). */
+       * Fonts pipeline strips the zero, ss and salt/cv features, so its
+       * static files cannot disambiguate a 0 from an O even when the family
+       * can. Lato, Roboto and Atkinson stay google-webfonts-helper subsets
+       * (Atkinson slashes its zero by default; the other two have nothing
+       * to unlock). */
       @font-face { font-family: 'IBM Plex Sans'; font-weight: 300; src: url('/fonts/ibm-plex-sans-upstream-latin-300.woff2') format('woff2'); }
       @font-face { font-family: 'IBM Plex Sans'; font-weight: 400; src: url('/fonts/ibm-plex-sans-upstream-latin-regular.woff2') format('woff2'); }
       @font-face { font-family: 'IBM Plex Sans'; font-weight: 500; src: url('/fonts/ibm-plex-sans-upstream-latin-500.woff2') format('woff2'); }
@@ -86,6 +87,18 @@
       #gc .samp { white-space: nowrap; line-height: 1.1; }
       #gc .pct { font: 11px ui-monospace, monospace; color: #64748b; margin-top: 2px; }
       #gc.detail { display: flex; flex-wrap: wrap; gap: 8px 34px; align-items: baseline; }
+      /* Cells flow across and wrap — the same grid feel as the size table,
+       * sized by however many forms the font ships. */
+      #alts { display: flex; flex-wrap: wrap; gap: 10px 30px; align-items: baseline; }
+      #alts .ftag { font: 600 10px ui-monospace, monospace; letter-spacing: .06em;
+                    text-transform: uppercase; color: #94a3b8; }
+      #alts .fsamp { font-size: 26px; line-height: 1.25; white-space: nowrap; }
+      #alts .fnote { font: 11px ui-monospace, monospace; color: #94a3b8; flex-basis: 100%; }
+      #featpick { display: none; padding: 0 22px 12px; align-items: baseline; gap: 4px 14px; flex-wrap: wrap; }
+      #featpick .lbl { font: 600 10px ui-monospace, monospace; letter-spacing: .06em;
+                       text-transform: uppercase; color: #64748b; }
+      #featpick label { display: inline-flex; align-items: center; gap: 4px;
+                        font: 12px ui-monospace, monospace; color: #334155; }
       .tab { font: 600 10px ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase;
              border: 1px solid #ddd; background: #fff; color: #888; padding: 2px 8px; cursor: pointer;
              border-radius: 4px; margin-right: 3px; }
@@ -172,13 +185,14 @@
       <div id="files"></div>
     </div>
     <div id="err"></div>
+    <div id="featpick"></div>
 
     <h2>what the font actually does <span class="aside">measured on this page, not opinion</span></h2>
     <div id="facts">
       <div class="k">glyph clarity
         <div id="gc-tabs" style="margin-top:8px">
-          <button class="tab on" data-m="ui">ui sizes</button>
-          <button class="tab" data-m="detail">detail</button>
+          <button class="tab on" data-m="detail">detail</button>
+          <button class="tab" data-m="ui">ui sizes</button>
         </div>
       </div>
       <div>
@@ -203,6 +217,9 @@
           </div>
         </div>
       </div>
+
+      <div class="k">alternate forms</div>
+      <div id="alts"></div>
 
       <div class="k">weight ladder</div>
       <div id="ladder"></div>
@@ -255,13 +272,20 @@
       // is what each family actually ships across these rungs (Roboto: 4.9's
       // four files, see the stylesheet note). The probe still measures; `has`
       // is only used to emit an honest @font-face block on commit.
+      // `feats` is the zero/salt/ss* inventory measured (fontTools) in the
+      // vendored files themselves — the upstream subsets keep them, the
+      // gwfh files never had any. Atkinson needs none: its 0 is slashed
+      // by default.
       const SET = [
-        { name: 'IBM Plex Sans', slug: 'ibm-plex-sans-upstream', has: [300, 400, 500, 600, 700] },
-        { name: 'Fira Sans', slug: 'fira-sans-upstream', has: [300, 400, 500, 600, 700, 900] },
-        { name: 'Source Sans 3', slug: 'source-sans-3-upstream', has: [300, 400, 500, 600, 700, 900] },
-        { name: 'Lato', slug: 'lato-v14', has: [300, 400, 700, 900] },
-        { name: 'Roboto', slug: 'roboto-v18', has: [300, 400, 500, 700] },
-        { name: 'Atkinson Hyperlegible Next', slug: 'atkinson-hyperlegible-next-v7', has: [300, 400, 500, 600, 700] },
+        { name: 'IBM Plex Sans', slug: 'ibm-plex-sans-upstream', has: [300, 400, 500, 600, 700],
+          feats: ['zero', 'salt', 'ss01', 'ss02', 'ss03', 'ss04', 'ss05'] },
+        { name: 'Fira Sans', slug: 'fira-sans-upstream', has: [300, 400, 500, 600, 700, 900],
+          feats: ['zero', 'ss03'] },
+        { name: 'Source Sans 3', slug: 'source-sans-3-upstream', has: [300, 400, 500, 600, 700, 900],
+          feats: ['zero', 'salt', 'ss01', 'ss02', 'ss03', 'ss04', 'ss05', 'ss06', 'ss09', 'ss10'] },
+        { name: 'Lato', slug: 'lato-v14', has: [300, 400, 700, 900], feats: [] },
+        { name: 'Roboto', slug: 'roboto-v18', has: [300, 400, 500, 700], feats: [] },
+        { name: 'Atkinson Hyperlegible Next', slug: 'atkinson-hyperlegible-next-v7', has: [300, 400, 500, 600, 700], feats: [] },
       ];
       const CURRENT = 'IBM Plex Sans';
       const RUNGS = [300, 400, 500, 600, 700];
@@ -372,7 +396,7 @@
       // 2 uses, then icons only).
       const SIZES = [12, 14, 16, 18, 20, 24];
       const RUNG = { 12: 'text-xs', 14: 'text-sm', 16: 'text-base', 18: 'text-lg', 20: 'text-xl', 24: 'text-2xl' };
-      let gcMode = 'ui', gcFam = null;
+      let gcMode = 'detail', gcFam = null;
 
       // The % is measured; the word is a verdict on it. 80% is the judgment
       // call, deliberately visible in the note under the table.
@@ -384,21 +408,25 @@
       };
       function renderGlyphs(fam) {
         gcFam = fam;
+        // With features chosen, the shown glyphs carry them via CSS and the
+        // measured ones via the probe face — same forms, both honest.
+        const fcss = sel.useFeats.size ? `;font-feature-settings:${featCss()}` : '';
+        const mfam = probeFace ? PROBE_FAM : fam;
         const gc = $('gc');
         gc.className = gcMode === 'detail' ? 'detail' : '';
         if (gcMode === 'detail') {
           gc.innerHTML = PAIRS.map(([a, b]) => `<div>
-            <div class="samp" style="font-family:'${fam}';font-size:100px">${a}${b}</div>
-            <div class="pct">${pct(alike(a, b, fam, 100))}</div>
+            <div class="samp" style="font-family:'${fam}';font-size:100px${fcss}">${a}${b}</div>
+            <div class="pct">${pct(alike(a, b, mfam, 100))}</div>
           </div>`).join('');
           return;
         }
         gc.innerHTML = `<table><tr><th></th>${SIZES.map((s) => `<th>${RUNG[s]} &middot; ${s}px</th>`).join('')}</tr>` +
           PAIRS.map(([a, b]) => `<tr>
-            <td><span class="samp" style="font-family:'${fam}';font-size:17px">${a}${b}</span></td>
+            <td><span class="samp" style="font-family:'${fam}';font-size:17px${fcss}">${a}${b}</span></td>
             ${SIZES.map((s) => `<td>
-              <div class="samp" style="font-family:'${fam}';font-size:${s}px">${a}${b}</div>
-              <div class="pct">${pct(alike(a, b, fam, s))}</div>
+              <div class="samp" style="font-family:'${fam}';font-size:${s}px${fcss}">${a}${b}</div>
+              <div class="pct">${pct(alike(a, b, mfam, s))}</div>
             </td>`).join('')}
           </tr>`).join('') + '</table>';
       }
@@ -409,9 +437,36 @@
           if (gcFam) renderGlyphs(gcFam);
         });
 
+      // One line per zero/salt/ss* feature the font's own file carries, the
+      // same confusables rendered with that feature on. What a family CAN
+      // do is part of what it does.
+      const featsOf = (fam) => sel.source === 'set' ? SET.find((s) => s.name === fam).feats
+        : sel.source === 'upload' ? sel.feats : null;
+
+      function renderAlts(fam) {
+        const SAMP = '0O 1Il 5S 2Z ag';
+        const feats = featsOf(fam);
+        const line = (tag, css) => `<div class="alt"><div class="ftag">${tag}</div>
+          <div class="fsamp" style="font-family:'${fam}'${css}">${SAMP}</div></div>`;
+        let note;
+        if (feats === null) {
+          note = sel.source === 'google'
+            ? 'Google-served static files strip zero/ss*/salt — nothing to unlock from this source; vendor the family from its own release to get its alternates.'
+            : 'woff/woff2 files hide their feature tables from this page — upload ttf/otf to read them.';
+        } else if (!feats.length) {
+          note = 'this font\'s file carries no zero / ss* / salt alternates — what you see above is all it can do.';
+        } else {
+          note = 'each cell is the same glyphs with one <code>font-feature-settings</code> feature on — the font\'s own alternates, read from its file.';
+        }
+        $('alts').innerHTML = line('default', '') +
+          (feats || []).map((f) => line(f, `;font-feature-settings:'${f}' 1`)).join('') +
+          `<div class="fnote">${note}</div>`;
+      }
+
       function renderFacts(fam, m) {
         $('word').style.fontFamily = `'${fam}'`;
         renderGlyphs(fam);
+        renderAlts(fam);
 
         $('ladder').innerHTML = RUNGS.map((r) => {
           const v = verdictFor(m.w, r);
@@ -491,26 +546,71 @@
           <button class="btn">Create</button><button class="btn quiet">Cancel</button>`,
       };
 
+      const featCss = () =>
+        [...sel.useFeats].map((f) => `'${f}' 1`).join(', ');
+
+      // Canvas ignores font-feature-settings, but the FontFace descriptor
+      // bakes features into the face itself — so the measured overlap can
+      // reflect the chosen forms: register a probe face from the regular
+      // file with the features on, and measure against that family.
+      const PROBE_FAM = 'gc-feat-probe';
+      let probeFace = null;
+      async function setFeatProbe() {
+        if (probeFace) { document.fonts.delete(probeFace); probeFace = null; }
+        if (!sel.useFeats.size) return;
+        const src = sel.source === 'set'
+          ? `url('/fonts/${SET.find((s) => s.name === sel.name).slug}-latin-regular.woff2')`
+          : sel.regularBuf;
+        if (!src) return;
+        probeFace = new FontFace(PROBE_FAM, src, { featureSettings: featCss() });
+        document.fonts.add(await probeFace.load());
+      }
+
+      // The candidate's chosen features apply to its pane only — the current
+      // pane shows what ships today, features and all.
       function renderScenes() {
         const kind = $('scene').value;
-        for (const [pane, fam, cap] of [
-          ['pane-new', sel.name, `this font — ${sel.name}`],
-          ['pane-cur', CURRENT, `current — ${CURRENT}`],
+        for (const [pane, fam, cap, feats] of [
+          ['pane-new', sel.name, `this font — ${sel.name}`, featCss()],
+          ['pane-cur', CURRENT, `current — ${CURRENT}`, ''],
         ]) {
           const p = $(pane);
-          p.querySelector('.scene').innerHTML = SCENES[kind];
-          p.querySelector('.scene').style.setProperty('--pane-font', `'${fam}'`);
-          p.querySelector('.cap').textContent = cap;
+          const scene = p.querySelector('.scene');
+          scene.innerHTML = SCENES[kind];
+          scene.style.setProperty('--pane-font', `'${fam}'`);
+          scene.style.fontFeatureSettings = feats;
+          p.querySelector('.cap').textContent = cap + (pane === 'pane-new' && feats ? ` + ${[...sel.useFeats].join(' ')}` : '');
         }
         $('use').textContent = `Use ${sel.name}`;
         $('commit-note').textContent =
-          sel.name === CURRENT ? 'this is the current font — both panes render it' : '';
+          sel.name === CURRENT && !sel.useFeats.size ? 'this is the current font — both panes render it' : '';
+      }
+
+      function renderFeatPick(fam) {
+        const feats = featsOf(fam) || [];
+        const fp = $('featpick');
+        fp.style.display = feats.length ? 'flex' : 'none';
+        fp.innerHTML = `<span class="lbl">forms</span>` + feats.map((f) =>
+          `<label><input type="checkbox" value="${f}" /> ${f}</label>`).join('');
+        for (const c of fp.querySelectorAll('input'))
+          c.addEventListener('change', async () => {
+            c.checked ? sel.useFeats.add(c.value) : sel.useFeats.delete(c.value);
+            await setFeatProbe();
+            renderGlyphs(sel.name);
+            $('word').style.fontFeatureSettings = featCss();
+            renderScenes();
+            $('css-out').style.display = 'none';
+          });
       }
 
       // ---- commit: emit what the choice means as CSS ----
       function cssFor() {
         const head = `/* interface font: ${sel.name} */\n`;
-        const root = `:root { --font-sans: '${sel.name}', sans-serif; }\n`;
+        // font-feature-settings inherits from :root, so the chosen forms
+        // reach every element the font does.
+        const root = sel.useFeats.size
+          ? `:root { --font-sans: '${sel.name}', sans-serif; font-feature-settings: ${featCss()}; }\n`
+          : `:root { --font-sans: '${sel.name}', sans-serif; }\n`;
         if (sel.source === 'set') {
           const f = SET.find((s) => s.name === sel.name);
           return head + f.has.map((w) =>
@@ -541,11 +641,15 @@
         err('');
         const m = await probe(next.name);
         if (!m) { err(`"${next.name}" did not load — nothing measured, nothing shown.`); return; }
+        next.useFeats = new Set();
         sel = next;
+        await setFeatProbe();
+        $('word').style.fontFeatureSettings = '';
         $('fam-tag').innerHTML = next.source === 'set'
           ? '<span class="ok">verified — vendored beside this page</span>'
           : '<span class="warn">yours — measured the same way</span>';
         renderFacts(next.name, m);
+        renderFeatPick(next.name);
         renderScenes();
         $('css-out').style.display = 'none';
       }
@@ -582,34 +686,49 @@
       });
 
       // ---- bring your own: uploaded faces ----
-      // Weight comes from the font itself where the format allows: TTF/OTF
-      // carry it in the OS/2 table. woff2 is brotli-packed, unreadable here,
-      // so the filename is inferred and the operator can correct the select.
-      async function sniffWeight(file) {
+      // Weight and the feature inventory come from the font itself where the
+      // format allows: TTF/OTF carry them in the OS/2 and GSUB tables. woff2
+      // is brotli-packed, unreadable here, so the weight falls back to the
+      // filename (correctable in the select) and features read as unknown.
+      async function sniffFace(file) {
+        let weight = null, feats = null;
         try {
           const v = new DataView(await file.arrayBuffer());
           const tag = v.getUint32(0);
           if (tag === 0x00010000 || tag === 0x4f54544f) {
+            feats = [];
             const n = v.getUint16(4);
             for (let i = 0; i < n; i++) {
-              const o = 12 + i * 16;
-              if (v.getUint32(o) === 0x4f532f32) return v.getUint16(v.getUint32(o + 8) + 4);
+              const o = 12 + i * 16, t = v.getUint32(o);
+              if (t === 0x4f532f32) weight = v.getUint16(v.getUint32(o + 8) + 4);
+              if (t === 0x47535542) {
+                const g = v.getUint32(o + 8);
+                const fl = g + v.getUint16(g + 6);
+                const cnt = v.getUint16(fl);
+                for (let j = 0; j < cnt; j++) {
+                  const r = fl + 2 + j * 6;
+                  const ft = String.fromCharCode(v.getUint8(r), v.getUint8(r + 1), v.getUint8(r + 2), v.getUint8(r + 3));
+                  if (/^(zero|salt|ss\d\d)$/.test(ft) && !feats.includes(ft)) feats.push(ft);
+                }
+              }
             }
           }
         } catch { /* fall through to the filename */ }
-        const m = file.name.match(/([1-9]00)/);
-        if (m) return +m[1];
-        const names = { extralight: 200, semibold: 600, demibold: 600, extrabold: 800,
-                        thin: 100, light: 300, regular: 400, normal: 400, book: 400,
-                        medium: 500, bold: 700, black: 900, heavy: 900 };
-        const hit = Object.keys(names).sort((a, b) => b.length - a.length)
-          .find((k) => file.name.toLowerCase().includes(k));
-        return hit ? names[hit] : 400;
+        if (weight === null) {
+          const m = file.name.match(/([1-9]00)/);
+          const names = { extralight: 200, semibold: 600, demibold: 600, extrabold: 800,
+                          thin: 100, light: 300, regular: 400, normal: 400, book: 400,
+                          medium: 500, bold: 700, black: 900, heavy: 900 };
+          const hit = Object.keys(names).sort((a, b) => b.length - a.length)
+            .find((k) => file.name.toLowerCase().includes(k));
+          weight = m ? +m[1] : hit ? names[hit] : 400;
+        }
+        return { weight, feats };
       }
 
       let pending = [];
       $('up').addEventListener('change', async () => {
-        pending = await Promise.all([...$('up').files].map(async (f) => ({ f, weight: await sniffWeight(f) })));
+        pending = await Promise.all([...$('up').files].map(async (f) => ({ f, ...await sniffFace(f) })));
         if (pending.length && !$('up-name').value) {
           $('up-name').value = pending[0].f.name.replace(/\.[^.]+$/, '')
             .replace(/[-_]?(([1-9]00)|thin|extralight|light|regular|normal|book|medium|semibold|demibold|bold|extrabold|black|heavy|italic)/gi, '')
@@ -628,12 +747,20 @@
         const name = $('up-name').value.trim() || 'Your font';
         try {
           const faces = [];
+          let regularBuf = null, regularDist = Infinity;
           for (const p of pending) {
-            const face = new FontFace(name, await p.f.arrayBuffer(), { weight: String(p.weight) });
+            const buf = await p.f.arrayBuffer();
+            const face = new FontFace(name, buf, { weight: String(p.weight) });
             document.fonts.add(await face.load());
             faces.push({ file: p.f.name, weight: p.weight });
+            // Keep the buffer nearest 400 — the feature probe re-registers it.
+            if (Math.abs(p.weight - 400) < regularDist) { regularDist = Math.abs(p.weight - 400); regularBuf = buf; }
           }
-          choose({ name, source: 'upload', faces });
+          // Feature inventory: union across readable files; if none were
+          // readable (all woff/woff2), it is honestly unknown, not empty.
+          const readable = pending.filter((p) => p.feats !== null);
+          const feats = readable.length ? [...new Set(readable.flatMap((p) => p.feats))] : null;
+          choose({ name, source: 'upload', faces, feats, regularBuf });
         } catch (e) { err(`Could not load a face: ${e.message}`); }
       });
 
