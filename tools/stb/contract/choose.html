@@ -1,0 +1,524 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>contract choose — the interface font, by what it does</title>
+    <style>
+      /* The verified set is vendored under public/fonts, latin subset, woff2.
+       * Each family declares only the faces it ships, so the page can never
+       * render a face it does not own. Roboto is pinned to 4.9's four files —
+       * its rungs describe what 4.9 rendered, not today's Roboto. */
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 300; src: url('/fonts/ibm-plex-sans-v23-latin-300.woff2') format('woff2'); }
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 400; src: url('/fonts/ibm-plex-sans-v23-latin-regular.woff2') format('woff2'); }
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 500; src: url('/fonts/ibm-plex-sans-v23-latin-500.woff2') format('woff2'); }
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 600; src: url('/fonts/ibm-plex-sans-v23-latin-600.woff2') format('woff2'); }
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 700; src: url('/fonts/ibm-plex-sans-v23-latin-700.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 300; src: url('/fonts/fira-sans-v18-latin-300.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 400; src: url('/fonts/fira-sans-v18-latin-regular.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 500; src: url('/fonts/fira-sans-v18-latin-500.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 600; src: url('/fonts/fira-sans-v18-latin-600.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 700; src: url('/fonts/fira-sans-v18-latin-700.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 300; src: url('/fonts/source-sans-3-v19-latin-300.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 400; src: url('/fonts/source-sans-3-v19-latin-regular.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 500; src: url('/fonts/source-sans-3-v19-latin-500.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 600; src: url('/fonts/source-sans-3-v19-latin-600.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 700; src: url('/fonts/source-sans-3-v19-latin-700.woff2') format('woff2'); }
+      @font-face { font-family: 'Lato'; font-weight: 300; src: url('/fonts/lato-v14-latin-300.woff2') format('woff2'); }
+      @font-face { font-family: 'Lato'; font-weight: 400; src: url('/fonts/lato-v14-latin-regular.woff2') format('woff2'); }
+      @font-face { font-family: 'Lato'; font-weight: 700; src: url('/fonts/lato-v14-latin-700.woff2') format('woff2'); }
+      @font-face { font-family: 'Lato'; font-weight: 900; src: url('/fonts/lato-v14-latin-900.woff2') format('woff2'); }
+      @font-face { font-family: 'Roboto'; font-weight: 300; src: url('/fonts/roboto-v18-latin-300.woff2') format('woff2'); }
+      @font-face { font-family: 'Roboto'; font-weight: 400; src: url('/fonts/roboto-v18-latin-regular.woff2') format('woff2'); }
+      @font-face { font-family: 'Roboto'; font-weight: 500; src: url('/fonts/roboto-v18-latin-500.woff2') format('woff2'); }
+      @font-face { font-family: 'Roboto'; font-weight: 700; src: url('/fonts/roboto-v18-latin-700.woff2') format('woff2'); }
+      @font-face { font-family: 'Atkinson Hyperlegible Next'; font-weight: 300; src: url('/fonts/atkinson-hyperlegible-next-v7-latin-300.woff2') format('woff2'); }
+      @font-face { font-family: 'Atkinson Hyperlegible Next'; font-weight: 400; src: url('/fonts/atkinson-hyperlegible-next-v7-latin-regular.woff2') format('woff2'); }
+      @font-face { font-family: 'Atkinson Hyperlegible Next'; font-weight: 500; src: url('/fonts/atkinson-hyperlegible-next-v7-latin-500.woff2') format('woff2'); }
+      @font-face { font-family: 'Atkinson Hyperlegible Next'; font-weight: 600; src: url('/fonts/atkinson-hyperlegible-next-v7-latin-600.woff2') format('woff2'); }
+      @font-face { font-family: 'Atkinson Hyperlegible Next'; font-weight: 700; src: url('/fonts/atkinson-hyperlegible-next-v7-latin-700.woff2') format('woff2'); }
+
+      body { margin: 0; font: 14px system-ui; background: #fff; color: #1e293b; }
+      h2 { font: 600 11px ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase;
+           color: #475569; margin: 0; padding: 10px 22px; background: #f8fafc;
+           border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0;
+           display: flex; align-items: center; gap: 14px; }
+      h2 .aside { margin-left: auto; font: 500 10px ui-monospace, monospace; letter-spacing: .06em;
+                  color: #94a3b8; text-transform: none; }
+      code { background: #eee; padding: 0 3px; border-radius: 3px; }
+
+      /* ---- band 1: choose ---- */
+      #pick { padding: 14px 22px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+      #pick .brand { font: 600 11px ui-monospace, monospace; letter-spacing: .08em;
+                     text-transform: uppercase; color: #475569; }
+      #pick label { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: #334155; }
+      select, input[type=text], button { font: 13px system-ui; padding: 5px 8px;
+              border: 1px solid #cbd5e1; border-radius: 5px; background: #fff; color: #1e293b; }
+      button { cursor: pointer; }
+      button.primary { background: #3b82f6; border-color: #3b82f6; color: #fff; font-weight: 500; }
+      #byo { padding: 0 22px 14px; display: none; flex-wrap: wrap; gap: 10px 24px; align-items: flex-start; }
+      #byo .grp { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      #byo .grp .lbl { font: 600 10px ui-monospace, monospace; letter-spacing: .06em;
+                       text-transform: uppercase; color: #64748b; }
+      #files { width: 100%; font-size: 12px; color: #334155; }
+      #files .file { display: flex; gap: 10px; align-items: center; padding: 2px 0; }
+      #files .fname { font: 12px ui-monospace, monospace; }
+      #err { padding: 0 22px 12px; color: #b91c1c; font-size: 13px; display: none; }
+
+      /* ---- band 2: measured ---- */
+      #facts { padding: 14px 22px; display: grid; grid-template-columns: 150px 1fr; gap: 12px 18px;
+               align-items: baseline; }
+      #facts .k { font: 600 10px ui-monospace, monospace; letter-spacing: .06em;
+                  text-transform: uppercase; color: #64748b; }
+      .trio { font-size: 40px; line-height: 1.1; white-space: nowrap; }
+      .word { font-size: 17px; margin-left: 18px; white-space: nowrap; }
+      .verdict { font: 11px ui-monospace, monospace; white-space: nowrap; }
+      .dead { color: #b91c1c; font-weight: 700; }
+      .ok { color: #047857; }
+      .warn { color: #b45309; }
+      #ladder span { font-size: 18px; white-space: nowrap; margin-right: 16px; }
+      #ladder .rung-dead { color: #b91c1c; text-decoration: line-through; text-decoration-thickness: 1px; }
+      .rungrow { display: flex; gap: 12px; align-items: baseline; }
+      .rungrow .util { font: 12px ui-monospace, monospace; color: #334155; width: 150px; }
+      #summary { grid-column: 1 / -1; font-size: 13px; color: #334155; }
+      #anchor-note { grid-column: 1 / -1; font-size: 12px; color: #543; background: #fffdf5;
+                     border: 1px solid #eee; border-radius: 6px; padding: 10px 14px;
+                     line-height: 1.5; max-width: 78ch; display: none; }
+
+      /* ---- band 3: scenes ---- */
+      #scenes { padding: 14px 22px; }
+      #panes { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      .pane { border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+      .pane .cap { font: 600 10px ui-monospace, monospace; letter-spacing: .06em;
+                   text-transform: uppercase; color: #64748b; padding: 7px 14px;
+                   background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+      .pane .scene { padding: 16px; }
+      #commit { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 14px; }
+      #commit .same { font-size: 12px; color: #64748b; }
+      #css-out { display: none; margin: 14px 0 0; }
+      #css-out pre { background: #0f172a; color: #e2e8f0; font: 12px ui-monospace, monospace;
+                     padding: 14px; border-radius: 8px; overflow-x: auto; margin: 0; }
+      #css-out .foot { font-size: 12px; color: #64748b; margin-top: 6px; }
+
+      /* Scene internals inherit the pane font. Inputs do not inherit font by
+       * default, and a form scene rendered in the browser default while the
+       * page claims to show the candidate would be the preview lying. */
+      .scene { font-family: var(--pane-font), sans-serif; }
+      .scene input, .scene button { font: inherit; }
+      .scene .headline { font-size: 24px; line-height: 32px; font-weight: 400; margin: 0 0 2px; }
+      .scene .caption { font-size: 12px; line-height: 20px; font-weight: 400; color: #64748b; margin: 0; }
+      .scene .title { font-size: 20px; line-height: 28px; font-weight: 500; margin: 12px 0 2px; }
+      .scene .body1 { font-size: 14px; line-height: 20px; font-weight: 400; margin: 0; }
+      .scene .body2 { font-size: 14px; line-height: 24px; font-weight: 500; margin: 0; }
+      .scene .chip { display: inline-block; font-size: 12px; font-weight: 500; color: #047857;
+                     background: #ecfdf5; border-radius: 10px; padding: 2px 10px; }
+      .scene table { border-collapse: collapse; margin-top: 10px; width: 100%; }
+      .scene th { font-size: 12px; font-weight: 500; color: #64748b; text-align: left;
+                  padding: 6px 8px; border-bottom: 1px solid #e2e8f0; }
+      .scene td { font-size: 14px; padding: 6px 8px; border-bottom: 1px solid #f1f5f9; }
+      .scene .btn { display: inline-block; font-size: 14px; line-height: 14px; font-weight: 500;
+                    background: #3b82f6; color: #fff; padding: 9px 14px; border-radius: 6px;
+                    margin: 10px 8px 0 0; border: 0; }
+      .scene .btn.quiet { background: #fff; color: #334155; border: 1px solid #cbd5e1; }
+      .scene .field { margin-top: 12px; }
+      .scene .field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 3px; }
+      .scene .field input { width: 260px; max-width: 100%; padding: 7px 9px;
+                            border: 1px solid #cbd5e1; border-radius: 5px; }
+    </style>
+  </head>
+  <body>
+    <h2>brand &middot; interface font</h2>
+    <div id="pick">
+      <label><input type="radio" name="src" value="set" checked /> verified set (6)</label>
+      <label><input type="radio" name="src" value="byo" /> bring your own</label>
+      <select id="fam"></select>
+      <span id="fam-tag" class="verdict"></span>
+    </div>
+    <div id="byo">
+      <div class="grp">
+        <span class="lbl">google fonts</span>
+        <input type="text" id="gf-name" placeholder="family name, e.g. Nunito Sans" size="26" />
+        <button id="gf-load">load</button>
+      </div>
+      <div class="grp">
+        <span class="lbl">upload faces</span>
+        <input type="file" id="up" multiple accept=".ttf,.otf,.woff,.woff2" />
+        <input type="text" id="up-name" placeholder="family name" size="14" />
+        <button id="up-add">add</button>
+      </div>
+      <div id="files"></div>
+    </div>
+    <div id="err"></div>
+
+    <h2>what the font actually does <span class="aside">measured on this page, not opinion</span></h2>
+    <div id="facts">
+      <div class="k">glyph clarity</div>
+      <div>
+        <span class="trio" id="trio">1 I l</span>
+        <span class="word" id="word">Illinois 1 lIl &middot; client_1I</span>
+        <div id="trio-verdicts" style="margin-top:4px"></div>
+      </div>
+
+      <div class="k">weight ladder</div>
+      <div id="ladder"></div>
+
+      <div class="k">weight truth</div>
+      <div>
+        <div class="rungrow"><span class="util">font-medium 500</span><span class="verdict" id="v500"></span></div>
+        <div class="rungrow"><span class="util">font-semibold 600</span><span class="verdict" id="v600"></span></div>
+      </div>
+
+      <div id="summary"></div>
+      <div id="anchor-note"></div>
+    </div>
+
+    <h2>in the real interface
+      <span class="aside">
+        <select id="scene">
+          <option value="list">app list</option>
+          <option value="detail">app detail</option>
+          <option value="form">form</option>
+        </select>
+      </span>
+    </h2>
+    <div id="scenes">
+      <div id="panes">
+        <div class="pane" id="pane-new">
+          <div class="cap" id="cap-new"></div>
+          <div class="scene"></div>
+        </div>
+        <div class="pane" id="pane-cur">
+          <div class="cap" id="cap-cur"></div>
+          <div class="scene"></div>
+        </div>
+      </div>
+      <div id="commit">
+        <span class="same" id="commit-note"></span>
+        <button class="primary" id="use">Use this font</button>
+      </div>
+      <div id="css-out">
+        <pre id="css-text"></pre>
+        <div class="foot">
+          Copied structure, not wiring: how a committed choice reaches a deployment is not built.
+          <button id="copy" style="margin-left:8px">copy</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      // The verified set. `has` is the faces vendored beside this page — which
+      // is what each family actually ships across these rungs (Roboto: 4.9's
+      // four files, see the stylesheet note). The probe still measures; `has`
+      // is only used to emit an honest @font-face block on commit.
+      const SET = [
+        { name: 'IBM Plex Sans', slug: 'ibm-plex-sans-v23', has: [300, 400, 500, 600, 700] },
+        { name: 'Fira Sans', slug: 'fira-sans-v18', has: [300, 400, 500, 600, 700] },
+        { name: 'Source Sans 3', slug: 'source-sans-3-v19', has: [300, 400, 500, 600, 700] },
+        { name: 'Lato', slug: 'lato-v14', has: [300, 400, 700, 900] },
+        { name: 'Roboto', slug: 'roboto-v18', has: [300, 400, 500, 700] },
+        { name: 'Atkinson Hyperlegible Next', slug: 'atkinson-hyperlegible-next-v7', has: [300, 400, 500, 600, 700] },
+      ];
+      const CURRENT = 'IBM Plex Sans';
+      const RUNGS = [300, 400, 500, 600, 700];
+      // Measured census of src/frontend templates + ts (font-black: 0 uses).
+      const USES = { 300: 1, 400: 8, 500: 135, 600: 93, 700: 19 };
+      const TOTAL = Object.values(USES).reduce((a, b) => a + b, 0);
+      const UTIL = { 300: 'font-light', 400: 'font-normal', 500: 'font-medium', 600: 'font-semibold', 700: 'font-bold' };
+
+      // ---- selection state ----
+      // source: 'set' | 'google' | 'upload'; extra carries what commit needs.
+      let sel = { name: CURRENT, source: 'set' };
+
+      const $ = (id) => document.getElementById(id);
+      $('fam').innerHTML = SET.map((f) =>
+        `<option${f.name === CURRENT ? ' selected' : ''}>${f.name}</option>`).join('');
+
+      // ---- the probes (from the candidates/fonts prototypes) ----
+      // Width of a string at a weight. A rung with no face of its own resolves
+      // to another face and reproduces that face's exact width.
+      const width = (w, fam) => {
+        const c = document.createElement('canvas').getContext('2d');
+        c.font = `${w} 100px '${fam}'`;
+        return c.measureText('Handgloves 1Il').width;
+      };
+      // Rasterise one glyph alone; identical outlines give identical pixels.
+      const raster = (ch, fam) => {
+        const c = document.createElement('canvas');
+        c.width = 120; c.height = 160;
+        const x = c.getContext('2d');
+        x.font = `400 100px '${fam}'`;
+        x.textBaseline = 'alphabetic';
+        x.fillText(ch, 10, 130);
+        return x.getImageData(0, 0, 120, 160).data;
+      };
+      const sameGlyph = (p, q, fam) => {
+        const a = raster(p, fam), b = raster(q, fam);
+        return a.every((v, i) => v === b[i]);
+      };
+      const near = (a, b) => Math.abs(a - b) < 0.01;
+
+      // Verdict for a rung against the measured widths. 400 is the anchor:
+      // untagged body text renders there and no token can move it.
+      const verdictFor = (w, r) => {
+        if (r !== 400 && near(w[r], w[400])) return { kind: 'dead' };
+        const twin = RUNGS.find((h) => h !== r && h !== 400 && near(w[h], w[r]));
+        return twin ? { kind: 'merged', twin } : { kind: 'real' };
+      };
+
+      const err = (msg) => {
+        $('err').textContent = msg;
+        $('err').style.display = msg ? 'block' : 'none';
+      };
+
+      async function probe(fam) {
+        await Promise.all(RUNGS.map((w) =>
+          document.fonts.load(`${w} 100px '${fam}'`).catch(() => {})));
+        if (!document.fonts.check(`400 16px '${fam}'`)) return null;
+        const w = Object.fromEntries(RUNGS.map((r) => [r, width(r, fam)]));
+        return {
+          w,
+          il: sameGlyph('I', 'l', fam),
+          one_l: sameGlyph('1', 'l', fam),
+          one_I: sameGlyph('1', 'I', fam),
+        };
+      }
+
+      // ---- band 2 render ----
+      const pair = (label, identical) =>
+        `<span class="verdict" style="margin-right:14px">${label}
+           ${identical ? '<span class="dead">IDENTICAL</span>' : '<span class="ok">different</span>'}</span>`;
+
+      function renderFacts(fam, m) {
+        $('trio').style.fontFamily = `'${fam}'`;
+        $('word').style.fontFamily = `'${fam}'`;
+        $('trio-verdicts').innerHTML =
+          pair('I vs l', m.il) + pair('1 vs l', m.one_l) + pair('1 vs I', m.one_I) +
+          '<span class="verdict" style="color:#94a3b8">shown, not scored — whether different is different enough is your call</span>';
+
+        $('ladder').innerHTML = RUNGS.map((r) => {
+          const v = verdictFor(m.w, r);
+          return `<span style="font-family:'${fam}';font-weight:${r}"
+                        class="${v.kind === 'dead' ? 'rung-dead' : ''}">${UTIL[r].slice(5)} ${r}</span>`;
+        }).join('');
+
+        const tell = (r, v) => {
+          if (v.kind === 'real') return '<span class="ok">✓ real — a face of its own</span>';
+          if (v.kind === 'dead') return '<span class="dead">✗ renders as normal (400) — no visible change</span>';
+          return `<span class="warn">✗ same pixels as ${UTIL[v.twin]} (${v.twin})</span>`;
+        };
+        const v500 = verdictFor(m.w, 500), v600 = verdictFor(m.w, 600);
+        $('v500').innerHTML = tell(500, v500);
+        $('v600').innerHTML = tell(600, v600);
+
+        // Anchor-grounded census: a use "shows" iff its rung renders a face
+        // visibly distinct from untagged body text.
+        const deadUses = RUNGS.filter((r) => verdictFor(m.w, r).kind === 'dead')
+          .reduce((n, r) => n + USES[r], 0);
+        // The anchor is excluded (falling TO 400 is the dead case, already
+        // counted) and each collapsed pair is reported once.
+        const merged = RUNGS.filter((r) => {
+          const v = verdictFor(m.w, r);
+          return r !== 400 && v.kind === 'merged' && r < v.twin;
+        });
+        $('summary').innerHTML =
+          `<b>${TOTAL - deadUses} of ${TOTAL}</b> weight-utility uses in Stratos render visibly ` +
+          `distinct from body text with this font` +
+          (deadUses ? ` — <span class="dead">${deadUses} fall silently to plain 400</span>` : '') +
+          (merged.length ? `; ${merged.map((r) => `<code>${UTIL[r]}</code> and <code>${UTIL[verdictFor(m.w, r).twin]}</code> are the same pixels (${USES[r]} + ${USES[verdictFor(m.w, r).twin]} uses)`).join('; ')}` : '') + '.';
+
+        // The map tradeoff only exists on a sparse ladder; a full one never
+        // has to choose between the anchor and a distinct medium.
+        const note = $('anchor-note');
+        if (v500.kind === 'dead') {
+          note.style.display = 'block';
+          note.innerHTML =
+            `<b>Why no remap fixes this:</b> untagged body text renders at the browser default, 400 — ` +
+            `a fixed anchor no <code>--font-weight-*</code> token can move. This family ships no face ` +
+            `between 400 and 700, so a weight map forces a choice: keep <code>font-normal</code> on the ` +
+            `anchor and <code>font-medium</code> collapses onto it (what you see above), or shift faces ` +
+            `up to free <code>medium</code> and tagged <code>font-normal</code> drifts lighter than the ` +
+            `untagged text around it. There is no map that gives both.`;
+        } else note.style.display = 'none';
+      }
+
+      // ---- band 3 scenes ----
+      const SCENES = {
+        list: `
+          <p class="headline">Applications</p>
+          <p class="caption">3 running, 1 crashed</p>
+          <table>
+            <tr><th>Name</th><th>Status</th><th>Instances</th><th>Memory</th></tr>
+            <tr><td>my-app-production</td><td>Deployed - Online</td><td>2/2</td><td>64 MB</td></tr>
+            <tr><td>billing-worker</td><td>Deployed - Online</td><td>1/1</td><td>128 MB</td></tr>
+            <tr><td>legacy-portal</td><td>Crashed</td><td>0/1</td><td>256 MB</td></tr>
+          </table>
+          <button class="btn">Add application</button>`,
+        detail: `
+          <p class="title" style="margin-top:0">my-app-production</p>
+          <span class="chip">&#9679; Deployed - Online</span>
+          <table>
+            <tr><td>Instances</td><td class="body2">2 / 2</td></tr>
+            <tr><td>Memory</td><td class="body2">64 MB</td></tr>
+            <tr><td>Disk</td><td class="body2">1 GB</td></tr>
+            <tr><td>Org / space</td><td class="body2">acme / development</td></tr>
+          </table>
+          <p class="body1" style="margin-top:10px">Instances of this application are running in the space development.</p>
+          <button class="btn">Restart</button><button class="btn quiet">Stop</button>`,
+        form: `
+          <p class="title" style="margin-top:0">Create application</p>
+          <div class="field"><label>Name</label><input value="my-app-production" /></div>
+          <div class="field"><label>Route</label><input value="my-app.apps.example.com" /></div>
+          <div class="field"><label>Memory</label><input value="64 MB" /></div>
+          <p class="caption" style="margin-top:8px">The route must be unique across the domain.</p>
+          <button class="btn">Create</button><button class="btn quiet">Cancel</button>`,
+      };
+
+      function renderScenes() {
+        const kind = $('scene').value;
+        for (const [pane, fam, cap] of [
+          ['pane-new', sel.name, `this font — ${sel.name}`],
+          ['pane-cur', CURRENT, `current — ${CURRENT}`],
+        ]) {
+          const p = $(pane);
+          p.querySelector('.scene').innerHTML = SCENES[kind];
+          p.querySelector('.scene').style.setProperty('--pane-font', `'${fam}'`);
+          p.querySelector('.cap').textContent = cap;
+        }
+        $('commit-note').textContent =
+          sel.name === CURRENT ? 'this is the current font — both panes render it' : '';
+      }
+
+      // ---- commit: emit what the choice means as CSS ----
+      function cssFor() {
+        const head = `/* interface font: ${sel.name} */\n`;
+        const root = `:root { --font-sans: '${sel.name}', sans-serif; }\n`;
+        if (sel.source === 'set') {
+          const f = SET.find((s) => s.name === sel.name);
+          return head + f.has.map((w) =>
+            `@font-face { font-family: '${f.name}'; font-weight: ${w}; font-display: swap;\n` +
+            `  src: url('fonts/${f.slug}-latin-${w === 400 ? 'regular' : w}.woff2') format('woff2'); }`)
+            .join('\n') + '\n' + root;
+        }
+        if (sel.source === 'google') {
+          return head +
+            `/* loaded from: ${sel.href}\n` +
+            `   vendor the woff2 files it serves — a deployment should not depend on fonts.googleapis.com */\n` +
+            root;
+        }
+        return head + sel.faces.map((f) =>
+          `@font-face { font-family: '${sel.name}'; font-weight: ${f.weight}; font-display: swap;\n` +
+          `  src: url('fonts/${f.file}') format('woff2'); } /* uploaded — place beside the theme */`)
+          .join('\n') + '\n' + root;
+      }
+
+      $('use').addEventListener('click', () => {
+        $('css-text').textContent = cssFor();
+        $('css-out').style.display = 'block';
+      });
+      $('copy').addEventListener('click', () => navigator.clipboard.writeText($('css-text').textContent));
+
+      // ---- selection flow ----
+      async function choose(next) {
+        err('');
+        const m = await probe(next.name);
+        if (!m) { err(`"${next.name}" did not load — nothing measured, nothing shown.`); return; }
+        sel = next;
+        $('fam-tag').innerHTML = next.source === 'set'
+          ? '<span class="ok">verified — vendored beside this page</span>'
+          : '<span class="warn">yours — measured the same way</span>';
+        renderFacts(next.name, m);
+        renderScenes();
+        $('css-out').style.display = 'none';
+      }
+
+      $('fam').addEventListener('change', () => choose({ name: $('fam').value, source: 'set' }));
+      $('scene').addEventListener('change', renderScenes);
+      for (const r of document.querySelectorAll('input[name=src]')) {
+        r.addEventListener('change', () => {
+          $('byo').style.display = r.value === 'byo' && r.checked ? 'flex' : 'none';
+          $('fam').disabled = r.value === 'byo' && r.checked;
+          if (r.value === 'set' && r.checked) choose({ name: $('fam').value, source: 'set' });
+        });
+      }
+
+      // ---- bring your own: Google Fonts by name ----
+      $('gf-load').addEventListener('click', () => {
+        const name = $('gf-name').value.trim();
+        if (!name) return;
+        const load = (href) => new Promise((res) => {
+          const l = document.createElement('link');
+          l.rel = 'stylesheet'; l.href = href;
+          l.onload = () => res(href); l.onerror = () => res(null);
+          document.head.append(l);
+        });
+        const q = name.replace(/ /g, '+');
+        load(`https://fonts.googleapis.com/css2?family=${q}:wght@300;400;500;600;700&display=block`)
+          .then((href) => href ??
+            // A family without one of the asked weights 400s the whole request;
+            // retry bare so the probe can then say which rungs are fiction.
+            load(`https://fonts.googleapis.com/css2?family=${q}&display=block`))
+          .then((href) => href
+            ? choose({ name, source: 'google', href })
+            : err(`Google Fonts has no family called "${name}".`));
+      });
+
+      // ---- bring your own: uploaded faces ----
+      // Weight comes from the font itself where the format allows: TTF/OTF
+      // carry it in the OS/2 table. woff2 is brotli-packed, unreadable here,
+      // so the filename is inferred and the operator can correct the select.
+      async function sniffWeight(file) {
+        try {
+          const v = new DataView(await file.arrayBuffer());
+          const tag = v.getUint32(0);
+          if (tag === 0x00010000 || tag === 0x4f54544f) {
+            const n = v.getUint16(4);
+            for (let i = 0; i < n; i++) {
+              const o = 12 + i * 16;
+              if (v.getUint32(o) === 0x4f532f32) return v.getUint16(v.getUint32(o + 8) + 4);
+            }
+          }
+        } catch { /* fall through to the filename */ }
+        const m = file.name.match(/([1-9]00)/);
+        if (m) return +m[1];
+        const names = { extralight: 200, semibold: 600, demibold: 600, extrabold: 800,
+                        thin: 100, light: 300, regular: 400, normal: 400, book: 400,
+                        medium: 500, bold: 700, black: 900, heavy: 900 };
+        const hit = Object.keys(names).sort((a, b) => b.length - a.length)
+          .find((k) => file.name.toLowerCase().includes(k));
+        return hit ? names[hit] : 400;
+      }
+
+      let pending = [];
+      $('up').addEventListener('change', async () => {
+        pending = await Promise.all([...$('up').files].map(async (f) => ({ f, weight: await sniffWeight(f) })));
+        if (pending.length && !$('up-name').value) {
+          $('up-name').value = pending[0].f.name.replace(/\.[^.]+$/, '')
+            .replace(/[-_]?(([1-9]00)|thin|extralight|light|regular|normal|book|medium|semibold|demibold|bold|extrabold|black|heavy|italic)/gi, '')
+            .replace(/[-_]+/g, ' ').trim() || 'Your font';
+        }
+        $('files').innerHTML = pending.map((p, i) => `
+          <div class="file"><span class="fname">${p.f.name}</span>
+            <select data-i="${i}">${[100,200,300,400,500,600,700,800,900].map((w) =>
+              `<option${w === p.weight ? ' selected' : ''}>${w}</option>`).join('')}</select></div>`).join('');
+        for (const s of $('files').querySelectorAll('select'))
+          s.addEventListener('change', () => { pending[+s.dataset.i].weight = +s.value; });
+      });
+
+      $('up-add').addEventListener('click', async () => {
+        if (!pending.length) { err('Pick font files first.'); return; }
+        const name = $('up-name').value.trim() || 'Your font';
+        try {
+          const faces = [];
+          for (const p of pending) {
+            const face = new FontFace(name, await p.f.arrayBuffer(), { weight: String(p.weight) });
+            document.fonts.add(await face.load());
+            faces.push({ file: p.f.name, weight: p.weight });
+          }
+          choose({ name, source: 'upload', faces });
+        } catch (e) { err(`Could not load a face: ${e.message}`); }
+      });
+
+      // ---- first paint ----
+      choose({ name: CURRENT, source: 'set' });
+    </script>
+  </body>
+</html>
