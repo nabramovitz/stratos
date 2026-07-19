@@ -7,22 +7,32 @@
       /* The verified set is vendored under public/fonts, latin subset, woff2.
        * Each family declares only the faces it ships, so the page can never
        * render a face it does not own. Roboto is pinned to 4.9's four files —
-       * its rungs describe what 4.9 rendered, not today's Roboto. */
-      @font-face { font-family: 'IBM Plex Sans'; font-weight: 300; src: url('/fonts/ibm-plex-sans-v23-latin-300.woff2') format('woff2'); }
-      @font-face { font-family: 'IBM Plex Sans'; font-weight: 400; src: url('/fonts/ibm-plex-sans-v23-latin-regular.woff2') format('woff2'); }
-      @font-face { font-family: 'IBM Plex Sans'; font-weight: 500; src: url('/fonts/ibm-plex-sans-v23-latin-500.woff2') format('woff2'); }
-      @font-face { font-family: 'IBM Plex Sans'; font-weight: 600; src: url('/fonts/ibm-plex-sans-v23-latin-600.woff2') format('woff2'); }
-      @font-face { font-family: 'IBM Plex Sans'; font-weight: 700; src: url('/fonts/ibm-plex-sans-v23-latin-700.woff2') format('woff2'); }
-      @font-face { font-family: 'Fira Sans'; font-weight: 300; src: url('/fonts/fira-sans-v18-latin-300.woff2') format('woff2'); }
-      @font-face { font-family: 'Fira Sans'; font-weight: 400; src: url('/fonts/fira-sans-v18-latin-regular.woff2') format('woff2'); }
-      @font-face { font-family: 'Fira Sans'; font-weight: 500; src: url('/fonts/fira-sans-v18-latin-500.woff2') format('woff2'); }
-      @font-face { font-family: 'Fira Sans'; font-weight: 600; src: url('/fonts/fira-sans-v18-latin-600.woff2') format('woff2'); }
-      @font-face { font-family: 'Fira Sans'; font-weight: 700; src: url('/fonts/fira-sans-v18-latin-700.woff2') format('woff2'); }
-      @font-face { font-family: 'Source Sans 3'; font-weight: 300; src: url('/fonts/source-sans-3-v19-latin-300.woff2') format('woff2'); }
-      @font-face { font-family: 'Source Sans 3'; font-weight: 400; src: url('/fonts/source-sans-3-v19-latin-regular.woff2') format('woff2'); }
-      @font-face { font-family: 'Source Sans 3'; font-weight: 500; src: url('/fonts/source-sans-3-v19-latin-500.woff2') format('woff2'); }
-      @font-face { font-family: 'Source Sans 3'; font-weight: 600; src: url('/fonts/source-sans-3-v19-latin-600.woff2') format('woff2'); }
-      @font-face { font-family: 'Source Sans 3'; font-weight: 700; src: url('/fonts/source-sans-3-v19-latin-700.woff2') format('woff2'); }
+       * its rungs describe what 4.9 rendered, not today's Roboto.
+       *
+       * PROVENANCE: the -upstream- files are subset from the families' own
+       * releases (IBM plex-sans 1.1.0, Adobe source-sans 3.052R, Mozilla Fira
+       * master), latin range, ALL OpenType layout features kept — the Google
+       * Fonts pipeline strips zero/ss*/salt/cv*, so its static files cannot
+       * disambiguate a 0 from an O even when the family can. Lato, Roboto and
+       * Atkinson stay google-webfonts-helper subsets (Atkinson slashes its
+       * zero by default; the other two have nothing to unlock). */
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 300; src: url('/fonts/ibm-plex-sans-upstream-latin-300.woff2') format('woff2'); }
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 400; src: url('/fonts/ibm-plex-sans-upstream-latin-regular.woff2') format('woff2'); }
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 500; src: url('/fonts/ibm-plex-sans-upstream-latin-500.woff2') format('woff2'); }
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 600; src: url('/fonts/ibm-plex-sans-upstream-latin-600.woff2') format('woff2'); }
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 700; src: url('/fonts/ibm-plex-sans-upstream-latin-700.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 300; src: url('/fonts/fira-sans-upstream-latin-300.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 400; src: url('/fonts/fira-sans-upstream-latin-regular.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 500; src: url('/fonts/fira-sans-upstream-latin-500.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 600; src: url('/fonts/fira-sans-upstream-latin-600.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 700; src: url('/fonts/fira-sans-upstream-latin-700.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 900; src: url('/fonts/fira-sans-upstream-latin-900.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 300; src: url('/fonts/source-sans-3-upstream-latin-300.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 400; src: url('/fonts/source-sans-3-upstream-latin-regular.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 500; src: url('/fonts/source-sans-3-upstream-latin-500.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 600; src: url('/fonts/source-sans-3-upstream-latin-600.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 700; src: url('/fonts/source-sans-3-upstream-latin-700.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 900; src: url('/fonts/source-sans-3-upstream-latin-900.woff2') format('woff2'); }
       @font-face { font-family: 'Lato'; font-weight: 300; src: url('/fonts/lato-v14-latin-300.woff2') format('woff2'); }
       @font-face { font-family: 'Lato'; font-weight: 400; src: url('/fonts/lato-v14-latin-regular.woff2') format('woff2'); }
       @font-face { font-family: 'Lato'; font-weight: 700; src: url('/fonts/lato-v14-latin-700.woff2') format('woff2'); }
@@ -69,8 +79,20 @@
                align-items: baseline; }
       #facts .k { font: 600 10px ui-monospace, monospace; letter-spacing: .06em;
                   text-transform: uppercase; color: #64748b; }
-      .trio { font-size: 40px; line-height: 1.1; white-space: nowrap; }
-      .word { font-size: 17px; margin-left: 18px; white-space: nowrap; }
+      #gc table { border-collapse: collapse; }
+      #gc td, #gc th { padding: 2px 18px 7px 0; text-align: left; vertical-align: baseline; }
+      #gc th { font: 600 10px ui-monospace, monospace; letter-spacing: .06em;
+               text-transform: uppercase; color: #94a3b8; padding-bottom: 2px; }
+      #gc .samp { white-space: nowrap; line-height: 1.1; }
+      #gc .pct { font: 11px ui-monospace, monospace; color: #64748b; margin-top: 2px; }
+      #gc.detail { display: flex; flex-wrap: wrap; gap: 8px 34px; align-items: baseline; }
+      .tab { font: 600 10px ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase;
+             border: 1px solid #ddd; background: #fff; color: #888; padding: 2px 8px; cursor: pointer;
+             border-radius: 4px; margin-right: 3px; }
+      .tab.on { background: #eef3ff; border-color: #b9ccff; color: #234; }
+      [popover] { max-width: 52ch; padding: 14px 16px; border: 1px solid #cbd5e1; border-radius: 8px;
+                  font-size: 12px; line-height: 1.55; color: #334155; box-shadow: 0 8px 24px rgba(15,23,42,.12); }
+      .word { font-size: 17px; white-space: nowrap; }
       .verdict { font: 11px ui-monospace, monospace; white-space: nowrap; }
       .dead { color: #b91c1c; font-weight: 700; }
       .ok { color: #047857; }
@@ -92,7 +114,9 @@
                    text-transform: uppercase; color: #64748b; padding: 7px 14px;
                    background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
       .pane .scene { padding: 16px; }
-      #commit { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 14px; }
+      /* The commit row lives in the candidate's column: a "use" button that
+       * floats under the current-font pane reads as committing the wrong one. */
+      #commit { grid-column: 1; display: flex; justify-content: flex-end; align-items: center; gap: 12px; }
       #commit .same { font-size: 12px; color: #64748b; }
       #css-out { display: none; margin: 14px 0 0; }
       #css-out pre { background: #0f172a; color: #e2e8f0; font: 12px ui-monospace, monospace;
@@ -151,11 +175,33 @@
 
     <h2>what the font actually does <span class="aside">measured on this page, not opinion</span></h2>
     <div id="facts">
-      <div class="k">glyph clarity</div>
+      <div class="k">glyph clarity
+        <div id="gc-tabs" style="margin-top:8px">
+          <button class="tab on" data-m="ui">ui sizes</button>
+          <button class="tab" data-m="detail">detail</button>
+        </div>
+      </div>
       <div>
-        <span class="trio" id="trio">1 I l</span>
-        <span class="word" id="word">Illinois 1 lIl &middot; client_1I</span>
-        <div id="trio-verdicts" style="margin-top:4px"></div>
+        <div id="gc"></div>
+        <div style="margin-top:6px">
+          <span class="word" id="word">Illinois 1 lIl &middot; client_1I &middot; O0 S5 B8 Z2</span>
+          <span class="verdict" style="margin-left:14px;color:#94a3b8">the % is measured pixel overlap of the pair on one baseline; the word is a verdict on it &mdash; &ge;80% reads as close, and that threshold is the one judgment call in this band</span>
+          <button class="tab" popovertarget="gc-where" style="margin-left:8px">measured where?</button>
+          <div id="gc-where" popover>
+            <b>These numbers belong to this machine.</b> The rasters are drawn by
+            this browser, on this OS, at 1&times; pixel density. macOS ignores font
+            hinting and places stems at fractional pixels; Windows and Linux hint
+            and snap to the grid &mdash; so cells near the threshold will land
+            differently on other platforms, and a high-density display separates
+            every pair better than the 1&times; worst case measured here.
+            <br /><br />
+            What <i>is</i> universal: a <span class="dead">100% identical</span>
+            verdict from shared outlines, shape facts like a serifed 1 or a
+            slashed zero, and the whole weight-truth band below &mdash; face
+            substitution for a missing weight is CSS-specified behaviour on
+            every platform.
+          </div>
+        </div>
       </div>
 
       <div class="k">weight ladder</div>
@@ -190,10 +236,10 @@
           <div class="cap" id="cap-cur"></div>
           <div class="scene"></div>
         </div>
-      </div>
-      <div id="commit">
-        <span class="same" id="commit-note"></span>
-        <button class="primary" id="use">Use this font</button>
+        <div id="commit">
+          <span class="same" id="commit-note"></span>
+          <button class="primary" id="use">Use this font</button>
+        </div>
       </div>
       <div id="css-out">
         <pre id="css-text"></pre>
@@ -210,9 +256,9 @@
       // four files, see the stylesheet note). The probe still measures; `has`
       // is only used to emit an honest @font-face block on commit.
       const SET = [
-        { name: 'IBM Plex Sans', slug: 'ibm-plex-sans-v23', has: [300, 400, 500, 600, 700] },
-        { name: 'Fira Sans', slug: 'fira-sans-v18', has: [300, 400, 500, 600, 700] },
-        { name: 'Source Sans 3', slug: 'source-sans-3-v19', has: [300, 400, 500, 600, 700] },
+        { name: 'IBM Plex Sans', slug: 'ibm-plex-sans-upstream', has: [300, 400, 500, 600, 700] },
+        { name: 'Fira Sans', slug: 'fira-sans-upstream', has: [300, 400, 500, 600, 700, 900] },
+        { name: 'Source Sans 3', slug: 'source-sans-3-upstream', has: [300, 400, 500, 600, 700, 900] },
         { name: 'Lato', slug: 'lato-v14', has: [300, 400, 700, 900] },
         { name: 'Roboto', slug: 'roboto-v18', has: [300, 400, 500, 700] },
         { name: 'Atkinson Hyperlegible Next', slug: 'atkinson-hyperlegible-next-v7', has: [300, 400, 500, 600, 700] },
@@ -240,19 +286,60 @@
         c.font = `${w} 100px '${fam}'`;
         return c.measureText('Handgloves 1Il').width;
       };
-      // Rasterise one glyph alone; identical outlines give identical pixels.
-      const raster = (ch, fam) => {
+      // Rasterise one glyph alone at a given size and hand back its alpha plane.
+      const rasterAt = (ch, fam, px) => {
+        const w = Math.ceil(px * 3), h = Math.ceil(px * 2);
         const c = document.createElement('canvas');
-        c.width = 120; c.height = 160;
+        c.width = w; c.height = h;
         const x = c.getContext('2d');
-        x.font = `400 100px '${fam}'`;
+        x.font = `400 ${px}px '${fam}'`;
         x.textBaseline = 'alphabetic';
-        x.fillText(ch, 10, 130);
-        return x.getImageData(0, 0, 120, 160).data;
+        x.fillText(ch, Math.ceil(px * 0.6), Math.ceil(px * 1.4));
+        return { d: x.getImageData(0, 0, w, h).data, w, h };
       };
-      const sameGlyph = (p, q, fam) => {
-        const a = raster(p, fam), b = raster(q, fam);
-        return a.every((v, i) => v === b[i]);
+      // How alike two glyphs render at a size: fuzzy pixel overlap (sum of
+      // min alpha over sum of max alpha), horizontally aligned on ink
+      // centres so side-bearings don't count as difference. Vertically they
+      // stay on the shared baseline — cap-height vs ascender IS a tell.
+      const alike = (p, q, fam, px) => {
+        const A = rasterAt(p, fam, px), B = rasterAt(q, fam, px);
+        const centre = (r) => {
+          let min = r.w, max = -1;
+          for (let y = 0; y < r.h; y++)
+            for (let x = 0; x < r.w; x++)
+              if (r.d[(y * r.w + x) * 4 + 3] > 16) { if (x < min) min = x; if (x > max) max = x; }
+          return max < 0 ? 0 : (min + max) / 2;
+        };
+        // Best-alignment overlap: at ui sizes a stem is a pixel wide, so a
+        // 1px phase difference between two identical stems would read as
+        // near-zero overlap. Confusability is about shape, not raster phase
+        // — probe a few shifts around the ink centre and keep the maximum.
+        const base = Math.round(centre(A) - centre(B));
+        // Binary ink at half of each glyph's own peak alpha: a fixed
+        // threshold loses hairline stems entirely at 8px, a shared one lets
+        // a crisp glyph blank out its faint partner, and full-alpha
+        // comparison lets antialiased edges register as difference on
+        // every pixel.
+        const thrOf = (r) => {
+          let peak = 0;
+          for (let i = 3; i < r.d.length; i += 4) if (r.d[i] > peak) peak = r.d[i];
+          return Math.max(16, peak >> 1);
+        };
+        const tA = thrOf(A), tB = thrOf(B);
+        let best = 0;
+        for (let s = base - 2; s <= base + 2; s++) {
+          let inter = 0, union = 0;
+          for (let y = 0; y < A.h; y++)
+            for (let x = 0; x < A.w; x++) {
+              const a = A.d[(y * A.w + x) * 4 + 3] > tA;
+              const bx = x - s;
+              const b = bx >= 0 && bx < B.w && B.d[(y * B.w + bx) * 4 + 3] > tB;
+              if (a && b) inter++;
+              if (a || b) union++;
+            }
+          best = Math.max(best, union ? inter / union : 1);
+        }
+        return best;
       };
       const near = (a, b) => Math.abs(a - b) < 0.01;
 
@@ -273,26 +360,58 @@
         await Promise.all(RUNGS.map((w) =>
           document.fonts.load(`${w} 100px '${fam}'`).catch(() => {})));
         if (!document.fonts.check(`400 16px '${fam}'`)) return null;
-        const w = Object.fromEntries(RUNGS.map((r) => [r, width(r, fam)]));
-        return {
-          w,
-          il: sameGlyph('I', 'l', fam),
-          one_l: sameGlyph('1', 'l', fam),
-          one_I: sameGlyph('1', 'I', fam),
-        };
+        return { w: Object.fromEntries(RUNGS.map((r) => [r, width(r, fam)])) };
       }
 
       // ---- band 2 render ----
-      const pair = (label, identical) =>
-        `<span class="verdict" style="margin-right:14px">${label}
-           ${identical ? '<span class="dead">IDENTICAL</span>' : '<span class="ok">different</span>'}</span>`;
+      // The confusable pairs, each its own cell — the rendered pair is its
+      // own label. The trio contributes its three pairings; the digit/letter
+      // pairs are the rest of the family of lookalikes.
+      const PAIRS = [['1', 'l'], ['1', 'I'], ['l', 'I'], ['0', 'O'], ['5', 'S'], ['8', 'B'], ['2', 'Z']];
+      // The rungs Stratos actually sets text at (text-3xl and up are noise:
+      // 2 uses, then icons only).
+      const SIZES = [12, 14, 16, 18, 20, 24];
+      const RUNG = { 12: 'text-xs', 14: 'text-sm', 16: 'text-base', 18: 'text-lg', 20: 'text-xl', 24: 'text-2xl' };
+      let gcMode = 'ui', gcFam = null;
+
+      // The % is measured; the word is a verdict on it. 80% is the judgment
+      // call, deliberately visible in the note under the table.
+      const pct = (v) => {
+        const p = Math.round(v * 100);
+        if (v >= 0.995) return `<span class="dead">${p}% identical</span>`;
+        if (v >= 0.8) return `<span class="warn">${p}% close</span>`;
+        return `<span class="ok">${p}% distinct</span>`;
+      };
+      function renderGlyphs(fam) {
+        gcFam = fam;
+        const gc = $('gc');
+        gc.className = gcMode === 'detail' ? 'detail' : '';
+        if (gcMode === 'detail') {
+          gc.innerHTML = PAIRS.map(([a, b]) => `<div>
+            <div class="samp" style="font-family:'${fam}';font-size:100px">${a}${b}</div>
+            <div class="pct">${pct(alike(a, b, fam, 100))}</div>
+          </div>`).join('');
+          return;
+        }
+        gc.innerHTML = `<table><tr><th></th>${SIZES.map((s) => `<th>${RUNG[s]} &middot; ${s}px</th>`).join('')}</tr>` +
+          PAIRS.map(([a, b]) => `<tr>
+            <td><span class="samp" style="font-family:'${fam}';font-size:17px">${a}${b}</span></td>
+            ${SIZES.map((s) => `<td>
+              <div class="samp" style="font-family:'${fam}';font-size:${s}px">${a}${b}</div>
+              <div class="pct">${pct(alike(a, b, fam, s))}</div>
+            </td>`).join('')}
+          </tr>`).join('') + '</table>';
+      }
+      for (const t of document.querySelectorAll('#gc-tabs .tab'))
+        t.addEventListener('click', () => {
+          gcMode = t.dataset.m;
+          document.querySelectorAll('#gc-tabs .tab').forEach((b) => b.classList.toggle('on', b === t));
+          if (gcFam) renderGlyphs(gcFam);
+        });
 
       function renderFacts(fam, m) {
-        $('trio').style.fontFamily = `'${fam}'`;
         $('word').style.fontFamily = `'${fam}'`;
-        $('trio-verdicts').innerHTML =
-          pair('I vs l', m.il) + pair('1 vs l', m.one_l) + pair('1 vs I', m.one_I) +
-          '<span class="verdict" style="color:#94a3b8">shown, not scored — whether different is different enough is your call</span>';
+        renderGlyphs(fam);
 
         $('ladder').innerHTML = RUNGS.map((r) => {
           const v = verdictFor(m.w, r);
@@ -383,6 +502,7 @@
           p.querySelector('.scene').style.setProperty('--pane-font', `'${fam}'`);
           p.querySelector('.cap').textContent = cap;
         }
+        $('use').textContent = `Use ${sel.name}`;
         $('commit-note').textContent =
           sel.name === CURRENT ? 'this is the current font — both panes render it' : '';
       }

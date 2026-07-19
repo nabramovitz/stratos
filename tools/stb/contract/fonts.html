@@ -4,10 +4,13 @@
     <meta charset="utf-8" />
     <title>contract fonts — 4.9, today, and the candidates</title>
     <style>
-      /* Every family here is vendored under public/fonts, latin subset, from
-       * google-webfonts-helper. What is vendored per family is what that family
-       * actually ships across the rungs this page shows — with one exception,
-       * marked below, which is deliberate.
+      /* Every family here is vendored under public/fonts, latin subset. Lato
+       * and Roboto come from google-webfonts-helper; the three candidates are
+       * subset from their own upstream releases with all OpenType layout
+       * features kept (the Google pipeline strips zero/ss*/salt). What is
+       * vendored per family is what that family actually ships across the
+       * rungs this page shows — with one exception, marked below, which is
+       * deliberate.
        *
        * EXCEPTION: Roboto is pinned to v18, the four faces 4.9 itself shipped.
        * Modern Roboto is variable and has 600 and 900 too. This column is 4.9's
@@ -24,23 +27,23 @@
       @font-face { font-family: 'Lato'; font-weight: 900; src: url('/fonts/lato-v14-latin-900.woff2') format('woff2'); }
       /* The candidates — all three have a real 500 and a real 600, the two rungs
        * Lato cannot render. All OFL. IBM Plex Sans has no 900 in the family. */
-      @font-face { font-family: 'IBM Plex Sans'; font-weight: 300; src: url('/fonts/ibm-plex-sans-v23-latin-300.woff2') format('woff2'); }
-      @font-face { font-family: 'IBM Plex Sans'; font-weight: 400; src: url('/fonts/ibm-plex-sans-v23-latin-regular.woff2') format('woff2'); }
-      @font-face { font-family: 'IBM Plex Sans'; font-weight: 500; src: url('/fonts/ibm-plex-sans-v23-latin-500.woff2') format('woff2'); }
-      @font-face { font-family: 'IBM Plex Sans'; font-weight: 600; src: url('/fonts/ibm-plex-sans-v23-latin-600.woff2') format('woff2'); }
-      @font-face { font-family: 'IBM Plex Sans'; font-weight: 700; src: url('/fonts/ibm-plex-sans-v23-latin-700.woff2') format('woff2'); }
-      @font-face { font-family: 'Source Sans 3'; font-weight: 300; src: url('/fonts/source-sans-3-v19-latin-300.woff2') format('woff2'); }
-      @font-face { font-family: 'Source Sans 3'; font-weight: 400; src: url('/fonts/source-sans-3-v19-latin-regular.woff2') format('woff2'); }
-      @font-face { font-family: 'Source Sans 3'; font-weight: 500; src: url('/fonts/source-sans-3-v19-latin-500.woff2') format('woff2'); }
-      @font-face { font-family: 'Source Sans 3'; font-weight: 600; src: url('/fonts/source-sans-3-v19-latin-600.woff2') format('woff2'); }
-      @font-face { font-family: 'Source Sans 3'; font-weight: 700; src: url('/fonts/source-sans-3-v19-latin-700.woff2') format('woff2'); }
-      @font-face { font-family: 'Source Sans 3'; font-weight: 900; src: url('/fonts/source-sans-3-v19-latin-900.woff2') format('woff2'); }
-      @font-face { font-family: 'Fira Sans'; font-weight: 300; src: url('/fonts/fira-sans-v18-latin-300.woff2') format('woff2'); }
-      @font-face { font-family: 'Fira Sans'; font-weight: 400; src: url('/fonts/fira-sans-v18-latin-regular.woff2') format('woff2'); }
-      @font-face { font-family: 'Fira Sans'; font-weight: 500; src: url('/fonts/fira-sans-v18-latin-500.woff2') format('woff2'); }
-      @font-face { font-family: 'Fira Sans'; font-weight: 600; src: url('/fonts/fira-sans-v18-latin-600.woff2') format('woff2'); }
-      @font-face { font-family: 'Fira Sans'; font-weight: 700; src: url('/fonts/fira-sans-v18-latin-700.woff2') format('woff2'); }
-      @font-face { font-family: 'Fira Sans'; font-weight: 900; src: url('/fonts/fira-sans-v18-latin-900.woff2') format('woff2'); }
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 300; src: url('/fonts/ibm-plex-sans-upstream-latin-300.woff2') format('woff2'); }
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 400; src: url('/fonts/ibm-plex-sans-upstream-latin-regular.woff2') format('woff2'); }
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 500; src: url('/fonts/ibm-plex-sans-upstream-latin-500.woff2') format('woff2'); }
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 600; src: url('/fonts/ibm-plex-sans-upstream-latin-600.woff2') format('woff2'); }
+      @font-face { font-family: 'IBM Plex Sans'; font-weight: 700; src: url('/fonts/ibm-plex-sans-upstream-latin-700.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 300; src: url('/fonts/source-sans-3-upstream-latin-300.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 400; src: url('/fonts/source-sans-3-upstream-latin-regular.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 500; src: url('/fonts/source-sans-3-upstream-latin-500.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 600; src: url('/fonts/source-sans-3-upstream-latin-600.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 700; src: url('/fonts/source-sans-3-upstream-latin-700.woff2') format('woff2'); }
+      @font-face { font-family: 'Source Sans 3'; font-weight: 900; src: url('/fonts/source-sans-3-upstream-latin-900.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 300; src: url('/fonts/fira-sans-upstream-latin-300.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 400; src: url('/fonts/fira-sans-upstream-latin-regular.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 500; src: url('/fonts/fira-sans-upstream-latin-500.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 600; src: url('/fonts/fira-sans-upstream-latin-600.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 700; src: url('/fonts/fira-sans-upstream-latin-700.woff2') format('woff2'); }
+      @font-face { font-family: 'Fira Sans'; font-weight: 900; src: url('/fonts/fira-sans-upstream-latin-900.woff2') format('woff2'); }
 
       body { margin: 0; font: 14px system-ui; background: #fff; color: #1e293b; }
       .roboto { font-family: 'Roboto', sans-serif; }
@@ -64,7 +67,9 @@
       /* The nudge: font-medium remapped 500 -> 700. Lato's only face above
        * regular is a real bold, so the 500 levels land on it. */
       .nudge .title, .nudge .body2, .nudge .btn { font-weight: 700; }
-      .col { padding: 18px 22px; }
+      .col { padding: 18px 22px; cursor: grab; }
+      .col.dragging { opacity: .35; }
+      .col.over { box-shadow: inset 2px 0 0 #3b82f6; }
       .col + .col { border-left: 1px solid #e2e8f0; }
       .headline { font-size: 24px; line-height: 32px; font-weight: 400; margin: 0 0 2px; }
       .title { font-size: 20px; line-height: 32px; font-weight: 500; margin: 14px 0 2px; }
@@ -99,7 +104,7 @@
     </style>
   </head>
   <body>
-    <h2>1 &middot; the same page, the same sizes, the same weights &mdash; only the family differs</h2>
+    <h2>1 &middot; the same page, the same sizes, the same weights &mdash; only the family differs &middot; drag a column to re-seat it</h2>
     <div class="cols" id="cols"></div>
 
     <h2>1b &middot; is the nudge close to Roboto? the same line, adjacent</h2>
@@ -150,7 +155,7 @@
       ];
 
       document.getElementById('cols').innerHTML = FAMILIES.map((f) => `
-        <div class="col ${f.cls}${f.nudge ? ' nudge' : ''}">
+        <div class="col ${f.cls}${f.nudge ? ' nudge' : ''}" draggable="true">
           <div class="tag">${f.tag}</div>
           <p class="headline">Applications</p>
           <p class="caption">3 running, 1 crashed</p>
@@ -166,6 +171,39 @@
           <span class="btn">Add application</span>
           <p class="lg">Illegible 0O1l</p>
         </div>`).join('');
+
+      // Drag a column to sit against any other — two faces only compare when
+      // they are adjacent. Native HTML5 DnD, ported from the candidates
+      // prototype's row sort, horizontal.
+      {
+        const cols = document.getElementById('cols');
+        let held = null;
+        cols.addEventListener('dragstart', (e) => {
+          held = e.target.closest('.col');
+          held.classList.add('dragging');
+          e.dataTransfer.effectAllowed = 'move';
+        });
+        cols.addEventListener('dragend', () => {
+          held?.classList.remove('dragging');
+          cols.querySelectorAll('.over').forEach((c) => c.classList.remove('over'));
+          held = null;
+        });
+        cols.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          const col = e.target.closest('.col');
+          if (!col || col === held) return;
+          cols.querySelectorAll('.over').forEach((c) => c.classList.remove('over'));
+          col.classList.add('over');
+        });
+        cols.addEventListener('drop', (e) => {
+          e.preventDefault();
+          const col = e.target.closest('.col');
+          if (!col || col === held) return;
+          const box = col.getBoundingClientRect();
+          cols.insertBefore(held, e.clientX < box.left + box.width / 2 ? col : col.nextSibling);
+          col.classList.remove('over');
+        });
+      }
 
       // Usage counts are the measured census of src/frontend templates + ts.
       const ROWS = [
