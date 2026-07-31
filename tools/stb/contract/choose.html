@@ -288,6 +288,8 @@
         { name: 'Atkinson Hyperlegible Next', slug: 'atkinson-hyperlegible-next-v7', has: [300, 400, 500, 600, 700], feats: [] },
       ];
       const CURRENT = 'IBM Plex Sans';
+      // What ships today: body { font-feature-settings: 'salt' 1 } (dotted zero).
+      const CURRENT_FEATS = "'salt' 1";
       const RUNGS = [300, 400, 500, 600, 700];
       // Measured census of src/frontend templates + ts (font-black: 0 uses).
       const USES = { 300: 1, 400: 8, 500: 135, 600: 93, 700: 19 };
@@ -572,7 +574,7 @@
         const kind = $('scene').value;
         for (const [pane, fam, cap, feats] of [
           ['pane-new', sel.name, `this font — ${sel.name}`, featCss()],
-          ['pane-cur', CURRENT, `current — ${CURRENT}`, ''],
+          ['pane-cur', CURRENT, `current — ${CURRENT} + salt`, CURRENT_FEATS],
         ]) {
           const p = $(pane);
           const scene = p.querySelector('.scene');
@@ -583,7 +585,7 @@
         }
         $('use').textContent = `Use ${sel.name}`;
         $('commit-note').textContent =
-          sel.name === CURRENT && !sel.useFeats.size ? 'this is the current font — both panes render it' : '';
+          sel.name === CURRENT && featCss() === CURRENT_FEATS ? 'this is the current font — both panes render it' : '';
       }
 
       function renderFeatPick(fam) {
