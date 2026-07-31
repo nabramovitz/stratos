@@ -3,19 +3,32 @@
   const PROTOCOL_VERSION = 1;
   let metadata = null;
 
+  // The host page may enforce a nonce'd style-src (the product CSP mints a
+  // per-response nonce); an un-nonced injected <style> is silently dropped
+  // there. Capture this script's own nonce at load time — the browser exposes
+  // it to the script itself even though the attribute is hidden from the DOM —
+  // and stamp it on every <style> the shim creates. No CSP → empty → inert.
+  const STYLE_NONCE = (document.currentScript && document.currentScript.nonce) || '';
+  function makeStyle(id) {
+    const el = document.createElement('style');
+    el.id = id;
+    if (STYLE_NONCE) el.nonce = STYLE_NONCE;
+    return el;
+  }
+
   function applyVars(rootVars, darkVars) {
     // Apply :root vars via a <style> block (NOT inline on documentElement): inline
     // custom props beat any selector, which would shadow the .dark-theme overrides
     // below and silently break dark mode. A :root rule sits at the same cascade
     // level as .dark-theme, so dark overrides win when the class is present.
     let rootEl = document.getElementById('stb-root-vars');
-    if (!rootEl) { rootEl = document.createElement('style'); rootEl.id = 'stb-root-vars'; document.head.appendChild(rootEl); }
+    if (!rootEl) { rootEl = makeStyle('stb-root-vars'); document.head.appendChild(rootEl); }
     const rootDecls = Object.entries(rootVars || {}).map(([k, v]) => `${k}: ${v};`).join(' ');
     rootEl.textContent = `:root { ${rootDecls} }`;
 
     if (darkVars && Object.keys(darkVars).length > 0) {
       let styleEl = document.getElementById('stb-dark-overrides');
-      if (!styleEl) { styleEl = document.createElement('style'); styleEl.id = 'stb-dark-overrides'; document.head.appendChild(styleEl); }
+      if (!styleEl) { styleEl = makeStyle('stb-dark-overrides'); document.head.appendChild(styleEl); }
       const decls = Object.entries(darkVars).map(([k, v]) => `${k}: ${v};`).join(' ');
       styleEl.textContent = `.dark-theme { ${decls} }`;
     }
@@ -67,8 +80,7 @@
 
   function ensureRevealStyles() {
     if (document.getElementById('stb-reveal-style')) return;
-    const el = document.createElement('style');
-    el.id = 'stb-reveal-style';
+    const el = makeStyle('stb-reveal-style');
     // Give a hidden/empty themable element enough presence that its colour renders:
     // min-* is a no-op on already-sized elements; the ::before glyph only lands on
     // empty ones and inherits the element's text colour, so text-colour levers show.
@@ -82,8 +94,7 @@
 
   function ensureHighlightStyles() {
     if (document.getElementById('stb-highlight-style')) return;
-    const el = document.createElement('style');
-    el.id = 'stb-highlight-style';
+    const el = makeStyle('stb-highlight-style');
     // negative offset draws the outline just *inside* the element so full-bleed
     // elements (page, background) stay visible instead of clipping past the frame edge
     el.textContent = '[data-stb-highlight] { outline: 2px solid #ff8c00 !important; outline-offset: -2px; }';
@@ -168,8 +179,7 @@
     // sit after the snapshot stylesheet and win the source-order tie (R1 facet)
     var styleEl = document.getElementById('stb-scoped-blocks');
     if (!styleEl) {
-      styleEl = document.createElement('style');
-      styleEl.id = 'stb-scoped-blocks';
+      styleEl = makeStyle('stb-scoped-blocks');
       document.head.appendChild(styleEl);
     }
     styleEl.textContent = cssText || '';
@@ -198,8 +208,7 @@
 
   function ensureLeverStyles() {
     if (document.getElementById('stb-lever-style')) return;
-    const el = document.createElement('style');
-    el.id = 'stb-lever-style';
+    const el = makeStyle('stb-lever-style');
     el.textContent =
       '[data-stb-lever] { cursor: pointer; }' +
       '[data-stb-lever]:hover { outline: 2px dashed #3b82f6 !important; outline-offset: 2px; }' +
