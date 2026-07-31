@@ -16,7 +16,7 @@ import {
 } from '@stratosui/store';
 import { createBasicStoreModule, STORE_TEST_PROVIDERS } from '@stratosui/store/testing';
 import { generateCFEntities } from '../../../../cf-entity-generator';
-import { ApplicationDeploySourceTypes } from '../deploy-application-steps.types';
+import { ApplicationDeploySourceTypes, DEPLOY_TYPES_IDS } from '../deploy-application-steps.types';
 import { DeployApplicationStep2Component } from './deploy-application-step2.component';
 
 describe('DeployApplicationStep2Component', () => {
@@ -129,14 +129,66 @@ describe('DeployApplicationStep2Component', () => {
       expect(scmSpy.setPublicApi).not.toHaveBeenCalled();
     });
 
-    it('skips token handling when the active SCM is not GitHub (e.g. GitLab)', () => {
+    it('applies the access token for GitLab too, and normalizes the base URL to /api/v4', () => {
       scmSpy.getType.mockReturnValue('gitlab');
-      invoke('https://gitlab.example.com/api/v4', 'pat-should-be-ignored');
+      // User types the plain host; we append the GitLab API root before it
+      // reaches the SCM.
+      invoke('https://workshop.cloud.gov', 'pat-gitlab');
 
-      expect(scmSpy.setAccessToken).not.toHaveBeenCalled();
+      expect(scmSpy.setPublicApi).toHaveBeenCalledWith('https://workshop.cloud.gov/api/v4');
+      expect(scmSpy.setAccessToken).toHaveBeenCalledWith('pat-gitlab');
       expect(scmSpy.clearAccessToken).not.toHaveBeenCalled();
     });
 
+    it('does not double-append /api/v4 when the GitLab base URL already includes it', () => {
+      scmSpy.getType.mockReturnValue('gitlab');
+      invoke('https://workshop.cloud.gov/api/v4', 'pat-gitlab');
+
+      expect(scmSpy.setPublicApi).toHaveBeenCalledWith('https://workshop.cloud.gov/api/v4');
+    });
+
+    it('does not append /api/v4 for a GitHub Enterprise base URL', () => {
+      scmSpy.getType.mockReturnValue('github');
+      invoke('https://github.example.com/api/v3', 'pat-abc123');
+
+      expect(scmSpy.setPublicApi).toHaveBeenCalledWith('https://github.example.com/api/v3');
+    });
+
+    // Token handling used to be gated on the SCM type. It no longer is:
+    // setAccessToken/clearAccessToken are part of the GitSCM contract and
+    // GitSCMType is exactly 'github' | 'gitlab', so the guard could never be
+    // false. A provider added later has to implement the pair to compile.
+    it('clears the token for GitLab too when none is provided', () => {
+      scmSpy.getType.mockReturnValue('gitlab');
+      invoke('https://workshop.cloud.gov', '');
+
+      expect(scmSpy.clearAccessToken).toHaveBeenCalled();
+      expect(scmSpy.setAccessToken).not.toHaveBeenCalled();
+    });
+
+  });
+
+  describe('scmBaseApiUrl', () => {
+    // The getter feeds the project-exists validator's own SCM instance. A
+    // half-typed URL must not reach it, or the validator queries a malformed
+    // host and reports "not found" for a repository that exists.
+    it('is empty while the entered base URL is invalid', () => {
+      component.gitMode = 'private';
+      component.sourceType = { id: DEPLOY_TYPES_IDS.GITLAB } as any;
+      component.githubEnterpriseUrl = 'not a url';
+      component.isInvalidGithubEnterpriseUrl = true;
+
+      expect(component.scmBaseApiUrl).toBe('');
+    });
+
+    it('normalizes a valid GitLab base URL', () => {
+      component.gitMode = 'private';
+      component.sourceType = { id: DEPLOY_TYPES_IDS.GITLAB } as any;
+      component.githubEnterpriseUrl = 'https://workshop.cloud.gov';
+      component.isInvalidGithubEnterpriseUrl = false;
+
+      expect(component.scmBaseApiUrl).toBe('https://workshop.cloud.gov/api/v4');
+    });
   });
 
   describe('git access mode (Public / Private / Enterprise tabs)', () => {
@@ -186,6 +238,76 @@ describe('DeployApplicationStep2Component', () => {
       expect(component.gitMode).toBe('enterprise');
       expect(component.githubEnterpriseUrl).toBe('https://github.corp.com');
       expect(component.accessToken).toBe('tok');
+    });
+  });
+
+  describe('normalizeGitlabApiUrl', () => {
+    const normalize = (u: string) => DeployApplicationStep2Component.normalizeGitlabApiUrl(u);
+
+    it('appends /api/v4 to a plain host', () => {
+      expect(normalize('https://workshop.cloud.gov')).toBe('https://workshop.cloud.gov/api/v4');
+    });
+
+    it('trims a trailing slash before appending', () => {
+      expect(normalize('https://workshop.cloud.gov/')).toBe('https://workshop.cloud.gov/api/v4');
+    });
+
+    it('is idempotent when /api/v4 is already present', () => {
+      expect(normalize('https://workshop.cloud.gov/api/v4')).toBe('https://workshop.cloud.gov/api/v4');
+    });
+
+    it('is idempotent when /api/v4 is present with a trailing slash', () => {
+      expect(normalize('https://workshop.cloud.gov/api/v4/')).toBe('https://workshop.cloud.gov/api/v4');
+    });
+  });
+
+  // Regression guard: a separately-registered github.com endpoint tags the
+  // GitHub source type with its guid. In Private/Enterprise mode the user
+  // supplies a token directly in the form, so project-exists validation and
+  // repo/branch lookups must talk to the SCM API with THAT token, not proxy
+  // through the registered endpoint's stored creds (which 404s on a private
+  // repo the typed token can actually see). Only Public mode should carry the
+  // endpoint guid.
+  describe('projectExistsEndpointGuid (private/enterprise must not proxy via registered endpoint)', () => {
+    beforeEach(() => {
+      fixture = TestBed.createComponent(DeployApplicationStep2Component);
+      component = fixture.componentInstance;
+      // Simulate the GitHub source type carrying a registered endpoint guid.
+      component.sourceType = {
+        id: 'github',
+        group: 'gitscm',
+        name: 'GitHub',
+        endpointGuid: '747ed39a-endpoint-guid',
+      } as any;
+    });
+
+    it('uses the registered endpoint guid in Public mode', () => {
+      component.gitMode = 'public';
+      expect(component.projectExistsEndpointGuid).toBe('747ed39a-endpoint-guid');
+    });
+
+    it('drops the endpoint guid in Private mode (use the typed token directly)', () => {
+      component.gitMode = 'private';
+      expect(component.projectExistsEndpointGuid).toBe('');
+    });
+
+    it('drops the endpoint guid in Enterprise mode (use the typed token directly)', () => {
+      component.gitMode = 'enterprise';
+      expect(component.projectExistsEndpointGuid).toBe('');
+    });
+
+    it('rebuilds the SCM with no endpoint guid when switching to Private', () => {
+      const getSCM = vi.spyOn(TestBed.inject(GitSCMService), 'getSCM');
+      component.setGitMode('private');
+      // Last getSCM call should target the github type with an empty guid so
+      // the SCM talks to the API directly with the form token.
+      expect(getSCM).toHaveBeenLastCalledWith('github', '');
+    });
+
+    it('rebuilds the SCM with the endpoint guid when switching to Public', () => {
+      const getSCM = vi.spyOn(TestBed.inject(GitSCMService), 'getSCM');
+      component.setGitMode('public');
+      expect(getSCM).toHaveBeenLastCalledWith('github', '747ed39a-endpoint-guid');
     });
   });
 

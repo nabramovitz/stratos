@@ -26,6 +26,7 @@ $(_HIDE)FLAG_aio         := $($(_HIDE)WANT_AIO)
 $(_HIDE)FLAG_pages       := $($(_HIDE)WANT_PAGES)
 $(_HIDE)FLAG_e2e         := $($(_HIDE)WANT_E2E)
 $(_HIDE)FLAG_dist        := $($(_HIDE)WANT_CLEAN_DIST)
+$(_HIDE)FLAG_repo        := $($(_HIDE)WANT_CLEAN_REPO)
 $(_HIDE)FLAG_version     := $($(_HIDE)WANT_VERSION)
 $(_HIDE)FLAG_actions     := $($(_HIDE)WANT_ACTIONS)
 $(_HIDE)FLAG_packages    := $($(_HIDE)WANT_PACKAGES)
@@ -40,11 +41,15 @@ $(_HIDE)FLAG_tree        := $($(_HIDE)WANT_TREE)
 $(_HIDE)FLAG_history     := $($(_HIDE)WANT_HISTORY)
 $(_HIDE)FLAG_licenses    := $($(_HIDE)WANT_LICENSES)
 $(_HIDE)FLAG_modrot      := $($(_HIDE)WANT_MODROT)
+$(_HIDE)FLAG_semgrep     := $($(_HIDE)WANT_SEMGREP)
+$(_HIDE)FLAG_codeql      := $($(_HIDE)WANT_CODEQL)
+$(_HIDE)FLAG_sarif       := $($(_HIDE)WANT_SARIF)
+$(_HIDE)FLAG_upload      := $($(_HIDE)WANT_UPLOAD)
 $(_HIDE)FLAG_tag         := $($(_HIDE)WANT_TAG)
 $(_HIDE)FLAG_untag       := $($(_HIDE)WANT_UNTAG)
 
 # Known modifiers — the set checked during validation in declare_verb
-$(_HIDE)KNOWN_MODS := frontend backend website booklets cf korifi github aio pages e2e dist version actions packages secrets lint gate tests coverage summary dependabot tree history licenses modrot tag untag
+$(_HIDE)KNOWN_MODS := frontend backend website booklets cf korifi github aio pages e2e dist repo version actions packages secrets lint gate tests coverage summary dependabot tree history licenses modrot semgrep codeql sarif upload tag untag
 
 # Known verbs — populated by declare_verb, checked for collisions
 $(_HIDE)KNOWN_VERBS :=
@@ -82,6 +87,11 @@ register_always = $(eval $(call $(_HIDE)register_always_impl,$(strip $1),$(strip
 # Use when the modifier affects behavior through variables rather
 # than adding a distinct target (e.g., cf forces linux/amd64 for build).
 allow = $(eval $(_HIDE)VALID_MODS_$(strip $1) += $(strip $2))
+
+# ── require_tool(name,hint) ──────────────────────────────────
+# Hard-fail a recipe with a consistent message if `name` isn't on PATH.
+# hint is free text describing how to install it.
+require_tool = @which $(strip $1) > /dev/null 2>&1 || (echo "$(strip $1) not installed. $(strip $2)" >&2 && exit 1)
 
 # ── Modifier validation ──────────────────────────────────────
 # Called inside declare_verb and declare_verb_default. Emits a

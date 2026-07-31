@@ -399,13 +399,12 @@ export class CfAppsSignalConfigService {
     const sources = cnsiGuids.map(guid => {
       const eds = this.endpointRegistry.acquire(guid);
       const source = new CnsiAppsSource(guid, this.http, eds);
-      // If a prior page (home card / detail view / earlier tab mount) has
-      // already drained this CF's apps into the shared EndpointDataService,
-      // seed the new source from that cache so the user lands on populated
-      // rows instead of staring at a spinner while we re-fetch the same
-      // data. The base class's preSeed flag short-circuits the next load()
-      // exactly once; an explicit refresh() falls through to the normal
-      // HTTP drain.
+      // Warm cache seeds SYNCHRONOUSLY, at mount, so the user lands on
+      // populated rows. CnsiAppsSource.load() now joins the endpoint's
+      // shared drain as well, which covers the cold and still-in-flight
+      // cases this block never could — but that join is necessarily async,
+      // and awaiting it here would trade an instant first paint for a
+      // spinner on every warm mount.
       if (eds.appsLastFetched() !== null) {
         source.preSeed(eds.apps());
       }
@@ -517,12 +516,40 @@ export class CfAppsSignalConfigService {
     // #500 → "—" in the CF/Org/Space cell), so spaces are fetched per-org-
     // batch below once orgs are known.
     const namePerPage = 500;
-    const fetchOrgs = (guid: string) =>
-      firstValueFrom(this.http.get<StOrgsResponse>(
+    // Join the endpoint's shared org load instead of issuing a second
+    // identical request. A summary page and this tab both want the full org
+    // list, and each used to fetch it independently — arriving here while
+    // the other's drain was still in flight produced two concurrent
+    // `/pp/v1/cf/orgs/{cnsi}?per_page=500&page=1` calls (measured: 13s and
+    // 22s, overlapping). EndpointDataService.loadOrgs() is the single owner
+    // of that state per endpoint: it serves a warm cache outright, returns
+    // the in-flight observable when a drain is already running, and its
+    // shareReplay hands a completed drain's result to a late subscriber —
+    // so joining can't hang waiting on a completion signal that already
+    // fired. Whichever page arrives first starts the load; the other joins.
+    //
+    // peek() rather than acquire(): acquire() on an unseen guid enqueues the
+    // home-card load/details/pre-warm cascade, which this tab must not
+    // trigger. initialize() has already acquired every scoped guid by the
+    // time we run, so the lookup hits; the direct fetch stays as the
+    // fallback for a guid that was never acquired (e.g. ensureNamesLoaded()
+    // deriving guids from connectedEndpoints() beyond the mounted scope).
+    const fetchOrgs = async (guid: string): Promise<{ guid: string; orgs: StOrg[] }> => {
+      const eds = this.endpointRegistry.peek(guid);
+      if (eds) {
+        try {
+          await firstValueFrom(eds.loadOrgs());
+          return { guid, orgs: eds.orgs() };
+        } catch {
+          return { guid, orgs: [] as StOrg[] };
+        }
+      }
+      return firstValueFrom(this.http.get<StOrgsResponse>(
         `/pp/v1/cf/orgs/${guid}?per_page=${namePerPage}&page=1`,
       ))
         .then(r => ({ guid, orgs: r.resources as StOrg[] }))
         .catch(() => ({ guid, orgs: [] as StOrg[] }));
+    };
 
     this._isLoadingOrgs.set(true);
     this._isLoadingSpaces.set(true);
@@ -545,7 +572,15 @@ export class CfAppsSignalConfigService {
     // chunk's RTT is bounded (≤20 orgs of spaces) so awaiting it yields
     // a brief, predictable initial-mount delay in exchange for visible
     // names on first paint.
-    const drainPromises = cnsiGuids.map(cnsi => {
+    // Same story as the org catalog above: an endpoint's full space list may
+    // already be cached or draining on the shared EndpointDataService (a
+    // summary page fetches `/cf/spaces/{cnsi}?per_page=500&page=N` for every
+    // page), and the per-org fanout below re-fetches exactly those spaces —
+    // measured together on one mount as 14 requests / 37.5s. When the shared
+    // slice is available, join it and seed from its result; the fanout is
+    // only worth its request count when nothing else is loading the data.
+    const drainPromises = cnsiGuids.map(async cnsi => {
+      if (await this.seedSpacesFromEndpoint(cnsi, gen)) return;
       const orgs = orgMap.get(cnsi) ?? [];
       const orderedOrgGuids = this.orderOrgsForCnsi(cnsi, orgs);
       return this.drainSpacesByOrgChunks(cnsi, orderedOrgGuids, gen);
@@ -555,6 +590,32 @@ export class CfAppsSignalConfigService {
     // hence allSettled.
     await Promise.allSettled(drainPromises);
     this._isLoadingSpaces.set(false);
+  }
+
+  // Seeds _spacesByCnsi for one endpoint from its shared EndpointDataService
+  // space slice, joining an in-flight drain rather than starting a second
+  // one. Returns false when there's nothing to join (no cached instance, or
+  // the drain produced nothing) so the caller falls back to the per-org
+  // fanout — a slow CF whose drain failed must still get its names.
+  private async seedSpacesFromEndpoint(cnsi: string, gen: number): Promise<boolean> {
+    const eds = this.endpointRegistry.peek(cnsi);
+    if (!eds) return false;
+    try {
+      await firstValueFrom(eds.loadSpaces());
+    } catch {
+      return false;
+    }
+    // A newer initialize() started while we waited — drop the result rather
+    // than merging it into the new mount's map.
+    if (gen !== this._initGen) return true;
+    const spaces = eds.spaces();
+    if (!spaces.length) return false;
+    this._spacesByCnsi.update(curr => {
+      const next = new Map(curr);
+      next.set(cnsi, spaces.slice());
+      return next;
+    });
+    return true;
   }
 
   // Returns the cnsi's orgs ordered with "priority" orgs first (those
@@ -1054,14 +1115,17 @@ export class CfAppsSignalConfigService {
     this.orchestrator?.removeRow(cnsiGuid, appGuid);
   }
 
-  // Bulk delete: destroys each app entity (cascading its routes/bindings on
-  // the CF side). CF v3 has no batch delete, so the backend fans out one
-  // DELETE /v3/apps/{guid} per item and returns a BulkResult with per-guid
-  // outcomes; pending items carry an async CF job tracking completion.
-  // Optimistically drops every non-failed row from the orchestrator's
-  // aggregated view (mirrors deleteApp's removeRow) so the list reflects the
-  // request immediately without a full re-fetch — a pending delete that later
-  // fails resurfaces on the next refresh.
+  // Bulk delete: destroys each app entity. CF v3 does not cascade-delete a
+  // route or service binding when the app goes away (only the destination/
+  // binding to that app is implicitly gone with it) - see
+  // bulkDeleteAppsWithCleanup for the opt-in cleanup path. CF v3 also has no
+  // batch delete, so the backend fans out one DELETE /v3/apps/{guid} per item
+  // and returns a BulkResult with per-guid outcomes; pending items carry an
+  // async CF job tracking completion. Optimistically drops every non-failed
+  // row from the orchestrator's aggregated view (mirrors deleteApp's
+  // removeRow) so the list reflects the request immediately without a full
+  // re-fetch — a pending delete that later fails resurfaces on the next
+  // refresh.
   async bulkDeleteApps(cnsiGuid: string, appGuids: string[]): Promise<BulkResult> {
     const result = await firstValueFrom(this.http.post<BulkResult>(
       `/pp/v1/cf/apps/${cnsiGuid}/bulk/delete`,
@@ -1073,5 +1137,46 @@ export class CfAppsSignalConfigService {
       }
     }
     return result;
+  }
+
+  // Opt-in cleanup variant of bulkDeleteApps: resolves each app's routes and
+  // service bindings first, deletes them, then runs the bulk app delete -
+  // otherwise a bulk delete leaves every selected app's routes behind (44 of
+  // 48 routes orphaned in one observed test space, #5692).
+  //
+  // A route is only deleted if every one of its destinations belongs to an
+  // app in this same batch - a route shared with an app NOT being deleted
+  // here must survive, matching the single-app delete wizard's per-route
+  // picker semantics.
+  //
+  // Best-effort: a route/binding delete failure is swallowed (mirrors
+  // deleteWithCleanup's per-item fan-out) so one bad relationship doesn't
+  // block the rest of the cleanup or the app deletes that follow.
+  async bulkDeleteAppsWithCleanup(cnsiGuid: string, appGuids: string[]): Promise<BulkResult> {
+    const targets = new Set(appGuids);
+    const perApp = await Promise.all(appGuids.map(async guid => ({
+      routes: await this.fetchAppRoutes(cnsiGuid, guid),
+      bindings: await this.fetchAppServiceBindings(cnsiGuid, guid),
+    })));
+
+    const routesToDelete = new Map<string, StRoute>();
+    for (const { routes } of perApp) {
+      for (const route of routes) {
+        // appGuids always carries at least the app this route was fetched
+        // for (see toStRoute); an empty/missing value would mean "unknown
+        // destinations" - treat that conservatively as "don't delete".
+        if (route.appGuids?.length && route.appGuids.every(appGuid => targets.has(appGuid))) {
+          routesToDelete.set(route.guid, route);
+        }
+      }
+    }
+    const bindingsToDelete = perApp.flatMap(({ bindings }) => bindings);
+
+    await Promise.all([
+      ...Array.from(routesToDelete.values()).map(route => this.deleteRoute(cnsiGuid, route.guid).catch(() => {})),
+      ...bindingsToDelete.map(binding => this.deleteServiceBinding(cnsiGuid, binding.guid).catch(() => {})),
+    ]);
+
+    return this.bulkDeleteApps(cnsiGuid, appGuids);
   }
 }

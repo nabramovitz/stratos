@@ -18,12 +18,15 @@
 #   make unpublish TAG=vX       Delete a GitHub release (assets included)
 #   make stamp untag TAG=vX     Delete a tag (local + remote)
 #   make sweep                  Remove published changelog.d fragments
+#   make changelog              Report dependency bumps since the last tag
+#                               (./build/release-notes.sh deps drafts them)
 #   make install                Install dependencies
 #   make stage                  Stage for local testing
 #   make clean                  Remove all build output
 #   make clean frontend         Remove frontend build only
 #   make clean backend          Remove backend binaries only
 #   make clean dist             Remove everything (including node_modules)
+#   make clean repo             Full reset: git clean -fdx (fresh-clone state)
 #   make check                  Run all quality gates (lint + gate)
 #   make check e2e              Run Playwright E2E tests
 #   make test e2e TIER=acceptance PR=1234   Tiered E2E run (see TESTING.md)
@@ -34,10 +37,14 @@
 # Variables:
 #   FINAL=strip                 Strip prerelease from version (persisted)
 #   DRYRUN=yes                  Preview actions without executing
-#   VERSION=vX.Y.Z              Override version
+#   VERSION=X.Y.Z               Override version (project convention: no v,
+#                               matching package.json/semver.org — a v is
+#                               accepted too, it's just baked in as given)
 #   PLATFORM=os/arch            Override target platform
 #   TAG=vX.Y.Z                  Tag for publish/unpublish/stamp tag/untag
-#                               (default: version with build metadata stripped)
+#                               (default: v + version with build metadata
+#                               stripped; v is a git/GitHub tag convention,
+#                               same underlying value as VERSION)
 #   TAG_REMOTE=<remote>         Remote for stamp tag/untag (default: origin)
 #   DRAFT=yes                   publish creates a draft release
 #   NOTES=<file>                Notes file for publish (default: the
@@ -211,6 +218,10 @@ $(_HIDE)WANT_TREE     :=
 $(_HIDE)WANT_HISTORY  :=
 $(_HIDE)WANT_LICENSES :=
 $(_HIDE)WANT_MODROT   :=
+$(_HIDE)WANT_SEMGREP  :=
+$(_HIDE)WANT_CODEQL   :=
+$(_HIDE)WANT_SARIF    :=
+$(_HIDE)WANT_UPLOAD   :=
 
 ifneq ($(filter packages,$(MAKECMDGOALS)),)
   $(_HIDE)WANT_PACKAGES := yes
@@ -229,6 +240,18 @@ ifneq ($(filter licenses,$(MAKECMDGOALS)),)
 endif
 ifneq ($(filter modrot,$(MAKECMDGOALS)),)
   $(_HIDE)WANT_MODROT := yes
+endif
+ifneq ($(filter semgrep,$(MAKECMDGOALS)),)
+  $(_HIDE)WANT_SEMGREP := yes
+endif
+ifneq ($(filter codeql,$(MAKECMDGOALS)),)
+  $(_HIDE)WANT_CODEQL := yes
+endif
+ifneq ($(filter sarif,$(MAKECMDGOALS)),)
+  $(_HIDE)WANT_SARIF := yes
+endif
+ifneq ($(filter upload,$(MAKECMDGOALS)),)
+  $(_HIDE)WANT_UPLOAD := yes
 endif
 
 $(_HIDE)WANT_TAG   :=
@@ -266,6 +289,7 @@ ifeq ($($(_HIDE)WANT_KORIFI),yes)
 endif
 
 $(_HIDE)WANT_CLEAN_DIST :=
+$(_HIDE)WANT_CLEAN_REPO :=
 $(_HIDE)WANT_LINT       :=
 $(_HIDE)WANT_GATE       :=
 $(_HIDE)WANT_TESTS      :=
@@ -275,6 +299,9 @@ $(_HIDE)WANT_DEPENDABOT :=
 
 ifneq ($(filter dist,$(MAKECMDGOALS)),)
   $(_HIDE)WANT_CLEAN_DIST := yes
+endif
+ifneq ($(filter repo,$(MAKECMDGOALS)),)
+  $(_HIDE)WANT_CLEAN_REPO := yes
 endif
 ifneq ($(filter lint,$(MAKECMDGOALS)),)
   $(_HIDE)WANT_LINT := yes
@@ -303,8 +330,9 @@ endif
 endif
 # Default: all scanners for audit when no modifier given
 ifneq ($(filter audit,$(MAKECMDGOALS)),)
-ifeq ($($(_HIDE)WANT_FRONTEND)$($(_HIDE)WANT_BACKEND)$($(_HIDE)WANT_SUMMARY)$($(_HIDE)WANT_ACTIONS)$($(_HIDE)WANT_PACKAGES)$($(_HIDE)WANT_SECRETS)$($(_HIDE)WANT_TESTS)$($(_HIDE)WANT_TREE)$($(_HIDE)WANT_HISTORY)$($(_HIDE)WANT_LICENSES)$($(_HIDE)WANT_MODROT),)
+ifeq ($($(_HIDE)WANT_FRONTEND)$($(_HIDE)WANT_WEBSITE)$($(_HIDE)WANT_BACKEND)$($(_HIDE)WANT_SUMMARY)$($(_HIDE)WANT_ACTIONS)$($(_HIDE)WANT_PACKAGES)$($(_HIDE)WANT_SECRETS)$($(_HIDE)WANT_TESTS)$($(_HIDE)WANT_TREE)$($(_HIDE)WANT_HISTORY)$($(_HIDE)WANT_LICENSES)$($(_HIDE)WANT_MODROT)$($(_HIDE)WANT_SEMGREP)$($(_HIDE)WANT_CODEQL)$($(_HIDE)WANT_SARIF)$($(_HIDE)WANT_UPLOAD),)
   $(_HIDE)WANT_FRONTEND := yes
+  $(_HIDE)WANT_WEBSITE  := yes
   $(_HIDE)WANT_BACKEND  := yes
   $(_HIDE)WANT_ACTIONS  := yes
   $(_HIDE)WANT_PACKAGES := yes
@@ -321,8 +349,8 @@ endif
 
 # No-op targets so modifiers don't error
 # Note: lint has its own standalone recipe — not listed here.
-.PHONY: frontend backend website booklets cf korifi github aio pages dist version e2e actions packages secrets gate tests coverage summary dependabot tree history licenses modrot tag untag
-frontend backend website booklets cf korifi github aio pages dist version e2e actions packages secrets gate tests coverage summary dependabot tree history licenses modrot tag untag:
+.PHONY: frontend backend website booklets cf korifi github aio pages dist repo version e2e actions packages secrets gate tests coverage summary dependabot tree history licenses modrot semgrep codeql sarif upload tag untag
+frontend backend website booklets cf korifi github aio pages dist repo version e2e actions packages secrets gate tests coverage summary dependabot tree history licenses modrot semgrep codeql sarif upload tag untag:
 	@:
 
 # No-op targets for bump modifiers (consumed by BUMP_MOD filter).
@@ -449,7 +477,7 @@ $(call register, clean, website)
 
 define build.booklets
 	@echo "Rendering documentation booklets..."
-	docs-build/render.sh
+	docs/booklets/render.sh
 	@echo "Booklets rendered: dist/booklets/"
 endef
 $(call register, build, booklets)
@@ -554,7 +582,7 @@ $(call register, clean, e2e)
 
 define check.lint
 	@echo "Running lint checks..."
-	@which golangci-lint > /dev/null 2>&1 || (echo "golangci-lint not installed. See https://golangci-lint.run/welcome/install/ (macOS: brew install golangci-lint)" >&2 && exit 1)
+	$(call require_tool,golangci-lint,See https://golangci-lint.run/welcome/install/ (macOS: brew install golangci-lint))
 	bun run lint
 	cd src/jetstream && go fmt ./... && go vet ./...
 	cd src/jetstream && golangci-lint run ./...
@@ -594,9 +622,12 @@ $(call register, check, e2e)
 
 # ── Audit (security scanning) ────────────────────────────────
 # make audit              — default scanners (frontend backend actions packages secrets)
-# make audit frontend     — bun audit (npm advisory DB)
+# make audit frontend     — bun audit (npm advisory DB), root workspace
+# make audit website      — bun audit (npm advisory DB), website/ workspace
 # make audit backend      — gosec + trivy + govulncheck (both Go modules)
 # make audit modrot       — modrot archived/deprecated dependency scan (needs gh auth)
+# make audit semgrep      — semgrep SAST, account policy + SARIF (needs network, manual/build-machine only)
+# make audit codeql       — CodeQL SAST, Go + JS/TS (needs codeql CLI, manual/build-machine only)
 # make audit actions      — zizmor (GitHub Actions workflow SAST)
 #                           ZIZMOR_FLAGS="--persona=auditor" for the strict rule set
 # make audit packages     — osv-scanner (all lockfiles + go.mods, one pass)
@@ -605,6 +636,8 @@ $(call register, check, e2e)
 # make audit tree         — trivy over the whole tree (deploy/ Dockerfiles, helm, manifests)
 # make audit history      — gitleaks full git-history secret scan (slow)
 # make audit licenses     — osv-scanner dependency license report
+# make audit sarif        — sarif-tools summary across dist/*.sarif (local, no network)
+# make audit upload       — push dist/*.sarif to GitHub code scanning, skips codeql-* (CI covers those); needs repo push access
 # make audit summary      — high/moderate/low counts only
 
 define audit.frontend
@@ -613,11 +646,18 @@ define audit.frontend
 endef
 $(call register, audit, frontend)
 
+# tools/stb isn't covered — pre-release, not worth auditing yet.
+define audit.website
+	@echo "Running website audit (bun audit)..."
+	@cd website && bun audit || true
+endef
+$(call register, audit, website)
+
 define audit.backend
 	@echo "Running backend security scans..."
-	@which gosec > /dev/null 2>&1 || (echo "gosec not installed. Run: go install github.com/securego/gosec/v2/cmd/gosec@latest" >&2 && exit 1)
-	@which trivy > /dev/null 2>&1 || (echo "trivy not installed. See https://github.com/aquasecurity/trivy" >&2 && exit 1)
-	@which govulncheck > /dev/null 2>&1 || (echo "govulncheck not installed. Run: go install golang.org/x/vuln/cmd/govulncheck@latest" >&2 && exit 1)
+	$(call require_tool,gosec,Run: go install github.com/securego/gosec/v2/cmd/gosec@latest)
+	$(call require_tool,trivy,See https://github.com/aquasecurity/trivy)
+	$(call require_tool,govulncheck,Run: go install golang.org/x/vuln/cmd/govulncheck@latest)
 	@echo "── gosec ──"
 	cd src/jetstream && gosec -quiet ./... || true
 	cd src/jetstream/api && gosec -quiet ./... || true
@@ -632,16 +672,93 @@ $(call register, audit, backend)
 # Archived / deprecated dependency scan. Needs `gh auth token` (GitHub
 # GraphQL) + network, so it is a standalone extra, not in the default set.
 # --recursive covers jetstream + api + every plugin go.mod in one query pass.
+# SARIF (modrot >= 0.10.0) lands in dist/ for GitHub code scanning upload.
 define audit.modrot
 	@echo "Running dependency-archival audit (modrot)..."
-	@which modrot > /dev/null 2>&1 || (echo "modrot not installed. Run: go install github.com/norman-abramovitz/modrot@latest" >&2 && exit 1)
+	$(call require_tool,modrot,Run: go install github.com/norman-abramovitz/modrot@latest)
+	@mkdir -p dist
 	modrot --recursive --deprecated --resolve src/jetstream || true
+	modrot --recursive --deprecated --resolve --sarif src/jetstream > dist/modrot.sarif || true
 endef
 $(call register, audit, modrot)
 
+# Broad pattern-based SAST across the whole tree, using the org policy from
+# the logged-in Semgrep AppSec Platform account (`semgrep login`) — findings
+# also land in the account's dashboard, plus a local SARIF copy in dist/.
+# Falls back to community rules if not logged in. Needs network — standalone
+# extra, not in the default set. Run manually on the build machine.
+define audit.semgrep
+	@echo "Running Semgrep SAST (semgrep ci, account policy)..."
+	$(call require_tool,semgrep,Run: brew install semgrep)
+	@semgrep show identity > /dev/null 2>&1 || echo "Not logged in to Semgrep — falling back to community rules. Run: semgrep login"
+	@mkdir -p dist
+	semgrep ci --sarif --sarif-output=dist/semgrep.sarif || true
+endef
+$(call register, audit, semgrep)
+
+# Deep SAST via CodeQL databases (Go backend + JS/TS frontend). Needs the
+# codeql CLI with query packs installed — standalone extra, not in the
+# default set. Run manually on the build machine; SARIF output lands in dist/.
+define audit.codeql
+	@echo "Running CodeQL SAST (Go + JavaScript/TypeScript)..."
+	$(call require_tool,codeql,See https://github.com/github/codeql-action/releases)
+	@mkdir -p dist
+	@echo "── Go (src/jetstream) ──"
+	codeql database create dist/codeql-db-go --language=go --source-root=src/jetstream --overwrite
+	codeql database analyze dist/codeql-db-go codeql/go-queries --format=sarif-latest --output=dist/codeql-go.sarif
+	@echo "── JavaScript/TypeScript (src/frontend) ──"
+	codeql database create dist/codeql-db-js --language=javascript --source-root=src/frontend --overwrite
+	codeql database analyze dist/codeql-db-js codeql/javascript-queries --format=sarif-latest --output=dist/codeql-js.sarif
+	@echo "SARIF written to dist/codeql-go.sarif and dist/codeql-js.sarif"
+endef
+$(call register, audit, codeql)
+
+# Aggregate summary across every SARIF file already written to dist/
+# (modrot, semgrep, codeql, and any scanner added later) via sarif-tools.
+# Local-only, no network — run after the SARIF-emitting scanners.
+define audit.sarif
+	@echo "Running SARIF summary (sarif-tools)..."
+	$(call require_tool,sarif,Run: pip install sarif-tools)
+	@ls dist/*.sarif > /dev/null 2>&1 || (echo "No SARIF files in dist/ — run audit modrot/semgrep/codeql first." >&2 && exit 1)
+	sarif summary dist
+endef
+$(call register, audit, sarif)
+
+# Push dist/*.sarif to GitHub code scanning (same endpoint the codeql-action
+# workflow uses), so findings show up in the Security tab. Skips codeql-*
+# — .github/workflows/codeql.yml already uploads those canonically under
+# categories /language:go and /language:javascript-typescript on every push/
+# PR to develop+main; a local upload with no category would just add a
+# duplicate-looking uncategorized entry. modrot/semgrep have no CI upload
+# path, so those are the ones this target actually adds. Needs push access
+# to this repo (code-scanning upload requires write) and the commit already
+# pushed — GitHub has to recognize commit_sha/ref. The fork-only account
+# used for day-to-day work has pull-only access upstream; switch to the
+# maintainer account first (`gh auth switch`) if this 403s.
+define audit.upload
+	@echo "Uploading SARIF to GitHub code scanning..."
+	$(call require_tool,gh,See https://cli.github.com)
+	@ls dist/*.sarif > /dev/null 2>&1 || (echo "No SARIF files in dist/ — run audit modrot/semgrep/codeql first." >&2 && exit 1)
+	@commit_sha=$$(git rev-parse HEAD); \
+	ref=refs/heads/$$(git branch --show-current); \
+	for f in dist/*.sarif; do \
+		case "$$f" in dist/codeql-*.sarif) echo "── $$f ── skipped (CI already uploads CodeQL canonically)"; continue;; esac; \
+		echo "── $$f ──"; \
+		tmpfile=$$(mktemp); \
+		gzip -c "$$f" | base64 | tr -d '\n' > "$$tmpfile"; \
+		gh api repos/{owner}/{repo}/code-scanning/sarifs \
+			-f commit_sha="$$commit_sha" \
+			-f ref="$$ref" \
+			-F sarif=@"$$tmpfile" \
+			--jq '.id' || { rm -f "$$tmpfile"; exit 1; }; \
+		rm -f "$$tmpfile"; \
+	done
+endef
+$(call register, audit, upload)
+
 define audit.actions
 	@echo "Running GitHub Actions workflow audit (zizmor)..."
-	@which zizmor > /dev/null 2>&1 || (echo "zizmor not installed. Run: brew install zizmor" >&2 && exit 1)
+	$(call require_tool,zizmor,Run: brew install zizmor)
 	@if command -v gh > /dev/null 2>&1 && gh auth token > /dev/null 2>&1; then \
 		GH_TOKEN=$$(gh auth token) zizmor $(ZIZMOR_FLAGS) .github/workflows/ || true; \
 	else \
@@ -652,21 +769,21 @@ $(call register, audit, actions)
 
 define audit.packages
 	@echo "Running dependency audit (osv-scanner)..."
-	@which osv-scanner > /dev/null 2>&1 || (echo "osv-scanner not installed. Run: brew install osv-scanner" >&2 && exit 1)
+	$(call require_tool,osv-scanner,Run: brew install osv-scanner)
 	@osv-scanner scan source -r . || true
 endef
 $(call register, audit, packages)
 
 define audit.secrets
 	@echo "Running secret scan (gitleaks)..."
-	@which gitleaks > /dev/null 2>&1 || (echo "gitleaks not installed. Run: brew install gitleaks" >&2 && exit 1)
+	$(call require_tool,gitleaks,Run: brew install gitleaks)
 	@gitleaks dir . --no-banner --redact || true
 endef
 $(call register, audit, secrets)
 
 define audit.tests
 	@echo "Running gosec including test files..."
-	@which gosec > /dev/null 2>&1 || (echo "gosec not installed. Run: go install github.com/securego/gosec/v2/cmd/gosec@latest" >&2 && exit 1)
+	$(call require_tool,gosec,Run: go install github.com/securego/gosec/v2/cmd/gosec@latest)
 	cd src/jetstream && gosec -quiet -tests -track-suppressions ./... || true
 	cd src/jetstream/api && gosec -quiet -tests -track-suppressions ./... || true
 endef
@@ -674,21 +791,21 @@ $(call register, audit, tests)
 
 define audit.tree
 	@echo "Running full-tree scan (trivy)..."
-	@which trivy > /dev/null 2>&1 || (echo "trivy not installed. See https://github.com/aquasecurity/trivy" >&2 && exit 1)
+	$(call require_tool,trivy,See https://github.com/aquasecurity/trivy)
 	trivy fs --scanners vuln,misconfig --skip-dirs '**/node_modules' --skip-dirs '**/dist' . || true
 endef
 $(call register, audit, tree)
 
 define audit.history
 	@echo "Running full git-history secret scan (gitleaks)..."
-	@which gitleaks > /dev/null 2>&1 || (echo "gitleaks not installed. Run: brew install gitleaks" >&2 && exit 1)
+	$(call require_tool,gitleaks,Run: brew install gitleaks)
 	gitleaks git . --no-banner --redact || true
 endef
 $(call register, audit, history)
 
 define audit.licenses
 	@echo "Running dependency license report (osv-scanner)..."
-	@which osv-scanner > /dev/null 2>&1 || (echo "osv-scanner not installed. Run: brew install osv-scanner" >&2 && exit 1)
+	$(call require_tool,osv-scanner,Run: brew install osv-scanner)
 	osv-scanner scan source --licenses -r . || true
 endef
 $(call register, audit, licenses)
@@ -723,7 +840,7 @@ $(call register, outdated, backend)
 # make deps dependabot   — list open dependency PRs from GitHub
 
 define deps.dependabot
-	@which gh > /dev/null 2>&1 || (echo "gh not installed. See https://cli.github.com/" >&2 && exit 1)
+	$(call require_tool,gh,See https://cli.github.com)
 	@echo "Open dependency PRs:"
 	@gh pr list --label dependencies --state open --limit 50 \
 		--json number,title,createdAt,author \
@@ -741,13 +858,19 @@ $(call register, release, cf)
 
 # ── Korifi ────────────────────────────────────────────────────
 # Korifi runs droplets on the Paketo jammy run image, which has no
-# glibc loader at the paths a dynamically linked cgo binary expects,
-# and the sqlite driver needs cgo — so the binary must be a static
-# cgo build (zig/musl). Korifi also has no binary_buildpack; the
-# package manifest uses paketo-buildpacks/procfile instead.
+# glibc loader at the paths a dynamically linked cgo binary expects.
+# This target predates the pure-Go ncruces sqlite driver (see
+# sqlitestore.go) — that was the original reason cgo was needed here,
+# and it no longer applies: a plain CGO_ENABLED=0 build (build.backend's
+# approach) is already static with no glibc dependency, verified against
+# this same GOOS/GOARCH. Left as the static-cgo/zig build for now since
+# Korifi has no active maintainer to validate a change here; the target
+# still needs to build, just isn't worth touching further right now.
+# Korifi also has no binary_buildpack; the package manifest uses
+# paketo-buildpacks/procfile instead.
 
 define build.korifi
-	@command -v zig > /dev/null 2>&1 || (echo "zig not installed — required for the static cgo cross-compile. Install: brew install zig" >&2 && exit 1)
+	$(call require_tool,zig,Required for the static cgo cross-compile — install via: brew install zig)
 	@echo "Building static backend for $($(_HIDE)CURRENT_PLATFORM) (Korifi)..."
 	@mkdir -p $($(_HIDE)BIN_DIR)
 	cd src/jetstream && CGO_ENABLED=1 GOOS=linux GOARCH=$($(_HIDE)TARGET_ARCH) \
@@ -804,7 +927,7 @@ $(call register_always, release, checksums)
 $(_HIDE)DEPS_release += $(if $($(_HIDE)WANT_CF)$($(_HIDE)WANT_KORIFI)$($(_HIDE)WANT_GITHUB),$(_HIDE)release.checksums)
 
 # ── Release lifecycle (tag → publish / unpublish → untag) ────
-#   make stamp tag [VERSION=vX]     create + push the annotated release tag
+#   make stamp tag [VERSION=X]      create + push the annotated release tag
 #   make publish [DRAFT=yes]        gh release create + upload dist/release/*
 #   make unpublish TAG=vX           delete the GitHub release (assets included)
 #   make stamp untag TAG=vX         delete the tag (local + remote)
@@ -845,7 +968,7 @@ $(call register, stamp, untag)
 # changelog.d fragments (build/release-notes.sh).
 # --prerelease derives from the tag itself: alpha/beta/rc only — dev.N tags
 # CAN be full releases (keep in sync with release.yml validate-version).
-.PHONY: publish unpublish sweep
+.PHONY: publish unpublish sweep changelog
 publish:
 	@test -f $($(_HIDE)RELEASE_DIR)/SHA256SUMS || { echo "ERROR: no release artifacts in $($(_HIDE)RELEASE_DIR)/ — run 'make release' first" >&2; exit 1; }
 	@TAG="$(TAG)"; \
@@ -864,6 +987,14 @@ unpublish:
 sweep:
 	@chmod +x build/release-notes.sh
 	$($(_HIDE)DRY)./build/release-notes.sh sweep
+
+# changelog reports how many dependency bumps have landed since the last
+# release tag — the "is a build due yet?" question, answerable between
+# releases. Read-only, so no DRYRUN guard. `stamp tag` runs the same check
+# before it freezes the notes into the tag body.
+changelog:
+	@chmod +x build/release-notes.sh
+	@./build/release-notes.sh check
 
 # ── Deploy (documentation website) ───────────────────────────
 # Grammar: make deploy website <destination> — the component says what is
@@ -995,6 +1126,9 @@ endif
 # make clean frontend  — frontend build only
 # make clean backend   — backend binaries only
 # make clean dist      — above + node_modules
+# make clean repo      — full reset: git clean -fdx (fresh-clone state)
+#                         RM_SITE=yes also sweeps site.mk (kept by default —
+#                         it carries local site config, not build output)
 # make e2e clean        — sweep stratos-e2e-test labeled CF resources
 #                         (defined in the E2E section, above)
 
@@ -1008,8 +1142,19 @@ define clean.dist
 	rm -rf node_modules src/frontend/packages/*/node_modules
 endef
 
+# Everything git clean -fdx removes here already covers clean.release and
+# clean.dist's scope (it's untracked/ignored either way), so no prereq chain
+# is needed. .env/secrets.yaml are local machine state, not build output —
+# always kept. site.mk is kept unless RM_SITE=yes is passed explicitly;
+# it's local site config, not something to drop by default.
+RM_SITE ?=
+define clean.repo
+	git clean -fdx -e .env -e secrets.yaml $(if $(filter yes,$(RM_SITE)),,-e site.mk)
+endef
+
 $(call register_always, clean, release)
 $(call register, clean, dist, $(_HIDE)clean.release)
+$(call register, clean, repo)
 
 $(call declare_verb_default, clean, $(_HIDE)clean.release)
 
@@ -1124,12 +1269,17 @@ help:
 	@echo "  make clean frontend       Remove frontend build only"
 	@echo "  make clean backend        Remove backend binaries only"
 	@echo "  make clean dist           Remove everything (including node_modules)"
+	@echo "  make clean repo           Full reset: git clean -fdx (fresh-clone state)"
+	@echo "                            RM_SITE=yes also removes site.mk"
 	@echo ""
 	@echo "Security & dependencies:"
 	@echo "  make audit                Run default security scanners"
-	@echo "  make audit frontend       bun audit (npm advisory DB)"
+	@echo "  make audit frontend       bun audit (npm advisory DB), root workspace"
+	@echo "  make audit website        bun audit (npm advisory DB), website/ workspace"
 	@echo "  make audit backend        gosec + trivy + govulncheck (both Go modules)"
 	@echo "  make audit modrot         modrot archived/deprecated dep scan (needs gh auth)"
+	@echo "  make audit semgrep        semgrep SAST, account policy + SARIF (manual, needs network)"
+	@echo "  make audit codeql         CodeQL SAST, Go+JS/TS (manual, needs codeql CLI)"
 	@echo "  make audit actions        zizmor (ZIZMOR_FLAGS=\"--persona=auditor\" for strict)"
 	@echo "  make audit packages       osv-scanner (all lockfiles + go.mods)"
 	@echo "  make audit secrets        gitleaks (working-tree secret scan)"
@@ -1137,6 +1287,8 @@ help:
 	@echo "  make audit tree           trivy full-tree scan (deploy/, helm, manifests)"
 	@echo "  make audit history        gitleaks full git-history scan (slow)"
 	@echo "  make audit licenses       osv-scanner dependency license report"
+	@echo "  make audit sarif          sarif-tools summary across dist/*.sarif (local)"
+	@echo "  make audit upload         Push dist/*.sarif to GitHub (skips codeql-*, CI covers those)"
 	@echo "  make audit summary        High/moderate/low counts only"
 	@echo "  make outdated             List outdated direct deps (frontend + backend)"
 	@echo "  make outdated frontend    bun outdated"
@@ -1169,11 +1321,12 @@ help:
 	@echo "Variables:"
 	@echo "  FINAL=strip               Strip prerelease from version (persisted)"
 	@echo "  DRYRUN=yes                Preview actions without executing"
-	@echo "  VERSION=vX.Y.Z            Override version"
+	@echo "  VERSION=X.Y.Z             Override version (convention: no v — see docs)"
 	@echo "  PLATFORM=os/arch          Override target platform"
 	@echo "  TAG=vX.Y.Z                Tag for publish/unpublish/stamp tag/untag"
 	@echo "  DRAFT=yes                 publish creates a draft release"
 	@echo "  NOTES=<file>              Notes file for publish (default: CHANGELOG section)"
+	@echo "  RM_SITE=yes               make clean repo also removes site.mk"
 	@echo ""
 	@echo "  Examples:"
 	@echo "    make release cf FINAL=strip       Finalize version + package"

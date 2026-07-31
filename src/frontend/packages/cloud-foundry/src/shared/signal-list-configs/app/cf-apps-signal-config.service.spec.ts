@@ -45,6 +45,18 @@ beforeEach(() => TestBed.resetTestingModule());
 // destroys).
 afterEach(() => TestBed.resetTestingModule());
 
+// Drain microtasks until `done()` holds, rather than a fixed tick count.
+// The number of awaits between initialize() and the first spaces request is
+// an implementation detail — it changed when loadNames() started joining the
+// endpoint's shared space load — and encoding it makes the drain tests fail
+// for reasons unrelated to what they assert.
+async function drainUntil(done: () => boolean, maxTicks = 40): Promise<void> {
+  for (let i = 0; i < maxTicks && !done(); i++) {
+    await Promise.resolve();
+    TestBed.tick();
+  }
+}
+
 describe('CfAppsSignalConfigService', () => {
   it('constructs one CnsiAppsSource per connected CF in scope', () => {
     const http = makeHttp();
@@ -68,7 +80,7 @@ describe('CfAppsSignalConfigService', () => {
     eds.addApp(a);
     (eds as unknown as { _appsLastFetched: { set: (d: Date) => void } })._appsLastFetched.set(new Date());
 
-    const registry = { acquire: vi.fn(() => eds) } as unknown as EndpointDataRegistry;
+    const registry = { acquire: vi.fn(() => eds), peek: vi.fn(() => eds) } as unknown as EndpointDataRegistry;
     TestBed.configureTestingModule({
       providers: [
         { provide: HttpClient, useValue: http },
@@ -91,7 +103,7 @@ describe('CfAppsSignalConfigService', () => {
     const eds = new EndpointDataService(http, { write: () => {}, read: () => undefined } as never, 'cf-1');
     // No addApp / no appsLastFetched mutation — appsLastFetched stays null.
 
-    const registry = { acquire: vi.fn(() => eds) } as unknown as EndpointDataRegistry;
+    const registry = { acquire: vi.fn(() => eds), peek: vi.fn(() => eds) } as unknown as EndpointDataRegistry;
     TestBed.configureTestingModule({
       providers: [
         { provide: HttpClient, useValue: http },
@@ -175,7 +187,7 @@ describe('CfAppsSignalConfigService', () => {
       const eds = new EndpointDataService(http, { write: () => {}, read: () => undefined } as never, 'cf-1');
       for (const a of apps) eds.addApp(a);
       (eds as unknown as { _appsLastFetched: { set: (d: Date) => void } })._appsLastFetched.set(new Date());
-      const registry = { acquire: vi.fn(() => eds) } as unknown as EndpointDataRegistry;
+      const registry = { acquire: vi.fn(() => eds), peek: vi.fn(() => eds) } as unknown as EndpointDataRegistry;
       TestBed.configureTestingModule({
         providers: [
           { provide: HttpClient, useValue: http },
@@ -653,6 +665,68 @@ describe('CfAppsSignalConfigService', () => {
     expect(remaining).toEqual(['app-bad']); // failed row stays; completed row removed
   });
 
+  it('bulkDeleteAppsWithCleanup deletes only routes/bindings fully owned by the batch, then bulk-deletes the apps', async () => {
+    const deleteCalls: string[] = [];
+    const httpMock = {
+      get: vi.fn((url: string) => {
+        if (url === '/pp/v1/cf/apps/cnsi-1/app-A/routes') {
+          return of({
+            resources: [
+              // Shared with app-B, also in this batch -> safe to delete.
+              { guid: 'r-shared-ab', url: 'ab.example.com', host: 'ab', path: '', domainGuid: 'd', spaceGuid: 's', createdAt: '', updatedAt: '', appGuids: ['app-A', 'app-B'] },
+              // Shared with app-C, NOT in this batch -> must survive.
+              { guid: 'r-shared-ac', url: 'ac.example.com', host: 'ac', path: '', domainGuid: 'd', spaceGuid: 's', createdAt: '', updatedAt: '', appGuids: ['app-A', 'app-C'] },
+            ],
+            totalResults: 2,
+          });
+        }
+        if (url === '/pp/v1/cf/apps/cnsi-1/app-B/routes') {
+          return of({
+            resources: [
+              { guid: 'r-shared-ab', url: 'ab.example.com', host: 'ab', path: '', domainGuid: 'd', spaceGuid: 's', createdAt: '', updatedAt: '', appGuids: ['app-A', 'app-B'] },
+            ],
+            totalResults: 1,
+          });
+        }
+        if (url === '/pp/v1/cf/apps/cnsi-1/app-A/service_bindings?return=summary') {
+          return of({
+            resources: [
+              {
+                guid: 'b-1', cnsiGuid: 'cnsi-1', name: 'x', type: 'app',
+                serviceInstance: { guid: 'si-1', name: 'db', type: 'managed' },
+                app: { guid: 'app-A' }, createdAt: '', updatedAt: '',
+              },
+            ],
+            pagination: { totalResults: 1, totalPages: 1, first: null, last: null, next: null, previous: null },
+          });
+        }
+        if (url === '/pp/v1/cf/apps/cnsi-1/app-B/service_bindings?return=summary') {
+          return of({ resources: [], pagination: { totalResults: 0, totalPages: 1, first: null, last: null, next: null, previous: null } });
+        }
+        return of({ resources: [], pagination: {} });
+      }),
+      delete: vi.fn((url: string) => {
+        deleteCalls.push(url);
+        return of(new HttpResponse<unknown>({ status: 200, body: { result: {}, state: 'COMPLETE' } }));
+      }),
+      post: vi.fn(() => of({
+        results: [
+          { guid: 'app-A', state: 'COMPLETE' },
+          { guid: 'app-B', state: 'COMPLETE' },
+        ],
+        succeeded: 2, failed: 0, pending: 0,
+      })),
+    } as unknown as HttpClient;
+    const svc = makeSvc(httpMock);
+
+    await svc.bulkDeleteAppsWithCleanup('cnsi-1', ['app-A', 'app-B']);
+
+    expect(deleteCalls.filter(u => u === '/pp/v1/cf/routes/cnsi-1/r-shared-ab')).toHaveLength(1); // deduped, not once per app
+    expect(deleteCalls).not.toContain('/pp/v1/cf/routes/cnsi-1/r-shared-ac');
+    expect(deleteCalls).toContain('/pp/v1/cf/service_bindings/cnsi-1/b-1');
+    expect(httpMock.post).toHaveBeenCalledWith('/pp/v1/cf/apps/cnsi-1/bulk/delete', { guids: ['app-A', 'app-B'] });
+  });
+
   it('resolver fetches space names for visible-row guids that are NOT in the catalog', async () => {
     // Catalog (per_page=500&page=1) returns NO spaces — simulating the
     // overflow case where the visible row's space lives beyond page 1.
@@ -961,7 +1035,7 @@ describe('CfAppsSignalConfigService', () => {
     svc.initialize(['cnsi-1']);
     void svc.ensureNamesLoaded(['cnsi-1']);
     // Drain microtasks until the priority chunk request is open.
-    for (let i = 0; i < 6; i++) { await Promise.resolve(); TestBed.tick(); }
+    await drainUntil(() => subjects.length > 0);
     expect(subjects.length).toBe(1); // only priority is in flight before resolution
 
     // Resolve the priority request → background workers spin up (cap 3).
@@ -1002,14 +1076,14 @@ describe('CfAppsSignalConfigService', () => {
     const svc = makeSvc(httpMock, cf);
     svc.initialize(['cnsi-1']);
     void svc.ensureNamesLoaded(['cnsi-1']);
-    for (let i = 0; i < 4; i++) { await Promise.resolve(); TestBed.tick(); }
+    await drainUntil(() => subjects.length > 0);
     expect(subjects.length).toBe(1);
 
     // Second initialize() bumps the generation; the still-pending gen-1
     // chunk must NOT merge into _spacesByCnsi when it eventually resolves.
     svc.initialize(['cnsi-1']);
     void svc.ensureNamesLoaded(['cnsi-1']);
-    for (let i = 0; i < 4; i++) { await Promise.resolve(); TestBed.tick(); }
+    await drainUntil(() => subjects.length > 1);
 
     // Resolve the stale request with a space that would otherwise leak in.
     subjects[0].next({
@@ -1022,5 +1096,111 @@ describe('CfAppsSignalConfigService', () => {
     // Stale chunk's merge was skipped — the new generation's _spacesByCnsi
     // does not contain space-stale.
     expect(svc.spaceNames().get('space-stale')).toBeUndefined();
+  });
+});
+
+// A summary page and this tab both need the endpoint's full org list. Each
+// used to fetch it independently, so arriving here while the other's drain
+// was still running issued two concurrent
+// /pp/v1/cf/orgs/{cnsi}?per_page=500&page=1 requests. loadNames() now joins
+// the endpoint's shared load (EndpointDataService.loadOrgs) instead.
+describe('CfAppsSignalConfigService — org catalog shares the endpoint load', () => {
+  const orgsUrl = (url: unknown) => typeof url === 'string' && url.includes('/pp/v1/cf/orgs/');
+
+  function makeSvcWithPeek(http: HttpClient, peeked: unknown): CfAppsSignalConfigService {
+    const registry = {
+      acquire: vi.fn(() => peeked),
+      peek: vi.fn(() => peeked),
+    } as unknown as EndpointDataRegistry;
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: HttpClient, useValue: http },
+        { provide: CloudFoundryService, useValue: makeStubCfService() },
+        { provide: EndpointDataRegistry, useValue: registry },
+        CfAppsSignalConfigService,
+      ],
+    });
+    return TestBed.inject(CfAppsSignalConfigService);
+  }
+
+  it('joins the endpoint org load rather than issuing its own orgs request', async () => {
+    const http = makeHttp();
+    const loadOrgs = vi.fn(() => of(undefined));
+    const eds = { loadOrgs, orgs: () => [{ guid: 'org-1', name: 'org one' }] };
+    const svc = makeSvcWithPeek(http, eds);
+
+    await svc.ensureNamesLoaded(['cf-1']);
+
+    expect(loadOrgs).toHaveBeenCalledTimes(1);
+    // The spaces drain still uses http; the orgs catalog must not.
+    const orgCalls = (http.get as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter(c => orgsUrl(c[0]));
+    expect(orgCalls).toEqual([]);
+    expect(svc.orgNames().get('org-1')).toBe('org one');
+  });
+
+  it('falls back to a direct fetch for a guid the registry never acquired', async () => {
+    const http = makeHttp();
+    const svc = makeSvcWithPeek(http, undefined);
+
+    await svc.ensureNamesLoaded(['cf-1']);
+
+    const orgCalls = (http.get as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter(c => orgsUrl(c[0]));
+    expect(orgCalls.length).toBe(1);
+  });
+});
+
+// The endpoint's full space list is drained by summary pages via
+// EndpointDataService.loadSpaces(); the per-org fanout here re-fetched the
+// same spaces. loadNames() now joins the shared slice when there is one.
+describe('CfAppsSignalConfigService — space catalog shares the endpoint load', () => {
+  const spacesFanout = (url: unknown) => typeof url === 'string' && url.includes('organization_guids=');
+
+  function makeSvcWith(http: HttpClient, peeked: unknown): CfAppsSignalConfigService {
+    const registry = {
+      acquire: vi.fn(() => peeked),
+      peek: vi.fn(() => peeked),
+    } as unknown as EndpointDataRegistry;
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: HttpClient, useValue: http },
+        { provide: CloudFoundryService, useValue: makeStubCfService() },
+        { provide: EndpointDataRegistry, useValue: registry },
+        CfAppsSignalConfigService,
+      ],
+    });
+    return TestBed.inject(CfAppsSignalConfigService);
+  }
+
+  const edsWith = (spaces: Array<{ guid: string; name: string }>) => ({
+    loadOrgs: vi.fn(() => of(undefined)),
+    orgs: () => [{ guid: 'org-1', name: 'org one' }],
+    loadSpaces: vi.fn(() => of(undefined)),
+    spaces: () => spaces,
+  });
+
+  it('seeds space names from the shared load instead of the per-org fanout', async () => {
+    const http = makeHttp();
+    const eds = edsWith([{ guid: 'space-1', name: 'space one' }]);
+    const svc = makeSvcWith(http, eds);
+
+    await svc.ensureNamesLoaded(['cf-1']);
+
+    expect(eds.loadSpaces).toHaveBeenCalledTimes(1);
+    expect(svc.spaceNames().get('space-1')).toBe('space one');
+    const fanout = (http.get as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter(c => spacesFanout(c[0]));
+    expect(fanout).toEqual([]);
+  });
+
+  it('falls back to the fanout when the shared slice drained nothing', async () => {
+    const http = makeHttp();
+    // A CF whose spaces drain failed reports an empty slice — the names
+    // still have to come from somewhere, so the fanout must still run.
+    const eds = edsWith([]);
+    const svc = makeSvcWith(http, eds);
+
+    await svc.ensureNamesLoaded(['cf-1']);
+
+    const fanout = (http.get as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter(c => spacesFanout(c[0]));
+    expect(fanout.length).toBeGreaterThan(0);
   });
 });

@@ -8,11 +8,16 @@ configuration. For step-by-step setup, see the
 
 | Tool | Version | Pinned In | Purpose |
 |------|---------|-----------|---------|
-| Node.js | 24.11.0 | `.tool-versions`, `package.json` engines | Angular CLI, build tooling |
-| Bun | 1.3.2 | `.tool-versions`, `package.json` engines (>=1.2) | Package manager, script runner |
-| Go | 1.24.2 | `go.mod` | Backend compilation |
+| Node.js | 26.2.0 | `.tool-versions` (`package.json` engines allows `^24 \|\| ^26`) | Angular CLI, build tooling |
+| Bun | 1.3.14 | `.tool-versions`, `package.json` engines (`>=1.3.14`) | Package manager, script runner |
+| Go | 1.26.5 | `.tool-versions` (`go.mod` requires `>=1.26.3`) | Backend compilation |
 | Git | any | — | Source control, build metadata |
 | Make | any | — | Build orchestration |
+
+**`.tool-versions` is the single source of truth for exact versions** —
+these numbers drift out of sync with it easily (this table itself was
+stale until 2026-07-25), so if this table and `.tool-versions` ever
+disagree, trust the file, not this page, and fix the page.
 
 ### Version Management
 
@@ -34,6 +39,7 @@ configuration. For step-by-step setup, see the
 | OpenSSL | Generate dev certs and encryption keys | Included on macOS/Linux | First-time setup |
 | `zip` | Release packaging | `brew install zip` | `make release` |
 | `swag` | OpenAPI doc generation | `go install github.com/swaggo/swag/cmd/swag@latest` | API docs |
+| `quarto` | Render `docs/` to standalone PDF/epub booklets | `brew install --cask quarto` | `make build booklets` — also needs Chrome (for mermaid diagrams), which Quarto auto-detects on dev machines and CI |
 | `golangci-lint` | Go meta-linter (staticcheck, errcheck, unused, ineffassign) | [golangci-lint.run](https://golangci-lint.run/welcome/install/) | `make lint`, `make check` — lint hard-fails without it |
 | `gosec` | Go security scanner | `go install github.com/securego/gosec/v2/cmd/gosec@latest` | `make audit backend`, `make audit tests` |
 | `trivy` | Vulnerability + misconfig scanner | [aquasecurity/trivy](https://github.com/aquasecurity/trivy) | `make audit backend`, `make audit tree` |
@@ -41,14 +47,20 @@ configuration. For step-by-step setup, see the
 | `zizmor` | GitHub Actions workflow SAST | `brew install zizmor` | `make audit actions` |
 | `osv-scanner` | Multi-lockfile dependency scanner | `brew install osv-scanner` | `make audit packages`, `make audit licenses` |
 | `gitleaks` | Secret scanner | `brew install gitleaks` | `make audit secrets`, `make audit history` |
-| `gh` | GitHub CLI | [cli.github.com](https://cli.github.com/) | `make deps dependabot` |
+| `modrot` | Archived/deprecated dependency scanner | `go install github.com/norman-abramovitz/modrot@latest` | `make audit modrot` (needs `gh auth`) |
+| `semgrep` | Pattern-based SAST | `brew install semgrep` | `make audit semgrep` (manual, needs network) |
+| `codeql` | Deep SAST (Go + JS/TS databases) | [codeql-action releases](https://github.com/github/codeql-action/releases) | `make audit codeql` (manual — CI already runs this canonically; local run is a pre-push spot-check) |
+| `sarif-tools` (`sarif`) | Summarize SARIF files | `pip install sarif-tools` | `make audit sarif` |
+| `gh` | GitHub CLI | [cli.github.com](https://cli.github.com/) | `make deps dependabot`, `make audit upload`, `make audit actions` (optional, for authenticated rate limits) |
+| Playwright browser binaries | E2E test runner (the `@playwright/test` package itself comes via `bun install`) | `bunx playwright install chromium` (add `firefox`/`webkit` for `E2E_BROWSERS=firefox`/`webkit`/`all`) | `make test e2e`, `make check e2e` |
 
 ### Audit & dependency commands
 
 | Command | Purpose |
 |---------|---------|
-| `make audit` | Default scanner set: frontend + backend + actions + packages + secrets |
-| `make audit frontend` | `bun audit` (npm advisory DB) |
+| `make audit` | Default scanner set: frontend + website + backend + actions + packages + secrets |
+| `make audit frontend` | `bun audit` (npm advisory DB), root workspace |
+| `make audit website` | `bun audit` (npm advisory DB), `website/` workspace (`tools/stb` isn't covered — pre-release) |
 | `make audit backend` | gosec + trivy + govulncheck on both Go modules (`src/jetstream`, `src/jetstream/api`) |
 | `make audit actions` | zizmor SAST over `.github/workflows/`; `ZIZMOR_FLAGS="--persona=auditor"` enables the strict rule set |
 | `make audit packages` | osv-scanner over every lockfile and `go.mod` in one pass |
@@ -58,6 +70,11 @@ configuration. For step-by-step setup, see the
 | `make audit tree` | trivy over the whole repo — covers the Dockerfiles, helm chart, and manifests under `deploy/` |
 | `make audit history` | gitleaks over the full git history (~14k commits) |
 | `make audit licenses` | osv-scanner dependency license report |
+| `make audit modrot` | modrot archived/deprecated dependency scan (needs `gh auth`) |
+| `make audit semgrep` | semgrep SAST via `semgrep ci` — uses your logged-in account's policy and dashboard if you've run `semgrep login`, falls back to community rules otherwise. SARIF to `dist/semgrep.sarif` |
+| `make audit codeql` | Local CodeQL SAST (Go + JS/TS) — manual pre-push mirror of what `.github/workflows/codeql.yml` runs on every push/PR. SARIF to `dist/codeql-{go,js}.sarif` |
+| `make audit sarif` | `sarif-tools` summary across every `dist/*.sarif` file, local only |
+| `make audit upload` | Push `dist/*.sarif` to GitHub code scanning; skips `codeql-*.sarif` since CI already uploads those canonically. Needs push access to the repo |
 | `make outdated` | List outdated direct deps in both stacks |
 | `make outdated frontend` | `bun outdated` |
 | `make outdated backend` | `go list -m -u all` (filtered to upgradable) |
@@ -65,8 +82,9 @@ configuration. For step-by-step setup, see the
 
 #### Non-default audit modes
 
-`make audit` runs the five default scanners only. Four modes are deliberately
-kept off the default path:
+`make audit` runs the six default scanners only (frontend, website, backend,
+actions, packages, secrets). The rest are deliberately kept off the default
+path:
 
 - **`tests`** — gosec findings inside `_test.go` files are advisory (test code
   doesn't ship), so they would add triage noise to every default run. Run it
@@ -82,6 +100,17 @@ kept off the default path:
   `secrets` mode already catches anything you are about to commit.
 - **`licenses`** — a compliance report, not a vulnerability source. Nothing
   in it is actionable on a normal development day.
+- **`modrot`** — needs `gh auth` (GitHub GraphQL) + network, so it's a
+  standalone extra rather than something every `make audit` run should
+  depend on.
+- **`semgrep`**, **`codeql`** — both need extra tooling (a `semgrep` account
+  login, the `codeql` CLI + query packs) and are meant to run manually on the
+  build machine, not on every audit invocation. CodeQL in particular already
+  runs in CI on every push/PR — the local mode exists so you can see findings
+  before pushing, not to replace CI.
+- **`sarif`**, **`upload`** — these consume the other scanners' `dist/*.sarif`
+  output; they're only meaningful after running one of the SARIF-emitting
+  modes, so they don't belong in a default sweep either.
 
 All audit recipes are report-only (`|| true`): they never fail the build, so
 scanner exit codes are informational. The lint/test gates are where failures
@@ -136,6 +165,11 @@ Backend reads configuration from a 5-tier lookup chain (first match wins):
 
 All configuration keys work from any tier. Environment variables always
 override file-based settings.
+
+This is app runtime config (`ENCRYPTION_KEY` below encrypts the app's own
+database config store) — a different concern from E2E test credentials
+(`secrets.yaml`), which have their own zero-plaintext encrypt/decrypt
+workflow. See [Secrets Management](secrets-management.md) for that.
 
 ### Key Settings
 
@@ -198,6 +232,12 @@ Platform detection uses `uname -s | tr '[:upper:]' '[:lower:]'` for OS and
 normalizes architecture (`x86_64` → `amd64`, `aarch64` → `arm64`) to match
 Go's `GOOS`/`GOARCH` conventions. Override with `PLATFORM=os/arch`.
 
+Cross-compilation is host-arch-independent for the standard build
+(`CGO_ENABLED=0`, no C cross-compiler involved) — an arm64 machine builds
+any of the six combinations above exactly as an amd64 machine does, and
+vice versa. See Development in `build-and-packaging.md` for how `PLATFORM`
+interacts with `make build` vs `make stage`.
+
 ### Platform-specific notes
 
 #### macOS
@@ -211,8 +251,8 @@ Go's `GOOS`/`GOARCH` conventions. Override with `PLATFORM=os/arch`.
 #### Linux
 
 - `build-essential` package provides Make and GCC
-- If using SQLite locally, GCC is required for cgo (until modernc.org/sqlite
-  migration, tracked in FWT-840)
+- SQLite no longer needs GCC/cgo — the backend uses the pure-Go
+  `ncruces/go-sqlite3` driver, so standard `CGO_ENABLED=0` builds work
 
 ## CI/CD
 
