@@ -158,11 +158,25 @@ provisional and validated by use, not a closed design.
    `scripts/harvest-login.ts` extracts the ids/attributes;
    `scripts/generate-model.ts` combines that harvest with the
    `values.json` sidecar to (re)build `branding-model.json`.
-3. **Load** — at startup the app loads the snapshot pack into signals (see
+3. **Font style** — the pack renders what ships. The scene's `styles.css`
+   declares `@font-face` for the shipped faces (IBM Plex Sans, served from
+   `/fonts/ibm-plex-sans-upstream-*.woff2`) and sets
+   `body { font-family: 'IBM Plex Sans', sans-serif;
+   font-feature-settings: 'salt' 1; }`. A `system-ui` scene lies about
+   metrics, weight rungs, and the dotted zero, so every color/spacing
+   judgment made against it is suspect.
+4. **Nonce setting** — the pack runs under the product CSP. The scene's
+   `index.html` carries a `<meta http-equiv="Content-Security-Policy">`
+   with a nonce'd `style-src`/`script-src`, and the pack nonce sits on the
+   `preview-shim.js` script tag and on any captured inline `<style>`. The
+   shim reads its own nonce and re-stamps it on every style it injects
+   (see `tests/integration/csp-shim.test.ts`), so an un-nonced injection
+   fails in the preview, not in the field.
+5. **Load** — at startup the app loads the snapshot pack into signals (see
    *State* below).
-4. **Navigate / edit** — the operator drills the navigator, the preview
+6. **Navigate / edit** — the operator drills the navigator, the preview
    iframe shows the live scene, and editing a *lever* updates the model.
-5. **Project / export** — the projector maps model edits through the routing
+7. **Project / export** — the projector maps model edits through the routing
    map to a `company-config.json`, the CSS emitter produces `theme.css`, and
    the export bundles them with assets.
 
