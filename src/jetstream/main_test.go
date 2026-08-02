@@ -119,10 +119,10 @@ func TestLoadPortalConfig(t *testing.T) {
 		t.Error("Unable to get SessionStoreSecret from config")
 	}
 
-	// CSP is opt-in: CONSOLE_CSP not supplied above, so no header should be
-	// configured (preserves prior no-CSP behavior).
-	if result.CSPPolicy != "" {
-		t.Errorf("Expected no CSP policy when CONSOLE_CSP unset, got: %q", result.CSPPolicy)
+	// CSP is on by default: CONSOLE_CSP is not supplied above, so the built-in
+	// policy applies. Opting out takes an explicit off-value.
+	if result.CSPPolicy != defaultCSPPolicy {
+		t.Errorf("Expected the default CSP policy when CONSOLE_CSP unset, got: %q", result.CSPPolicy)
 	}
 }
 
@@ -209,5 +209,68 @@ func TestLoadDatabaseConfigWithInvalidSSLMode(t *testing.T) {
 
 	if err == nil {
 		t.Errorf("Unexpected success - should not be able to load database configs with an invalid SSL Mode specified.")
+	}
+}
+
+// HSTS is the mirror image of CSP: same vocabulary, opposite default. Nothing
+// is asserted about the operator's domain unless they ask for it.
+func TestLoadPortalConfigHSTSIsOffByDefault(t *testing.T) {
+	var pc api.PortalConfig
+
+	result, err := loadPortalConfig(pc, env.NewVarSet(env.WithMapLookup(map[string]string{})))
+	if err != nil {
+		t.Fatalf("Unable to load portal config: %v", err)
+	}
+	if result.HSTSPolicy != "" {
+		t.Errorf("Expected no HSTS policy when CONSOLE_HSTS unset, got %q", result.HSTSPolicy)
+	}
+}
+
+func TestLoadPortalConfigHSTSOnValues(t *testing.T) {
+	var pc api.PortalConfig
+
+	for _, val := range []string{"on", "ON", "default", "Default"} {
+		result, err := loadPortalConfig(pc, env.NewVarSet(env.WithMapLookup(map[string]string{
+			"CONSOLE_HSTS": val,
+		})))
+		if err != nil {
+			t.Fatalf("Unable to load portal config for CONSOLE_HSTS=%q: %v", val, err)
+		}
+		if result.HSTSPolicy != defaultHSTSPolicy {
+			t.Errorf("Expected default HSTS policy for CONSOLE_HSTS=%q, got %q", val, result.HSTSPolicy)
+		}
+	}
+}
+
+// The off-values must normalize to empty, or a well-meaning CONSOLE_HSTS=off
+// ships as a literal Strict-Transport-Security: off header.
+func TestLoadPortalConfigHSTSOffValues(t *testing.T) {
+	var pc api.PortalConfig
+
+	for _, val := range []string{"off", "OFF", "none", "false", "disabled"} {
+		result, err := loadPortalConfig(pc, env.NewVarSet(env.WithMapLookup(map[string]string{
+			"CONSOLE_HSTS": val,
+		})))
+		if err != nil {
+			t.Fatalf("Unable to load portal config for CONSOLE_HSTS=%q: %v", val, err)
+		}
+		if result.HSTSPolicy != "" {
+			t.Errorf("Expected no HSTS policy for CONSOLE_HSTS=%q, got %q", val, result.HSTSPolicy)
+		}
+	}
+}
+
+func TestLoadPortalConfigCustomHSTS(t *testing.T) {
+	var pc api.PortalConfig
+	const custom = "max-age=300"
+
+	result, err := loadPortalConfig(pc, env.NewVarSet(env.WithMapLookup(map[string]string{
+		"CONSOLE_HSTS": custom,
+	})))
+	if err != nil {
+		t.Fatalf("Unable to load portal config: %v", err)
+	}
+	if result.HSTSPolicy != custom {
+		t.Errorf("Expected the custom HSTS policy verbatim, got %q", result.HSTSPolicy)
 	}
 }

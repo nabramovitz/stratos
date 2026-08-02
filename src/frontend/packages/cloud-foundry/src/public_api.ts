@@ -45,6 +45,7 @@ export { CF_ENDPOINT_TYPE } from './cf-types';
 export { CFAppState } from './cf-app-state';
 export * from './cf-api.types';
 export { ActiveRouteCfOrgSpace, ActiveRouteCfCell } from './features/cf/cf-page.types';
+export { FoundationShapePageComponent } from './features/foundation-shape/foundation-shape-page.component';
 
 // CF Entity Types
 export {
@@ -91,13 +92,7 @@ export {
 // CF Users Roles Types
 export { UserRoleLabels } from './store/types/users-roles.types';
 
-// CF User Actions
-export { RemoveCfUserRole } from './actions/users.actions';
-
 // CF Route Actions
-
-// CF Actions
-export { UpdateExistingApplication } from './actions/application.actions';
 
 // CF Route Types
 export { Route, RouteMode, CfRoute } from './store/types/route.types';

@@ -15,8 +15,11 @@
 #   make stamp tag              Create + push the release tag (notes from
 #                               changelog.d fragments in the tag body)
 #   make publish                Create GitHub release + upload dist/release/*
-#   make unpublish TAG=vX       Delete a GitHub release (assets included)
+#   make unpublish TAG=vX       Delete a GitHub release (assets and
+#                               drafts included)
 #   make stamp untag TAG=vX     Delete a tag (local + remote)
+#   make stamp line [LINE=X.Y]  Cut maintenance branch release/X.Y.x at
+#                               the line's newest final tag
 #   make sweep                  Remove published changelog.d fragments
 #   make changelog              Report dependency bumps since the last tag
 #                               (./build/release-notes.sh deps drafts them)
@@ -41,12 +44,25 @@
 #                               matching package.json/semver.org — a v is
 #                               accepted too, it's just baked in as given)
 #   PLATFORM=os/arch            Override target platform
-#   TAG=vX.Y.Z                  Tag for publish/unpublish/stamp tag/untag
-#                               (default: v + version with build metadata
-#                               stripped; v is a git/GitHub tag convention,
-#                               same underlying value as VERSION)
+#   TAG=vX.Y.Z                  Tag for publish/unpublish/stamp tag/untag.
+#                               Set explicitly it applies to every verb.
+#                               Unset, each verb resolves what its intent
+#                               needs: stamp tag derives the version being
+#                               released (v + package.json, metadata
+#                               stripped), publish takes the nearest
+#                               EXISTING tag, and unpublish/stamp untag
+#                               refuse to guess and require TAG=.
 #   TAG_REMOTE=<remote>         Remote for stamp tag/untag (default: origin)
+#   LINE=X.Y                    Version line this checkout releases
+#                               (default: package.json's major.minor —
+#                               per-branch state, so a release/5.0.x
+#                               branch is line 5.0 automatically)
+#   TAG_MATCH=<glob>            Tag family scoping nearest-tag queries
+#                               (default: v$(LINE).*)
 #   DRAFT=yes                   publish creates a draft release
+#   LATEST=auto|yes|no          Whether publish marks the release Latest
+#                               (default auto: only when TAG is the
+#                               highest full-release tag of any line)
 #   NOTES=<file>                Notes file for publish (default: the
 #                               annotated tag body, assembled by stamp tag
 #                               from changelog.d fragments)
@@ -88,6 +104,10 @@ endef
 
 define dump.version.extra
 	@echo "GO_LDFLAGS        $($(_HIDE)GO_LDFLAGS)"
+	@echo "LINE              $(LINE)"
+	@echo "TAG_MATCH         $(TAG_MATCH)"
+	@echo "HIGHEST_FULL_TAG  $($(_HIDE)HIGHEST_FULL_TAG)"
+	@echo "LATEST_RESOLVED   $($(_HIDE)LATEST_RESOLVED)"
 endef
 
 # ── Directories ───────────────────────────────────────────────
@@ -159,9 +179,9 @@ endif
 # but only for verbs that use these modifiers (not clean/dump).
 # korifi counts as a build modifier here (make build korifi = static
 # backend only), so it must suppress the default like the others;
-# tag/untag are stamp modifiers and suppress it the same way.
+# tag/untag/line are stamp modifiers and suppress it the same way.
 ifneq ($(filter build test dev stamp,$(MAKECMDGOALS)),)
-ifeq ($($(_HIDE)WANT_FRONTEND)$($(_HIDE)WANT_BACKEND)$($(_HIDE)WANT_E2E)$($(_HIDE)WANT_WEBSITE)$($(_HIDE)WANT_BOOKLETS)$(filter korifi tag untag,$(MAKECMDGOALS)),)
+ifeq ($($(_HIDE)WANT_FRONTEND)$($(_HIDE)WANT_BACKEND)$($(_HIDE)WANT_E2E)$($(_HIDE)WANT_WEBSITE)$($(_HIDE)WANT_BOOKLETS)$(filter korifi tag untag line,$(MAKECMDGOALS)),)
   $(_HIDE)WANT_FRONTEND := yes
   $(_HIDE)WANT_BACKEND  := yes
 endif
@@ -256,12 +276,16 @@ endif
 
 $(_HIDE)WANT_TAG   :=
 $(_HIDE)WANT_UNTAG :=
+$(_HIDE)WANT_LINE  :=
 
 ifneq ($(filter tag,$(MAKECMDGOALS)),)
   $(_HIDE)WANT_TAG := yes
 endif
 ifneq ($(filter untag,$(MAKECMDGOALS)),)
   $(_HIDE)WANT_UNTAG := yes
+endif
+ifneq ($(filter line,$(MAKECMDGOALS)),)
+  $(_HIDE)WANT_LINE := yes
 endif
 
 # cf modifier defaults to linux/amd64 unless PLATFORM is set
@@ -349,8 +373,8 @@ endif
 
 # No-op targets so modifiers don't error
 # Note: lint has its own standalone recipe — not listed here.
-.PHONY: frontend backend website booklets cf korifi github aio pages dist repo version e2e actions packages secrets gate tests coverage summary dependabot tree history licenses modrot semgrep codeql sarif upload tag untag
-frontend backend website booklets cf korifi github aio pages dist repo version e2e actions packages secrets gate tests coverage summary dependabot tree history licenses modrot semgrep codeql sarif upload tag untag:
+.PHONY: frontend backend website booklets cf korifi github aio pages dist repo version e2e actions packages secrets gate tests coverage summary dependabot tree history licenses modrot semgrep codeql sarif upload tag untag line
+frontend backend website booklets cf korifi github aio pages dist repo version e2e actions packages secrets gate tests coverage summary dependabot tree history licenses modrot semgrep codeql sarif upload tag untag line:
 	@:
 
 # No-op targets for bump modifiers (consumed by BUMP_MOD filter).
@@ -931,56 +955,152 @@ $(_HIDE)DEPS_release += $(if $($(_HIDE)WANT_CF)$($(_HIDE)WANT_KORIFI)$($(_HIDE)W
 #   make publish [DRAFT=yes]        gh release create + upload dist/release/*
 #   make unpublish TAG=vX           delete the GitHub release (assets included)
 #   make stamp untag TAG=vX         delete the tag (local + remote)
+#   make stamp line [LINE=X.Y]      cut maintenance branch release/X.Y.x
 #
 # Forward path:  build → release cf github → stamp tag → publish → sweep
 # Rollback:      unpublish → stamp untag   (release first, so the tag
 #                is never orphaned by a half-done rollback)
 #
-# TAG derives from the version with build metadata stripped — tags are
-# clean semver (package.json carries +build.* locally; tags never do).
 # gh authenticates from the environment (GH_TOKEN/GITHUB_TOKEN or a
 # prior `gh auth login`) — credentials never appear on a command line.
-TAG        ?= v$($(_HIDE)SEMVER_NOMETA)
+TAG        ?=
 TAG_REMOTE ?= origin
 DRAFT      ?=
 NOTES      ?=
+
+# LINE names the version line this checkout releases — the noun behind
+# concurrent lines (5.0.X maintenance beside 5.1.Y development). It
+# derives from package.json's major.minor, which is per-branch state:
+# develop at 5.1.0-dev is line 5.1, a release/5.0.x branch is line 5.0.
+# TAG_MATCH is the tag-family glob every nearest-tag query filters by —
+# ancestry alone scopes a maintenance branch (5.1 tags are never its
+# ancestors), but the moment a 5.0.X fix back-merges into develop its
+# tag becomes reachable there, and without the filter it could become
+# develop's "nearest tag".
+LINE      ?= $($(_HIDE)SEMVER_MAJOR).$($(_HIDE)SEMVER_MINOR)
+TAG_MATCH ?= v$(LINE).*
+
+# Per-verb tag resolution. stamp tag CREATES the release, so its default
+# derives from the version being released (v + package.json with build
+# metadata stripped — tags are clean semver; package.json carries
+# +build.* locally, tags never do). publish operates on a tag that
+# already EXISTS — deriving from package.json there points one release
+# ahead the moment the post-release bump lands, and publish aborts on
+# --verify-tag having published nothing. So publish defaults to the
+# nearest existing tag, resolved at recipe time (kept lazy) so it also
+# sees a tag created earlier in the same invocation. Deletion verbs
+# (unpublish, stamp untag) never guess: "whatever is newest" as a
+# default is how a typo removes the wrong release — both demand an
+# explicit TAG. TAG= on the command line overrides every verb unchanged.
+$(_HIDE)NEXT_TAG    = v$($(_HIDE)SEMVER_NOMETA)
+$(_HIDE)LAST_TAG    = $(shell git describe --tags --abbrev=0 --match '$(TAG_MATCH)' 2>/dev/null)
+$(_HIDE)CREATE_TAG  = $(or $(TAG),$($(_HIDE)NEXT_TAG))
+$(_HIDE)PUBLISH_TAG = $(or $(TAG),$($(_HIDE)LAST_TAG))
+
+# LATEST controls the repo's Latest-release pointer at publish
+# (auto|yes|no, default auto). gh moves Latest onto any new non-draft,
+# non-prerelease release, so cutting 5.0.5 after 5.1.0 would yank the
+# pointer backwards onto the maintenance patch. auto answers "is this
+# tag the highest that publishes as a full release?" across ALL lines —
+# Latest is a repo-global pointer, so lines compete — and passes the
+# answer explicitly both ways. alpha/beta/rc never qualify; dev.N
+# publish as full releases (keep in sync with publish's PRERELEASE case
+# and release.yml validate-version). The sed dance is semver prerelease
+# ordering under sort -V: '~' sorts before the empty string
+# (5.0.0~dev.9 < 5.0.0) where '-' does not.
+LATEST ?= auto
+$(_HIDE)HIGHEST_FULL_TAG = $(shell git tag -l 'v[0-9]*' | grep -vE 'alpha|beta|rc' | sed 's/-/~/' | sort -V | tail -n 1 | sed 's/~/-/')
+$(_HIDE)LATEST_RESOLVED  = $(if $(filter auto,$(LATEST)),$(if $(filter $($(_HIDE)PUBLISH_TAG),$($(_HIDE)HIGHEST_FULL_TAG)),true,false),$(if $(filter yes,$(LATEST)),true,false))
 
 # Prefix that turns state-changing commands into echoes under DRYRUN=yes
 $(_HIDE)DRY := $(if $(filter yes,$(DRYRUN)),@echo "DRYRUN:" )
 
 define stamp.tag
-	@case "$(TAG)" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "ERROR: '$(TAG)' does not look like a release tag (vX.Y.Z[-prerelease])" >&2; exit 1;; esac
+	@case "$($(_HIDE)CREATE_TAG)" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "ERROR: '$($(_HIDE)CREATE_TAG)' does not look like a release tag (vX.Y.Z[-prerelease])" >&2; exit 1;; esac
+	@case "$($(_HIDE)CREATE_TAG)" in $(TAG_MATCH)) ;; *) echo "ERROR: '$($(_HIDE)CREATE_TAG)' is off the $(LINE) line this checkout releases ($(TAG_MATCH)) — cut it from that line's branch, or pass LINE= if intentional" >&2; exit 1;; esac
 	@chmod +x build/create-git-tag.sh
-	$($(_HIDE)DRY)./build/create-git-tag.sh "$(TAG)"
-	$($(_HIDE)DRY)git push $(TAG_REMOTE) "refs/tags/$(TAG)"
+	$($(_HIDE)DRY)TAG_MATCH='$(TAG_MATCH)' ./build/create-git-tag.sh "$($(_HIDE)CREATE_TAG)"
+	$($(_HIDE)DRY)git push $(TAG_REMOTE) "refs/tags/$($(_HIDE)CREATE_TAG)"
 endef
 $(call register, stamp, tag)
 
 define stamp.untag
+	@[ -n "$(TAG)" ] || { echo "ERROR: untag deletes a tag — name it: make stamp untag TAG=vX.Y.Z" >&2; exit 1; }
 	@echo "Deleting tag $(TAG) locally and on $(TAG_REMOTE)..."
 	-$($(_HIDE)DRY)git tag -d "$(TAG)"
 	$($(_HIDE)DRY)git push $(TAG_REMOTE) --delete "refs/tags/$(TAG)"
 endef
 $(call register, stamp, untag)
 
+# stamp line cuts a maintenance branch: release/X.Y.x at the line's
+# highest FINAL tag — maintenance starts from a shipped release, so
+# prereleases never qualify as the branch point. LINE defaults to the
+# current line for the moment of need (right after the final is
+# tagged); LINE=X.Y retrofits an older line, e.g. LINE=4.9 branches
+# release/4.9.x at v4.9.4. The new branch carries whatever tooling its
+# tree had at the branch point — releasing an old line with the
+# current machinery means backporting the machinery to that branch
+# first.
+$(_HIDE)LINE_BRANCH = release/$(LINE).x
+$(_HIDE)LINE_BASE   = $(shell git tag -l 'v$(LINE).*' | grep -v -- - | sort -V | tail -n 1)
+
+define stamp.line
+	@[ -n "$(LINE)" ] || { echo "ERROR: no line to cut — set LINE=X.Y (e.g. make stamp line LINE=4.9)" >&2; exit 1; }
+	@[ -n "$($(_HIDE)LINE_BASE)" ] || { echo "ERROR: no final v$(LINE).Z tag to branch from — cut the release first (make stamp tag)" >&2; exit 1; }
+	@! git show-ref --verify --quiet "refs/heads/$($(_HIDE)LINE_BRANCH)" || { echo "ERROR: $($(_HIDE)LINE_BRANCH) already exists" >&2; exit 1; }
+	@! git ls-remote --exit-code --heads $(TAG_REMOTE) "$($(_HIDE)LINE_BRANCH)" >/dev/null 2>&1 || { echo "ERROR: $($(_HIDE)LINE_BRANCH) already exists on $(TAG_REMOTE)" >&2; exit 1; }
+	@echo "Cutting $($(_HIDE)LINE_BRANCH) at $($(_HIDE)LINE_BASE)..."
+	$($(_HIDE)DRY)git branch "$($(_HIDE)LINE_BRANCH)" "$($(_HIDE)LINE_BASE)"
+	$($(_HIDE)DRY)git push $(TAG_REMOTE) "refs/heads/$($(_HIDE)LINE_BRANCH)"
+endef
+$(call register, stamp, line)
+
 # publish/unpublish are plain verbs (no modifiers). Notes source: NOTES=<file>
 # override, else the annotated tag body — `stamp tag` assembles it from the
 # changelog.d fragments (build/release-notes.sh).
 # --prerelease derives from the tag itself: alpha/beta/rc only — dev.N tags
 # CAN be full releases (keep in sync with release.yml validate-version).
+# --latest carries LATEST's answer explicitly both ways; a draft has no
+# Latest semantics, so DRAFT=yes omits the flag.
+# GitHub allows several releases per tag (drafts don't own the tag, and a
+# CI-published release doesn't block `gh release create`), so publish
+# refuses a tag that already has one. The check goes through the API:
+# `gh release view` can't see drafts, which is exactly the duplicate
+# that needs catching.
 .PHONY: publish unpublish sweep changelog
 publish:
 	@test -f $($(_HIDE)RELEASE_DIR)/SHA256SUMS || { echo "ERROR: no release artifacts in $($(_HIDE)RELEASE_DIR)/ — run 'make release' first" >&2; exit 1; }
-	@TAG="$(TAG)"; \
+	@TAG="$($(_HIDE)PUBLISH_TAG)"; \
+	if [ -z "$$TAG" ]; then \
+		echo "ERROR: no tag to publish — create one with 'make stamp tag' or pass TAG=vX.Y.Z" >&2; \
+		exit 1; \
+	fi; \
+	EXISTING=$$(gh api --paginate 'repos/{owner}/{repo}/releases' --jq '.[].tag_name' | grep -Fxc "$$TAG" || true); \
+	if [ "$$EXISTING" -gt 0 ]; then \
+		echo "ERROR: $$TAG already has $$EXISTING GitHub release(s), drafts included — 'make unpublish TAG=$$TAG' first" >&2; \
+		exit 1; \
+	fi; \
 	PRERELEASE=""; case "$$TAG" in *-alpha*|*-beta*|*-rc*) PRERELEASE="--prerelease";; esac; \
-	set -- gh release create "$$TAG" --title "Stratos $$TAG" --verify-tag $$PRERELEASE $(if $(filter yes,$(DRAFT)),--draft) $(if $(NOTES),--notes-file "$(NOTES)",--notes-from-tag) $($(_HIDE)RELEASE_DIR)/*.tar.gz $($(_HIDE)RELEASE_DIR)/*.zip $($(_HIDE)RELEASE_DIR)/SHA256SUMS; \
+	set -- gh release create "$$TAG" --title "Stratos $$TAG" --verify-tag $$PRERELEASE $(if $(filter yes,$(DRAFT)),--draft,--latest=$($(_HIDE)LATEST_RESOLVED)) $(if $(NOTES),--notes-file "$(NOTES)",--notes-from-tag) $($(_HIDE)RELEASE_DIR)/*.tar.gz $($(_HIDE)RELEASE_DIR)/*.zip $($(_HIDE)RELEASE_DIR)/SHA256SUMS; \
 	$(if $(filter yes,$(DRYRUN)),echo "DRYRUN: $$*",echo "+ $$*"; "$$@")
 
+# unpublish resolves the tag to release ids through the API: tag-based
+# `gh release view`/`delete` can't see drafts and picks one arbitrarily
+# when a tag has duplicates. Deleting a release never touches the git
+# tag — that stays `stamp untag`'s job.
 unpublish:
-	@echo "Release to delete from GitHub:"
-	@gh release view "$(TAG)" --json tagName,name,isDraft,assets \
-		--jq '"  " + .tagName + "  (" + .name + ")" + (if .isDraft then "  [draft]" else "" end), (.assets[] | "    " + .name)'
-	$($(_HIDE)DRY)gh release delete "$(TAG)" --yes
+	@[ -n "$(TAG)" ] || { echo "ERROR: unpublish deletes a release — name it: make unpublish TAG=vX.Y.Z" >&2; exit 1; }
+	@ids=$$(gh api --paginate 'repos/{owner}/{repo}/releases' --jq '.[] | select(.tag_name == "$(TAG)") | .id'); \
+	[ -n "$$ids" ] || { echo "ERROR: no GitHub release (draft or published) has tag $(TAG)" >&2; exit 1; }; \
+	echo "Release(s) to delete from GitHub:"; \
+	for id in $$ids; do \
+		gh api "repos/{owner}/{repo}/releases/$$id" \
+			--jq '"  " + .tag_name + "  (" + (.name // "") + ")" + (if .draft then "  [draft]" else "" end), (.assets[] | "    " + .name)'; \
+	done; \
+	for id in $$ids; do \
+		set -- gh api -X DELETE "repos/{owner}/{repo}/releases/$$id"; \
+		$(if $(filter yes,$(DRYRUN)),echo "DRYRUN: $$*",echo "+ $$*"; "$$@") || exit 1; \
+	done
 
 # sweep removes the changelog.d fragments a published release consumed;
 # the removal commit rides the next PR (e.g. the post-release bump).
@@ -994,7 +1114,7 @@ sweep:
 # before it freezes the notes into the tag body.
 changelog:
 	@chmod +x build/release-notes.sh
-	@./build/release-notes.sh check
+	@TAG_MATCH='$(TAG_MATCH)' ./build/release-notes.sh check
 
 # ── Deploy (documentation website) ───────────────────────────
 # Grammar: make deploy website <destination> — the component says what is
@@ -1087,7 +1207,7 @@ $(_HIDE)finalize-and-reexec:
 	@./build/version-bump.sh bump release
 	@echo "Re-running: $(MAKE) $(MAKECMDGOALS)"
 	@$(MAKE) FINAL= $(MAKECMDGOALS)
-$(filter-out frontend backend cf korifi github dist version e2e actions packages secrets lint gate tests coverage tree history licenses tag untag,$(MAKECMDGOALS)): $(_HIDE)finalize-and-reexec ; @:
+$(filter-out frontend backend cf korifi github dist version e2e actions packages secrets lint gate tests coverage tree history licenses tag untag line,$(MAKECMDGOALS)): $(_HIDE)finalize-and-reexec ; @:
 else ifneq ($(FINAL),)
 $(error Unknown FINAL value '$(FINAL)' — supported: strip)
 endif
@@ -1117,7 +1237,7 @@ endif
 
 # ── Stamp defaults ────────────────────────────────────────────
 # stamp with no modifier stamps frontend
-ifeq ($($(_HIDE)WANT_FRONTEND)$($(_HIDE)WANT_BACKEND)$($(_HIDE)WANT_TAG)$($(_HIDE)WANT_UNTAG),)
+ifeq ($($(_HIDE)WANT_FRONTEND)$($(_HIDE)WANT_BACKEND)$($(_HIDE)WANT_TAG)$($(_HIDE)WANT_UNTAG)$($(_HIDE)WANT_LINE),)
 stamp: $(_HIDE)stamp.frontend
 endif
 
