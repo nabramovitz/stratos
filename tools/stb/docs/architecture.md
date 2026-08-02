@@ -174,9 +174,19 @@ provisional and validated by use, not a closed design.
    fails in the preview, not in the field.
 5. **Load** — at startup the app loads the snapshot pack into signals (see
    *State* below).
-6. **Navigate / edit** — the operator drills the navigator, the preview
+6. **Plugin selection** — a deployment ships a subset of plugins, and the
+   UI differs with the subset (endpoint types, nav entries, home tiles).
+   The pack captures the union — every plugin enabled — with each
+   plugin-owned element marked by its owning plugin, and the operator
+   chooses the combination to theme: pick from the full roster
+   (cloud-foundry, git/VCS, metrics, kubernetes, autoscaler, …) or start
+   from a preset group — `cf`, `cf + vcs`, `cf + vcs + metrics`,
+   `cf + metrics`. Elements owned by an excluded plugin drop from the
+   navigator and preview alike, so the operator themes exactly the UI
+   their deployment will show.
+7. **Navigate / edit** — the operator drills the navigator, the preview
    iframe shows the live scene, and editing a *lever* updates the model.
-7. **Project / export** — the projector maps model edits through the routing
+8. **Project / export** — the projector maps model edits through the routing
    map to a `company-config.json`, the CSS emitter produces `theme.css`, and
    the export bundles them with assets.
 
