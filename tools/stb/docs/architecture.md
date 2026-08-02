@@ -178,12 +178,16 @@ provisional and validated by use, not a closed design.
    UI differs with the subset (endpoint types, nav entries, home tiles).
    The pack captures the union — every plugin enabled — with each
    plugin-owned element marked by its owning plugin, and the operator
-   chooses the combination to theme: pick from the full roster
-   (cloud-foundry, git/VCS, metrics, kubernetes, autoscaler, …) or start
+   chooses the combination to theme: pick from the full roster or start
    from a preset group — `cf`, `cf + vcs`, `cf + vcs + metrics`,
-   `cf + metrics`. Elements owned by an excluded plugin drop from the
-   navigator and preview alike, so the operator themes exactly the UI
-   their deployment will show.
+   `cf + metrics`. The roster is **discovered from the pack, not
+   hardcoded**: it is whatever plugins the captured build shipped
+   (cloud-foundry, git/VCS, metrics, kubernetes, autoscaler, …) —
+   including plugins the operator wrote themselves, which appear
+   automatically because ownership is marked on the captured elements.
+   Elements owned by an excluded plugin drop from the navigator and
+   preview alike, so the operator themes exactly the UI their deployment
+   will show.
 7. **Navigate / edit** — the operator drills the navigator, the preview
    iframe shows the live scene, and editing a *lever* updates the model.
 8. **Project / export** — the projector maps model edits through the routing
