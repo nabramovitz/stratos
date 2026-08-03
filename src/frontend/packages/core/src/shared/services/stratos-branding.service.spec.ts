@@ -4,7 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 
-import { StratosBrandingService, defaultTheme } from '@stratosui/theme';
+import { StratosBrandingService, defaultTheme, darkTheme } from '@stratosui/theme';
 import { BUILD_INFO } from '../../environments/build-info';
 
 describe('StratosBrandingService', () => {
@@ -366,6 +366,93 @@ describe('StratosBrandingService', () => {
   describe('App version check', () => {
     it('should store current app version', () => {
       expect(localStorage.getItem('stratos-app-version')).toBe(BUILD_INFO.version);
+    });
+  });
+
+  // ===========================================================================
+  // Company-config theming survives a theme-mode rebuild
+  //
+  // applyThemeMode() rebuilds the theme from a base theme. Brand colours are
+  // mode-independent and must survive; navigation and layout are surface
+  // colours the config expresses only for light, so dark mode owns those.
+  // ===========================================================================
+
+  describe('Company-config theming across theme-mode changes', () => {
+    const brandedConfig = {
+      theme: {
+        primary: '#7c3aed',
+        secondary: '#a78bfa',
+        accent: '#c4b5fd',
+        success: '#22c55e',
+        warning: '#f59e0b',
+        danger: '#ef4444',
+        info: '#7c3aed',
+      },
+      navigation: {
+        background: '#2e1065',
+        text: '#ffffff',
+        hover: 'rgba(255, 255, 255, 0.1)',
+        active: 'rgba(255, 255, 255, 0.15)',
+      },
+      layout: {
+        background: '#faf5ff',
+        text: '#2e1065',
+        headerBackground: '#ffffff',
+        headerText: '#2e1065',
+      },
+    };
+
+    beforeEach(async () => {
+      // The constructor's config load falls back through two requests and ends
+      // by re-applying defaultCompanyConfig. Let that chain settle before
+      // installing the branded config, or it overwrites the test's setup.
+      for (let i = 0; i < 3; i++) {
+        drainHttpRequests();
+        await Promise.resolve();
+      }
+      service.setCompanyConfig(brandedConfig as never);
+    });
+
+    it('applies the config colours before any mode change (sanity)', () => {
+      expect(service.getTheme().colors.primary).toBe('#7c3aed');
+      expect(service.getTheme().navigation.background).toBe('#2e1065');
+      expect(service.getTheme().layout.background).toBe('#faf5ff');
+    });
+
+    it('keeps config colours, navigation and layout after login', () => {
+      service.activateUserPreferences();
+
+      expect(service.getTheme().colors.primary).toBe('#7c3aed');
+      expect(service.getTheme().colors.secondary).toBe('#a78bfa');
+      expect(service.getTheme().navigation.background).toBe('#2e1065');
+      expect(service.getTheme().layout.background).toBe('#faf5ff');
+    });
+
+    it('writes the config colours to CSS custom properties after login', () => {
+      service.activateUserPreferences();
+
+      const root = document.documentElement;
+      expect(root.style.getPropertyValue('--color-primary')).toBe('#7c3aed');
+      expect(root.style.getPropertyValue('--nav-bg')).toBe('#2e1065');
+    });
+
+    it('keeps brand colours in dark mode but lets dark mode own the surfaces', () => {
+      service.setThemeMode('dark');
+
+      expect(service.getTheme().colors.primary).toBe('#7c3aed');
+      expect(service.getTheme().colors.secondary).toBe('#a78bfa');
+      // Surfaces are mode-dependent; the config only describes light.
+      expect(service.getTheme().layout.background).toBe(darkTheme.layout.background);
+      expect(service.getTheme().navigation.text).toBe(darkTheme.navigation.text);
+    });
+
+    it('restores config surfaces when switching back to light', () => {
+      service.setThemeMode('dark');
+      service.setThemeMode('light');
+
+      expect(service.getTheme().colors.primary).toBe('#7c3aed');
+      expect(service.getTheme().navigation.background).toBe('#2e1065');
+      expect(service.getTheme().layout.background).toBe('#faf5ff');
     });
   });
 });

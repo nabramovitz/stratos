@@ -227,30 +227,45 @@ export class StratosBrandingService {
     return this._config();
   }
 
+  /**
+   * Map a CompanyConfig onto the theme fields it can override.
+   *
+   * Single source for the mapping so applyConfigToTheme() and applyThemeMode()
+   * cannot drift — applyThemeMode() rebuilds the theme from a base theme and
+   * has to re-apply these, or config theming is lost on every mode change.
+   */
+  private configThemeOverrides(config: CompanyConfig) {
+    const navigation: Partial<StratosTheme['navigation']> = {};
+    if (config.navigation?.background) navigation.background = config.navigation.background;
+    if (config.navigation?.text) navigation.text = config.navigation.text;
+    if (config.navigation?.hover) navigation.hover = config.navigation.hover;
+    if (config.navigation?.active) navigation.active = config.navigation.active;
+
+    const layout: Partial<StratosTheme['layout']> = {};
+    if (config.layout?.background) layout.background = config.layout.background;
+    if (config.layout?.text) layout.text = config.layout.text;
+    if (config.layout?.headerBackground) layout.headerBackground = config.layout.headerBackground;
+    if (config.layout?.headerText) layout.headerText = config.layout.headerText;
+
+    return { colors: config.theme ?? {}, navigation, layout };
+  }
+
   private applyConfigToTheme(config: CompanyConfig) {
+    const { colors, navigation, layout } = this.configThemeOverrides(config);
+
     // Map CompanyConfig colors → StratosTheme colors
-    this.setColors(config.theme);
+    this.setColors(colors);
 
     // Apply navigation — map config nav fields to theme nav fields
-    const navOverride: Partial<StratosTheme['navigation']> = {};
-    if (config.navigation.background) navOverride.background = config.navigation.background;
-    if (config.navigation.text) navOverride.text = config.navigation.text;
-    if (config.navigation.hover) navOverride.hover = config.navigation.hover;
-    if (config.navigation.active) navOverride.active = config.navigation.active;
-    if (Object.keys(navOverride).length) {
+    if (Object.keys(navigation).length) {
       const currentTheme = this._theme();
-      this.setTheme({ navigation: { ...currentTheme.navigation, ...navOverride } });
+      this.setTheme({ navigation: { ...currentTheme.navigation, ...navigation } });
     }
 
     // Apply layout — map config layout fields to theme layout fields
-    const layoutOverride: Partial<StratosTheme['layout']> = {};
-    if (config.layout.background) layoutOverride.background = config.layout.background;
-    if (config.layout.text) layoutOverride.text = config.layout.text;
-    if (config.layout.headerBackground) layoutOverride.headerBackground = config.layout.headerBackground;
-    if (config.layout.headerText) layoutOverride.headerText = config.layout.headerText;
-    if (Object.keys(layoutOverride).length) {
+    if (Object.keys(layout).length) {
       const currentTheme = this._theme();
-      this.setTheme({ layout: { ...currentTheme.layout, ...layoutOverride } });
+      this.setTheme({ layout: { ...currentTheme.layout, ...layout } });
     }
 
     // Apply branding — only include defined values to avoid overwriting theme defaults
@@ -423,9 +438,27 @@ export class StratosBrandingService {
     // Start with the correct base theme for the mode
     const baseTheme = isDark ? darkTheme : defaultTheme;
 
+    // Re-apply company-config theming. Without this the rebuild below drops
+    // whatever applyConfigToTheme() applied, so operator colours revert at
+    // login and on every mode toggle.
+    const config = this.configThemeOverrides(this._config());
+
     // Merge custom branding/login overrides (these persist across mode switches)
     const theme: StratosTheme = {
       ...baseTheme,
+      // Brand and status colours are mode-independent — an operator's palette
+      // is their palette in light and dark alike.
+      colors: { ...baseTheme.colors, ...config.colors },
+      // Navigation and layout are surface colours, and CompanyConfig has no
+      // light/dark split — its values describe light. Applying them in dark
+      // mode would put light chrome under the `dark` class, so dark mode keeps
+      // its own surfaces until the config surface grows a mode dimension.
+      navigation: isDark
+        ? baseTheme.navigation
+        : { ...baseTheme.navigation, ...config.navigation },
+      layout: isDark
+        ? baseTheme.layout
+        : { ...baseTheme.layout, ...config.layout },
       branding: this._customBranding
         ? { ...baseTheme.branding, ...this._customBranding }
         : baseTheme.branding,
