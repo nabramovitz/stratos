@@ -28,7 +28,7 @@ export interface RouteServiceBindingView {
   lastOperationState?: string;
 }
 
-interface RawRouteServiceBinding {
+export interface RawRouteServiceBinding {
   guid: string;
   route_service_url?: string;
   last_operation?: { state?: string };
@@ -39,7 +39,7 @@ interface RawRouteServiceBindingsResponse {
   resources?: RawRouteServiceBinding[];
 }
 
-function toRouteServiceBindingView(raw: RawRouteServiceBinding): RouteServiceBindingView {
+export function toRouteServiceBindingView(raw: RawRouteServiceBinding): RouteServiceBindingView {
   return {
     guid: raw.guid,
     serviceInstanceGuid: raw.relationships?.service_instance?.data?.guid ?? '',
@@ -58,8 +58,9 @@ export interface ServiceKeyView {
   lastOperationState?: string;
 }
 
-interface RawServiceKey {
+export interface RawServiceKey {
   guid: string;
+  type?: string;
   name?: string;
   created_at?: string;
   last_operation?: { state?: string };
@@ -69,7 +70,7 @@ interface RawServiceKeysResponse {
   resources?: RawServiceKey[];
 }
 
-function toServiceKeyView(raw: RawServiceKey): ServiceKeyView {
+export function toServiceKeyView(raw: RawServiceKey): ServiceKeyView {
   return {
     guid: raw.guid,
     name: raw.name ?? '',
@@ -325,15 +326,20 @@ export class ServiceCatalogDataService {
   }
 
   // Returns the total count of service instances under a cf, optionally
-  // narrowed by org or space. Backend ?return=counts emits a flat envelope
-  // with totalResults populated and resources empty.
-  serviceInstanceCount(cnsiGuid: string, orgGuid?: string, spaceGuid?: string): SignalSource<number> {
+  // narrowed by org or space and by instance type. Backend ?return=counts
+  // emits a flat envelope with totalResults populated and resources empty.
+  // Quota-facing callers pass type='managed' — user-provided instances do
+  // not count against the service-instance quota (#5769).
+  serviceInstanceCount(cnsiGuid: string, orgGuid?: string, spaceGuid?: string, type?: 'managed' | 'user-provided'): SignalSource<number> {
     let params = new HttpParams().set('return', 'counts');
     if (orgGuid) {
       params = params.set('organization_guids', orgGuid);
     }
     if (spaceGuid) {
       params = params.set('space_guids', spaceGuid);
+    }
+    if (type) {
+      params = params.set('type', type);
     }
     return this.signalize(
       this.http.get<StServiceInstancesResponse>(

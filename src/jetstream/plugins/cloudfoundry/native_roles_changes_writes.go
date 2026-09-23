@@ -9,7 +9,7 @@ import (
 
 	"github.com/cloudfoundry/stratos/src/jetstream/plugins/stratosjobs"
 	"github.com/fivetwenty-io/capi/v3/pkg/capi"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // nativeRoleChange is one role assignment delta for a single (user, scope).
@@ -48,7 +48,7 @@ type nativeRoleChangeResult struct {
 // effect: per change it either creates a role (add) or resolves the role
 // GUID via a filtered list then deletes it (remove). Changes may span
 // multiple users (the multi-user / bulk path).
-func (cf *CloudFoundrySpecification) applyNativeRoleChanges(c echo.Context) error {
+func (cf *CloudFoundrySpecification) applyNativeRoleChanges(c *echo.Context) error {
 	cnsiGUID := c.Param("cnsiGuid")
 	if cnsiGUID == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "cnsiGuid is required")
@@ -77,20 +77,17 @@ func (cf *CloudFoundrySpecification) applyNativeRoleChanges(c echo.Context) erro
 	for _, i := range orderRoleChanges(reqBody.Changes) {
 		ch := reqBody.Changes[i]
 
-		// Set-roles-by-username: resolve the change to a real user GUID before
-		// the create/remove legs, which operate on GUIDs. The user must already
-		// exist (created via `cf create-user` or invited) — this path assigns
-		// roles, it does not create users. Resolution is a read; if the user
-		// does not resolve the change fails with a clear error.
-		if ch.Username != "" {
-			action := "remove"
-			if ch.Add {
-				action = "add"
-			}
+		// Set-roles-by-username. Adds go to CF as {username, origin} and CF
+		// resolves the user itself: GET /v3/users only shows an org manager
+		// the users already in their orgs, so resolving here first failed
+		// with "user not found" for anyone from another origin (#5883).
+		// Removes still resolve the GUID, because a role is deleted by GUID
+		// and the user is by then a member the caller can list.
+		if ch.Username != "" && !ch.Add {
 			var resolveErr error
 			ch.UserGUID, resolveErr = findUserGUID(reqCtx, cfClient, ch.Username, ch.Origin)
 			if resolveErr != nil {
-				results = append(results, nativeRoleChangeResult{Index: i, Action: action, Error: resolveErr.Error()})
+				results = append(results, nativeRoleChangeResult{Index: i, Action: "remove", Error: resolveErr.Error()})
 				continue
 			}
 		}
@@ -178,10 +175,14 @@ func orderRoleChanges(changes []nativeRoleChange) []int {
 // roleCreateRequestFor builds a V3 RoleCreateRequest from a change. Space
 // scope wins if both are set (callers send exactly one).
 func roleCreateRequestFor(ch nativeRoleChange) *capi.RoleCreateRequest {
+	user := &capi.RelationshipData{GUID: ch.UserGUID}
+	if ch.Username != "" {
+		user = &capi.RelationshipData{Username: ch.Username, Origin: ch.Origin}
+	}
 	req := &capi.RoleCreateRequest{
 		Type: ch.Type,
 		Relationships: capi.RoleRelationships{
-			User: capi.Relationship{Data: &capi.RelationshipData{GUID: ch.UserGUID}},
+			User: capi.Relationship{Data: user},
 		},
 	}
 	if ch.SpaceGUID != "" {

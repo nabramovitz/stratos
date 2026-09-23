@@ -5,13 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"github.com/cloudfoundry/stratos/src/jetstream/api"
 	"github.com/cloudfoundry/stratos/src/jetstream/crypto"
@@ -26,12 +25,13 @@ type localAuth struct {
 }
 
 func (a *localAuth) ShowConfig(config *api.ConsoleConfig) {
-	log.Infof("... Local User              : %s", config.LocalUser)
-	log.Infof("... Local User Scope        : %s", config.LocalUserScope)
+	// Aligned startup banner, not a queryable record - see uaaAuth.ShowConfig.
+	slog.Info(fmt.Sprintf("... Local User              : %s", config.LocalUser))
+	slog.Info(fmt.Sprintf("... Local User Scope        : %s", config.LocalUserScope))
 }
 
 // Login provides Local-auth specific Stratos login
-func (a *localAuth) Login(c echo.Context) error {
+func (a *localAuth) Login(c *echo.Context) error {
 
 	//This check will remain in until auth is factored down into its own package
 	if api.AuthEndpointTypes[a.p.Config.ConsoleConfig.AuthEndpointType] != api.Local {
@@ -61,23 +61,23 @@ func (a *localAuth) Login(c echo.Context) error {
 }
 
 // Logout provides Local-auth specific Stratos login
-func (a *localAuth) Logout(c echo.Context) error {
+func (a *localAuth) Logout(c *echo.Context) error {
 	return a.logout(c)
 }
 
 // GetUsername gets the user name for the specified local user
 func (a *localAuth) GetUsername(userid string) (string, error) {
-	log.Debug("GetUsername")
+	slog.Debug("GetUsername", "user", userid)
 
 	localUsersRepo, err := localusers.NewPgsqlLocalUsersRepository(a.databaseConnectionPool)
 	if err != nil {
-		log.Errorf("Database error getting repo for Local users: %v", err)
+		slog.Error("database error getting the repo for local users", "error", err)
 		return "", err
 	}
 
 	localUser, err := localUsersRepo.FindUser(userid)
 	if err != nil {
-		log.Errorf("Error fetching username for local user %s: %v", userid, err)
+		slog.Error("error fetching the username for the local user", "user", userid, "error", err)
 		return "", err
 	}
 
@@ -86,11 +86,11 @@ func (a *localAuth) GetUsername(userid string) (string, error) {
 
 // GetUser gets the user guid for the specified local user
 func (a *localAuth) GetUser(userGUID string) (*api.ConnectedUser, error) {
-	log.Debug("GetUser")
+	slog.Debug("GetUser", "user", userGUID)
 
 	localUsersRepo, err := localusers.NewPgsqlLocalUsersRepository(a.databaseConnectionPool)
 	if err != nil {
-		log.Errorf("Database error getting repo for Local users: %v", err)
+		slog.Error("database error getting the repo for local users", "error", err)
 		return nil, err
 	}
 
@@ -116,13 +116,13 @@ func (a *localAuth) GetUser(userGUID string) (*api.ConnectedUser, error) {
 	return connectdUser, nil
 }
 
-func (a *localAuth) BeforeVerifySession(c echo.Context) {}
+func (a *localAuth) BeforeVerifySession(c *echo.Context) {}
 
 // VerifySession verifies the session the specified local user, currently just verifies user exists
-func (a *localAuth) VerifySession(c echo.Context, sessionUser string, sessionExpireTime int64) error {
+func (a *localAuth) VerifySession(c *echo.Context, sessionUser string, sessionExpireTime int64) error {
 	localUsersRepo, err := localusers.NewPgsqlLocalUsersRepository(a.databaseConnectionPool)
 	if err != nil {
-		log.Errorf("Database error getting repo for Local users: %v", err)
+		slog.Error("database error getting the repo for local users", "error", err)
 		return err
 	}
 
@@ -131,8 +131,8 @@ func (a *localAuth) VerifySession(c echo.Context, sessionUser string, sessionExp
 }
 
 // localLogin verifies local user credentials against our DB
-func (a *localAuth) localLogin(c echo.Context) (string, string, error) {
-	log.Debug("doLocalLogin")
+func (a *localAuth) localLogin(c *echo.Context) (string, string, error) {
+	slog.Debug("doLocalLogin")
 
 	username := c.FormValue("username")
 	password := c.FormValue("password")
@@ -143,7 +143,7 @@ func (a *localAuth) localLogin(c echo.Context) (string, string, error) {
 
 	localUsersRepo, err := localusers.NewPgsqlLocalUsersRepository(a.databaseConnectionPool)
 	if err != nil {
-		log.Errorf("Database error getting repo for Local users: %v", err)
+		slog.Error("database error getting the repo for local users", "error", err)
 		return "", username, err
 	}
 
@@ -174,8 +174,7 @@ func (a *localAuth) localLogin(c echo.Context) (string, string, error) {
 			//Update the last login time here if login was successful
 			loginTime := time.Now()
 			if updateLoginTimeErr := localUsersRepo.UpdateLastLoginTime(guid, loginTime); updateLoginTimeErr != nil {
-				log.Error(updateLoginTimeErr)
-				log.Errorf("Failed to update last login time for user: %s", guid)
+				slog.Error("failed to update the last login time", "user", guid, "error", updateLoginTimeErr)
 			}
 		}
 	}
@@ -183,8 +182,8 @@ func (a *localAuth) localLogin(c echo.Context) (string, string, error) {
 }
 
 // generateLoginSuccessResponse
-func (a *localAuth) generateLoginSuccessResponse(c echo.Context, userGUID string, username string) error {
-	log.Debug("generateLoginResponse")
+func (a *localAuth) generateLoginSuccessResponse(c *echo.Context, userGUID string, username string) error {
+	slog.Debug("generateLoginResponse", "user", userGUID, "username", username)
 
 	var err error
 	expiry := sessionNeverExpires
@@ -225,19 +224,19 @@ func (a *localAuth) generateLoginSuccessResponse(c echo.Context, userGUID string
 }
 
 // logout
-func (a *localAuth) logout(c echo.Context) error {
-	log.Debug("logout")
+func (a *localAuth) logout(c *echo.Context) error {
+	slog.Debug("logout")
 
 	a.p.removeEmptyCookie(c)
 
 	// Remove the XSRF Token from the session
 	if err := a.p.unsetSessionValue(c, XSRFTokenSessionName); err != nil {
-		log.Warnf("Unable to remove XSRF token from session: %v", err)
+		slog.Warn("unable to remove the XSRF token from the session", "error", err)
 	}
 
 	err := a.p.clearSession(c)
 	if err != nil {
-		log.Errorf("Unable to clear session: %v", err)
+		slog.Error("unable to clear the session", "error", err)
 	}
 
 	// Send JSON document

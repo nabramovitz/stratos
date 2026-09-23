@@ -101,6 +101,7 @@ src/backend/*/vendor/
 /secrets.yaml
 /secrets.*.yaml
 /secrets.yaml.enc
+/e2e/secrets.yaml
 cl.resume
 build/dev_config.json
 e2e-reports/
@@ -163,6 +164,7 @@ website/versions-repo
 /electron/dist
 /electron/node_modules
 /electron/out
+/dev-ssl/
 /electron/dev-ssl
 /electron/jetstream
 /electron/version

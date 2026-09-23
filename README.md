@@ -1,11 +1,14 @@
 # Stratos
 
-<a style="padding-left: 4px" href="https://codeclimate.com/github/cloudfoundry-community/stratos/maintainability"><img src="https://api.codeclimate.com/v1/badges/61af8b605f385e894632/maintainability" /></a>
-<a href="https://goreportcard.com/report/github.com/cloudfoundry/stratos"><img src="https://goreportcard.com/badge/github.com/cloudfoundry-incubator/stratos"/></a>
-<a href="https://codecov.io/gh/cloudfoundry-community/stratos/branch/master"><img src="https://codecov.io/gh/cloudfoundry-community/stratos/branch/master/graph/badge.svg"/></a>
-[![GitHub release](https://img.shields.io/github/release/cloudfoundry-community/stratos.svg)](https://github.com/cloudfoundry/stratos/releases/latest)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/cloudfoundry/stratos/blob/main/LICENSE)
-[![slack.cloudfoundry.org](https://slack.cloudfoundry.org/badge.svg)](https://cloudfoundry.slack.com/messages/C80EP4Y57/)
+[![Frontend Tests](https://img.shields.io/github/actions/workflow/status/cloudfoundry/stratos/frontend_tests.yml?branch=develop&label=frontend%20tests)](https://github.com/cloudfoundry/stratos/actions/workflows/frontend_tests.yml)
+[![Backend Tests](https://img.shields.io/github/actions/workflow/status/cloudfoundry/stratos/backend_tests.yml?branch=develop&label=backend%20tests)](https://github.com/cloudfoundry/stratos/actions/workflows/backend_tests.yml)
+[![CodeQL](https://img.shields.io/github/actions/workflow/status/cloudfoundry/stratos/codeql.yml?branch=develop&label=CodeQL)](https://github.com/cloudfoundry/stratos/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/cloudfoundry/stratos/badge)](https://scorecard.dev/viewer/?uri=github.com/cloudfoundry/stratos)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/13948/badge)](https://www.bestpractices.dev/projects/13948)
+[![Angular](https://img.shields.io/github/package-json/dependency-version/cloudfoundry/stratos/@angular/core?branch=develop&label=angular)](package.json)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/cloudfoundry/stratos?filename=src%2Fjetstream%2Fgo.mod&label=go)](src/jetstream/go.mod)
+[![Latest Release](https://img.shields.io/github/v/release/cloudfoundry/stratos)](https://github.com/cloudfoundry/stratos/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 # Roadmap
 
@@ -37,9 +40,13 @@ Please visit our new [documentation site](https://stratos.app/). There you can d
 
 ### Prerequisites
 
-- **Node.js 24+** - Required for build system
-- **Bun** - Package manager ([installation guide](https://bun.sh))
-- **Go 1.21+** - For backend development
+- **Node.js 24 or 26** - Required for the build system. The `engines` field is
+  `^24 || ^26`, so 25 is not supported.
+- **Bun 1.3.14+** - Package manager ([installation guide](https://bun.sh))
+- **Go 1.26.3+** - For backend development
+
+These are taken from `engines` in `package.json` and the `go` directive in
+`src/jetstream/go.mod`, which are the versions the build and CI actually use.
 
 ### First-Time Setup
 
@@ -136,19 +143,20 @@ of this repository.
 To run those `.zip` packages inside Cloud Foundry, unzip it, write a manifest,
 and `cf push` it.
 
-You are not required to have
-[stratos-buildpack](https://github.com/SUSE/stratos-buildpack), you can use
-binary buildpack.
+The zip already contains the `jetstream` binary and the compiled UI, so the push
+uses `binary_buildpack` and builds nothing during staging. The old
+`stratos-buildpack` source-push path is no longer used.
 
-Here is an example app manifest that worked for us:
+Here is an example app manifest:
 ```yaml
 applications:
   - name: console
-    memory: 128M
-    disk_quota: 192M
+    memory: 512M
+    disk_quota: 1024M
     host: console
     timeout: 180
     buildpack: binary_buildpack
+    command: ./jetstream
     health-check-type: port
 ```
 

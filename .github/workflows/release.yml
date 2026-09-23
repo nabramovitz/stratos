@@ -17,7 +17,7 @@ on:
 env:
   NODE_OPTIONS: --max-old-space-size=5500
   NODE_VERSION: '24'
-  GO_VERSION: '1.26'
+  GO_VERSION: '1.27'
   BUN_VERSION: '1.3.14'
 
 permissions:
@@ -216,15 +216,16 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.validate-version.outputs.version }}
             type=raw,value=latest,enable=${{ needs.validate-version.outputs.is_latest == 'true' }}
 
-      # Built and pushed for prereleases too (unlike the k8s component images
-      # in docker.yml) so rc/alpha/beta tags get a runnable all-in-one image.
-      # linux/amd64 only for now — the staged jetstream is amd64.
+      # Built and pushed for prereleases too, so rc/alpha/beta tags get a
+      # runnable all-in-one image.
+      # The payload carries a Linux binary per architecture and the Dockerfile
+      # selects on TARGETARCH, so both platforms build from the one context.
       - name: Build and push all-in-one image
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
         with:
           context: aio-package
           file: aio-package/Dockerfile
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -294,22 +295,3 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ All release artifacts uploaded successfully!" >> $GITHUB_STEP_SUMMARY
-
-  trigger-docker-build:
-    name: Trigger Docker Build
-    runs-on: ubuntu-latest
-    needs: [validate-version, create-github-release]
-    if: needs.validate-version.outputs.is_prerelease == 'false'
-    permissions:
-      actions: write
-    steps:
-      # gh workflow run replaces actions/github-script: no third-party
-      # code and no expression interpolation into a script body.
-      - name: Trigger Docker workflow
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.validate-version.outputs.version }}
-        run: |
-          gh workflow run docker.yml --repo "$GITHUB_REPOSITORY" \
-            --ref "$VERSION" -f version="$VERSION"
-          echo "🐳 Docker build triggered for ${VERSION}"

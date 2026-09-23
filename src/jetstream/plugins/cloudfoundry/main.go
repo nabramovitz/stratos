@@ -5,15 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
+	"os"
 	"strings"
 
 	"errors"
 
 	"github.com/cloudfoundry/stratos/src/jetstream/api"
 	"github.com/cloudfoundry/stratos/src/jetstream/plugins/stratosjobs"
-	"github.com/labstack/echo/v4"
-	log "github.com/sirupsen/logrus"
+	"github.com/labstack/echo/v5"
 )
 
 // Module init will register plugin
@@ -79,8 +80,8 @@ func (c *CloudFoundrySpecification) GetType() string {
 	return EndpointType
 }
 
-func (c *CloudFoundrySpecification) Register(echoContext echo.Context) error {
-	log.Info("CloudFoundry Register...")
+func (c *CloudFoundrySpecification) Register(echoContext *echo.Context) error {
+	slog.Info("CloudFoundry Register...")
 	return c.portalProxy.RegisterEndpoint(echoContext, c.Info)
 }
 
@@ -88,8 +89,8 @@ func (c *CloudFoundrySpecification) Validate(userGUID string, cnsiRecord api.CNS
 	return nil
 }
 
-func (c *CloudFoundrySpecification) Connect(ec echo.Context, cnsiRecord api.CNSIRecord, userId string) (*api.TokenRecord, bool, error) {
-	log.Info("CloudFoundry Connect...")
+func (c *CloudFoundrySpecification) Connect(ec *echo.Context, cnsiRecord api.CNSIRecord, userId string) (*api.TokenRecord, bool, error) {
+	slog.Info("CloudFoundry Connect...")
 
 	params := new(api.LoginToCNSIParams)
 	err := api.BindOnce(params, ec)
@@ -186,14 +187,19 @@ func (c *CloudFoundrySpecification) confirmCapabilityMetadata(cnsiRecord api.CNS
 
 	if metaBytes, err := json.Marshal(confirmed); err == nil {
 		if err := c.portalProxy.UpdateEndpointMetadata(cnsiRecord.GUID, string(metaBytes)); err != nil {
-			log.Warnf("CF: could not update capability metadata for %s: %v", cnsiRecord.GUID, err)
+			slog.Warn("CF: could not update the capability metadata", "cnsi", cnsiRecord.GUID, "err", err)
 		} else {
-			log.Infof("CF: confirmed capability metadata for %s: v2=%v v3=%v", cnsiRecord.GUID, confirmed.SupportsV2, confirmed.SupportsV3)
+			slog.Info("CF: confirmed the capability metadata",
+				"cnsi", cnsiRecord.GUID, "v2", confirmed.SupportsV2, "v3", confirmed.SupportsV3)
 		}
 	}
 }
 
 func (c *CloudFoundrySpecification) Init() error {
+	// Read the paging overrides here rather than in a package-level
+	// initialiser, which would run before the log handler is installed.
+	resolvePagingConfig()
+
 	// Add login hook to automatically register and connect to the Cloud Foundry when the user logs in
 	if err := c.portalProxy.AddLoginHook(0, c.cfLoginHook); err != nil {
 		return err
@@ -209,16 +215,17 @@ func (c *CloudFoundrySpecification) Init() error {
 			c.restageTranslator = NewRestageJobTranslator(c)
 			c.rollbackTranslator = NewRollbackJobTranslator(c)
 		} else {
-			log.Warnf("CF plugin: %q found but has unexpected type %T; async-job contract disabled for CF writes", stratosjobs.PluginName, plug)
+			slog.Warn("CF plugin: plugin found but has an unexpected type; the async-job contract is disabled for CF writes",
+				"plugin", stratosjobs.PluginName, "type", fmt.Sprintf("%T", plug))
 		}
 	} else {
-		log.Warnf("CF plugin: stratosjobs plugin not registered; async-job contract disabled for CF writes")
+		slog.Warn("CF plugin: the stratosjobs plugin is not registered; the async-job contract is disabled for CF writes")
 	}
 
 	return nil
 }
 
-func (c *CloudFoundrySpecification) cfLoginHook(context echo.Context) error {
+func (c *CloudFoundrySpecification) cfLoginHook(context *echo.Context) error {
 
 	// Error is ignored: it is also set when no record exists, which is handled
 	// below via the empty CNSIType
@@ -243,16 +250,22 @@ func (c *CloudFoundrySpecification) cfLoginHook(context echo.Context) error {
 			autoRegName = "Cloud Foundry"
 		}
 
-		log.Infof("Auto-registering cloud foundry endpoint %s as \"%s\"", cfAPI, autoRegName)
+		caCert, err := resolveAutoRegisterCACert(*c.portalProxy.GetConfig())
+		if err != nil {
+			slog.Error("could not auto-register the Cloud Foundry endpoint", "url", cfAPI, "err", err)
+			return nil
+		}
+
+		slog.Info("Auto-registering the Cloud Foundry endpoint", "url", cfAPI, "name", autoRegName, "withCACert", caCert != "")
 
 		// Auto-register the Cloud Foundry
-		cfCnsi, err = c.portalProxy.DoRegisterEndpoint(autoRegName, cfAPI, true, c.portalProxy.GetConfig().CFClient, c.portalProxy.GetConfig().CFClientSecret, "", false, "", false, "", cfEndpointSpec.Info)
+		cfCnsi, err = c.portalProxy.DoRegisterEndpoint(autoRegName, cfAPI, true, c.portalProxy.GetConfig().CFClient, c.portalProxy.GetConfig().CFClientSecret, "", false, "", false, caCert, cfEndpointSpec.Info)
 		if err != nil {
-			log.Errorf("Could not auto-register Cloud Foundry endpoint: %v", err)
+			slog.Error("could not auto-register the Cloud Foundry endpoint", "url", cfAPI, "err", err)
 			return nil
 		}
 	} else {
-		log.Infof("Found existing cloud foundry endpoint matching %s. Will not auto-register", cfAPI)
+		slog.Info("Found an existing Cloud Foundry endpoint, will not auto-register", "url", cfAPI)
 	}
 
 	if c.portalProxy.GetConfig().CloudFoundryInfo == nil {
@@ -260,33 +273,55 @@ func (c *CloudFoundrySpecification) cfLoginHook(context echo.Context) error {
 	}
 	c.portalProxy.GetConfig().CloudFoundryInfo.EndpointGUID = cfCnsi.GUID
 
-	log.Infof("Determining if user should auto-connect to %s.", cfAPI)
+	slog.Info("Determining whether the user should auto-connect", "url", cfAPI, "user", userGUID)
 
 	cfTokenRecord, ok := c.portalProxy.GetCNSITokenRecordWithDisconnected(cfCnsi.GUID, userGUID)
 	if ok && cfTokenRecord.Disconnected {
 		// There exists a record but it's been cleared. This means user has disconnected manually. Don't auto-reconnect
-		log.Infof("No, user should not auto-connect to auto-registered cloud foundry %s (previously disconnected). ", cfAPI)
+		slog.Info("No: the user previously disconnected, so will not auto-connect", "url", cfAPI, "user", userGUID)
 	} else {
-		log.Infof("Yes, user should auto-connect to auto-registered cloud foundry %s.", cfAPI)
+		slog.Info("Yes: the user should auto-connect", "url", cfAPI, "user", userGUID)
 
 		// If using SSO login, then copy the tokens, else connect with the same credentials
 		if c.portalProxy.GetConfig().SSOLogin {
-			log.Info("Auto-connecting to the auto-registered endpoint with the UAA token")
+			slog.Info("Auto-connecting to the auto-registered endpoint with the UAA token")
 			err = c.portalProxy.DoLoginToCNSIwithConsoleUAAtoken(context, cfCnsi) // no need to login twice
 			if err != nil {
-				log.Warnf("Could not use console UAA token to login to auto-registered endpoint: %s", err.Error())
+				slog.Warn("could not use the console UAA token to log in to the auto-registered endpoint", "err", err)
 				return err
 			}
 		} else {
-			log.Info("Auto-connecting to the auto-registered endpoint with credentials")
+			slog.Info("Auto-connecting to the auto-registered endpoint with credentials")
 			_, err = c.portalProxy.DoLoginToCNSI(context, cfCnsi.GUID, false)
 			if err != nil {
-				log.Warnf("Could not auto-connect using credentials to auto-registered endpoint: %s", err.Error())
+				slog.Warn("could not auto-connect with credentials to the auto-registered endpoint", "err", err)
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+// resolveAutoRegisterCACert returns the CA the auto-registered endpoint should
+// trust. Without one, a foundation using a private authority registers fine and
+// then fails every read with x509 while still reporting itself connected
+// (#5922); skip-ssl is not a substitute, as capi will not honour it.
+//
+// A path wins over an inline value and is what a Kubernetes deployment uses,
+// where the CA arrives as a mounted secret — the same precedence detectTLSCert
+// applies to CONSOLE_PROXY_CERT_PATH. A configured path that cannot be read is
+// an error rather than a fallback to no CA, which would resurrect the silent
+// failure this prevents.
+func resolveAutoRegisterCACert(pc api.PortalConfig) (string, error) {
+	if pc.AutoRegisterCFCACertPath == "" {
+		return pc.AutoRegisterCFCACert, nil
+	}
+
+	caPEM, err := os.ReadFile(pc.AutoRegisterCFCACertPath)
+	if err != nil {
+		return "", fmt.Errorf("could not read the auto-registration CA certificate: %w", err)
+	}
+	return string(caPEM), nil
 }
 
 func (c *CloudFoundrySpecification) fetchAutoRegisterEndpoint() (string, api.CNSIRecord, error) {
@@ -319,7 +354,7 @@ func (c *CloudFoundrySpecification) AddSessionGroupRoutes(echoGroup *echo.Group)
 }
 
 func (c *CloudFoundrySpecification) Info(apiEndpoint string, skipSSLValidation bool, caCert string) (api.CNSIRecord, interface{}, error) {
-	log.Debug("Info")
+	slog.Debug("Info", "apiEndpoint", apiEndpoint)
 	var v2InfoResponse api.V2Info
 	var apiRootResponse api.ApiRoot
 	var endpointInfo api.EndpointInfo
@@ -332,7 +367,7 @@ func (c *CloudFoundrySpecification) Info(apiEndpoint string, skipSSLValidation b
 		return newCNSI, nil, err
 	}
 
-	log.Debugf("CF:Info: SkipSSL %t Cert '%s'", skipSSLValidation, caCert)
+	slog.Debug("CF:Info", "skipSSL", skipSSLValidation, "hasCACert", caCert != "")
 	h := c.portalProxy.GetHttpClient(skipSSLValidation, caCert)
 
 	// Probe root endpoint to confirm reachability
@@ -401,7 +436,7 @@ func (c *CloudFoundrySpecification) Info(apiEndpoint string, skipSSLValidation b
 	if !metadata.SupportsV2 && !metadata.SupportsV3 {
 		// Probes failed (SSL error, timeout, etc.) — assume v2 conservatively.
 		// Assumed=true signals Connect() to re-probe once the endpoint is reachable.
-		log.Warnf("CF:Info: could not determine API version for %s — assuming v2", apiEndpoint)
+		slog.Warn("CF:Info: could not determine the API version, assuming v2", "apiEndpoint", apiEndpoint)
 		metadata.SupportsV2 = true
 		metadata.Assumed = true
 	}
@@ -424,5 +459,5 @@ func (c *CloudFoundrySpecification) Info(apiEndpoint string, skipSSLValidation b
 	return newCNSI, endpointInfo, nil
 }
 
-func (c *CloudFoundrySpecification) UpdateMetadata(info *api.Info, userGUID string, echoContext echo.Context) {
+func (c *CloudFoundrySpecification) UpdateMetadata(info *api.Info, userGUID string, echoContext *echo.Context) {
 }

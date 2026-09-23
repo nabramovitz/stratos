@@ -19,10 +19,7 @@
             }
           </select>
           @if (dd.loading?.()) {
-            <svg class="animate-spin text-content-muted" width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Loading">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-opacity="0.25"/>
-              <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
-            </svg>
+            <app-busy class="text-content-muted" size="12px" [context]="dd.label"></app-busy>
           }
         </label>
       }
@@ -43,15 +40,181 @@
           }
         </select>
       }
-      <input
-        type="text"
-        data-test="name-filter"
-        [placeholder]="filterPlaceholder()"
-        [attr.aria-label]="filterPlaceholder()"
-        [value]="config.nameFilter()"
-        (input)="onNameFilterChange($any($event.target).value)"
-        (keydown.escape)="onNameFilterChange('')"
-        class="px-3 py-1 text-sm border border-content-border rounded bg-content-bg text-content-text" />
+      @if (activeMulti(); as fm) {
+        <div class="relative" data-test="multi-filter-wrap" tabindex="-1" (keydown.escape)="multiPopupOpen.set(false)">
+          <button
+            type="button"
+            data-test="multi-filter-toggle"
+            (click)="multiPopupOpen.set(!multiPopupOpen())"
+            class="px-3 py-1 text-sm border border-content-border rounded bg-content-bg text-content-text min-w-44 text-left">
+            {{ multiSummary(fm) }}
+            <span class="material-icons text-base leading-4 align-middle float-right">arrow_drop_down</span>
+          </button>
+          @if (multiPopupOpen()) {
+            <!-- Deliberately overlays the input slot (absolute, left-0 top-0)
+                 rather than pushing content below it — this is the product
+                 owner's approved design, not an oversight; don't "fix" it. -->
+            <div class="absolute left-0 top-0 z-30 min-w-44 border border-content-border rounded bg-content-bg shadow-lg p-2">
+              @for (name of fm.options(); track name) {
+                <label class="flex items-center gap-2 px-1 py-0.5 text-sm text-content-text cursor-pointer">
+                  <input type="checkbox" [checked]="multiChecked(fm, name)" (change)="toggleMultiOption(fm, name)" />
+                  {{ name }}
+                </label>
+              }
+              @if (fm.selected() !== null && fm.selected()!.length === 0) {
+                <div class="mt-1 px-1 text-xs text-warning-shade-600 dark:text-warning-shade-300">Nothing selected — showing all</div>
+              }
+              <div class="mt-1 flex border-t border-content-border pt-1">
+                <button
+                  type="button"
+                  data-test="multi-filter-clear"
+                  [disabled]="fm.selected() === null"
+                  (click)="clearPopupFilter(fm)"
+                  class="flex-1 text-xs text-content-muted disabled:opacity-40">Clear</button>
+                <button
+                  type="button"
+                  (click)="multiPopupOpen.set(false)"
+                  class="flex-1 text-xs text-content-muted">Close</button>
+              </div>
+            </div>
+          }
+        </div>
+      } @else if (activeRange(); as fr) {
+        <div class="relative" data-test="range-filter-wrap" tabindex="-1" (keydown.escape)="multiPopupOpen.set(false)">
+          <button
+            type="button"
+            data-test="range-filter-toggle"
+            (click)="multiPopupOpen.set(!multiPopupOpen())"
+            class="px-3 py-1 text-sm border border-content-border rounded bg-content-bg text-content-text min-w-44 text-left">
+            {{ rangeSummary(fr) }}
+            <span class="material-icons text-base leading-4 align-middle float-right">arrow_drop_down</span>
+          </button>
+          @if (multiPopupOpen()) {
+            <!-- Overlays the input slot like the checklist popup — same approved
+                 product design; don't "fix" it. -->
+            <div class="absolute left-0 top-0 z-30 min-w-56 border border-content-border rounded bg-content-bg shadow-lg p-2 flex flex-col gap-1.5">
+              @if (fr.valueType === 'date') {
+                <select
+                  data-test="range-mode"
+                  class="text-sm border border-content-border rounded bg-content-bg text-content-text px-1 py-0.5"
+                  [value]="fr.selected()?.mode ?? 'date'"
+                  (change)="updateRange(fr, { mode: $any($event.target).value })">
+                  <option value="date">specific date</option>
+                  <option value="days">days ago</option>
+                  <option value="businessDays">business days ago</option>
+                </select>
+              }
+              <select
+                data-test="range-op"
+                class="text-sm border border-content-border rounded bg-content-bg text-content-text px-1 py-0.5"
+                [value]="fr.selected()?.op ?? 'gte'"
+                (change)="updateRange(fr, { op: $any($event.target).value })">
+                <option value="lt">{{ opLabel(fr, 'lt') }}</option>
+                <option value="lte">{{ opLabel(fr, 'lte') }}</option>
+                <option value="gt">{{ opLabel(fr, 'gt') }}</option>
+                <option value="gte">{{ opLabel(fr, 'gte') }}</option>
+                <option value="between">{{ opLabel(fr, 'between') }}</option>
+              </select>
+              <input
+                data-test="range-a"
+                [type]="fr.valueType === 'date' && !isRelativeRange(fr) ? 'date' : 'number'"
+                [attr.min]="isRelativeRange(fr) ? 1 : null"
+                class="text-sm border border-content-border rounded bg-content-bg text-content-text px-1 py-0.5"
+                [value]="fr.selected()?.a ?? ''"
+                (change)="updateRange(fr, { a: $any($event.target).value })" />
+              @if ((fr.selected()?.op ?? 'gte') === 'between') {
+                <input
+                  data-test="range-b"
+                  [type]="fr.valueType === 'date' && !isRelativeRange(fr) ? 'date' : 'number'"
+                  [attr.min]="isRelativeRange(fr) ? 1 : null"
+                  class="text-sm border border-content-border rounded bg-content-bg text-content-text px-1 py-0.5"
+                  [value]="fr.selected()?.b ?? ''"
+                  (change)="updateRange(fr, { b: $any($event.target).value })" />
+                <label class="flex items-center gap-2 px-1 text-xs text-content-text cursor-pointer">
+                  <input type="checkbox" data-test="range-incl-a"
+                    [checked]="fr.selected()?.inclusiveA ?? true"
+                    (change)="updateRange(fr, { inclusiveA: $any($event.target).checked })" />
+                  include start
+                </label>
+                <label class="flex items-center gap-2 px-1 text-xs text-content-text cursor-pointer">
+                  <input type="checkbox" data-test="range-incl-b"
+                    [checked]="fr.selected()?.inclusiveB ?? true"
+                    (change)="updateRange(fr, { inclusiveB: $any($event.target).checked })" />
+                  include end
+                </label>
+              }
+              @if (fr.selected()?.mode === 'businessDays') {
+                <!-- Weekend framing: checked = weekend (the smaller, more
+                     natural set); the model still stores the complement as
+                     workingDays, so the walk and specs are untouched. -->
+                <div class="px-1 text-xs text-content-muted">Weekend days</div>
+                <div class="flex gap-1.5 px-1" data-test="weekend-days">
+                  @for (wd of weekdayToggles; track wd.value) {
+                    <label class="flex flex-col items-center text-[10px] text-content-text cursor-pointer">
+                      <input type="checkbox" [attr.data-test]="'wd-' + wd.value"
+                        [checked]="!fr.selected()?.workingDays?.includes(wd.value)"
+                        (change)="toggleWorkingDay(fr, wd.value)" />
+                      {{ wd.label }}
+                    </label>
+                  }
+                </div>
+                <label class="flex items-center gap-2 px-1 text-xs text-content-text">
+                  + weekday holidays
+                  <input type="number" min="0" step="1" data-test="range-holidays"
+                    class="w-14 text-sm border border-content-border rounded bg-content-bg text-content-text px-1 py-0.5"
+                    [value]="fr.selected()?.holidayCount ?? 0"
+                    (change)="updateRange(fr, { holidayCount: +$any($event.target).value })" />
+                </label>
+              }
+              @if (isRelativeRange(fr)) {
+                @if (resolvedDayLabel(fr, 'a'); as dayA) {
+                  <div data-test="range-resolved" class="px-1 text-xs text-content-muted">
+                    → {{ dayA }}@if (resolvedDayLabel(fr, 'b'); as dayB) {&nbsp;– {{ dayB }}}
+                  </div>
+                }
+                @if (fr.selected()?.mode === 'businessDays') {
+                  <div data-test="range-holiday-warning" class="px-1 text-xs text-content-muted">
+                    <!-- Between: the holiday count is part of BOTH bounds'
+                         walks, so bumping it moves both dates — the
+                         per-bound remedies are that bound's own count or
+                         its include checkbox. -->
+                    @if ((fr.selected()?.op ?? 'gte') === 'between') {
+                      If either resolved date is a holiday, adjust that
+                      bound's day count or its include checkbox — the
+                      holiday count shifts both dates.
+                    } @else {
+                      If the resolved date is a holiday, increase the holiday
+                      count by 1 and check again.
+                    }
+                  </div>
+                }
+              }
+              <div class="flex border-t border-content-border pt-1">
+                <button
+                  type="button"
+                  data-test="range-filter-clear"
+                  [disabled]="fr.selected() === null"
+                  (click)="clearPopupFilter(fr)"
+                  class="flex-1 text-xs text-content-muted disabled:opacity-40">Clear</button>
+                <button
+                  type="button"
+                  (click)="multiPopupOpen.set(false)"
+                  class="flex-1 text-xs text-content-muted">Close</button>
+              </div>
+            </div>
+          }
+        </div>
+      } @else {
+        <input
+          type="text"
+          data-test="name-filter"
+          [placeholder]="filterPlaceholder()"
+          [attr.aria-label]="filterPlaceholder()"
+          [value]="config.nameFilter()"
+          (input)="onNameFilterChange($any($event.target).value)"
+          (keydown.escape)="onNameFilterChange('')"
+          class="px-3 py-1 text-sm border border-content-border rounded bg-content-bg text-content-text" />
+      }
     }
 
     @if (config.onClear) {
@@ -159,7 +322,7 @@
         -->
         <span class="inline-flex items-center justify-center w-5 h-5 align-middle">
           @if ((config.isAnyLoading() || isRefreshing()) && config.totalFilteredResults() > 0) {
-            <div class="spinner spinner-primary h-4 w-4"></div>
+            <app-busy class="text-primary" size="1rem"></app-busy>
           } @else {
             <span class="material-icons text-base leading-none">refresh</span>
           }
@@ -188,7 +351,7 @@
       <div class="flex-1"></div>
       @if (config.bulkRunning && config.bulkRunning()) {
         <span data-test="bulk-running" class="flex items-center gap-1 text-sm text-content-muted">
-          <span class="material-icons text-base leading-5 animate-spin">progress_activity</span>
+          <app-busy variant="dots" size="1em"></app-busy>
           Working…
         </span>
       }
@@ -225,12 +388,8 @@
   <div class="relative flex-1 min-h-0 flex flex-col">
   <div #scrollBody data-test="scroll-body" class="relative flex-1 overflow-auto scrollbar-none">
     @if ((config.isAnyLoading() || isRefreshing()) && config.totalFilteredResults() === 0) {
-      <div data-test="loading" class="flex items-center justify-center p-8 h-full">
-        <div class="flex items-center space-x-4 text-content-muted">
-          <div class="spinner spinner-primary !h-7 !w-7 !border-[3px]"></div>
-          <span class="text-lg">{{ config.loadingMessage ?? 'Loading…' }}</span>
-        </div>
-      </div>
+      <app-area-loader data-test="loading" class="block h-full"
+        [message]="config.loadingMessage ?? 'Loading…'"></app-area-loader>
     } @else if (config.totalFilteredResults() === 0 && config.errorsByCnsi().size > 0) {
       <!-- Failed-load state: the drain errored and automatic retries are
            exhausted. Offer an in-page Retry (same handler as the toolbar
@@ -678,7 +837,7 @@
                 <td [attr.colspan]="totalColumnCount()" class="px-3 pb-2 pt-0 text-sm">
                   <div class="flex items-start gap-2">
                     @if (rowStateBusy(row)) {
-                      <span data-test="row-busy" class="spinner spinner-primary shrink-0"></span>
+                      <app-busy data-test="row-busy" class="text-primary shrink-0" size="1rem"></app-busy>
                     } @else {
                       <span class="material-icons text-base leading-5 shrink-0" [class]="rowMessageIconClass(row)">{{ rowMessageIcon(row) }}</span>
                     }

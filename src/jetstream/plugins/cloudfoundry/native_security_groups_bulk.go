@@ -6,15 +6,8 @@ import (
 	"net/http"
 
 	"github.com/fivetwenty-io/capi/v3/pkg/capi"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
-
-// securityGroupSpaceBinder is the capi call shared by the running- and
-// staging-space bulk-bind handlers: both take the security group GUID and the
-// list of space GUIDs and return the resulting to-many relationship. Passing
-// the bind function in keeps the two handlers a one-line dispatch apart —
-// running vs staging is purely which CF sub-resource the call targets.
-type securityGroupSpaceBinder func(ctx context.Context, sgGUID string, spaceGUIDs []string) (*capi.ToManyRelationship, error)
 
 // bindSecurityGroupRunningSpaces handles
 // POST /pp/v1/cf/security_groups/{cnsiGuid}/{sgGuid}/relationships/running_spaces
@@ -25,7 +18,7 @@ type securityGroupSpaceBinder func(ctx context.Context, sgGUID string, spaceGUID
 // one synchronous POST /v3/security_groups/{guid}/relationships/running_spaces
 // applies every space at once and returns the full to-many relationship,
 // which we pass through as the 200 body (mirrors applyOrgQuotaToOrgs).
-func (c *CloudFoundrySpecification) bindSecurityGroupRunningSpaces(ctx echo.Context) error {
+func (c *CloudFoundrySpecification) bindSecurityGroupRunningSpaces(ctx *echo.Context) error {
 	return c.bindSecurityGroupSpaces(ctx, func(reqCtx context.Context, cfClient capi.Client, sgGUID string, spaceGUIDs []string) (*capi.ToManyRelationship, error) {
 		return cfClient.SecurityGroups().BindRunningSpaces(reqCtx, sgGUID, spaceGUIDs)
 	})
@@ -36,7 +29,7 @@ func (c *CloudFoundrySpecification) bindSecurityGroupRunningSpaces(ctx echo.Cont
 // — bulk-bind a security group to N spaces for the staging lifecycle. The
 // staging analogue of bindSecurityGroupRunningSpaces; identical shape, it
 // targets CF's staging_spaces relationship instead.
-func (c *CloudFoundrySpecification) bindSecurityGroupStagingSpaces(ctx echo.Context) error {
+func (c *CloudFoundrySpecification) bindSecurityGroupStagingSpaces(ctx *echo.Context) error {
 	return c.bindSecurityGroupSpaces(ctx, func(reqCtx context.Context, cfClient capi.Client, sgGUID string, spaceGUIDs []string) (*capi.ToManyRelationship, error) {
 		return cfClient.SecurityGroups().BindStagingSpaces(reqCtx, sgGUID, spaceGUIDs)
 	})
@@ -48,7 +41,7 @@ func (c *CloudFoundrySpecification) bindSecurityGroupStagingSpaces(ctx echo.Cont
 // through. The bind closure receives the resolved client so the two variants
 // differ only by which SecurityGroups() bind method they call.
 func (c *CloudFoundrySpecification) bindSecurityGroupSpaces(
-	ctx echo.Context,
+	ctx *echo.Context,
 	bind func(reqCtx context.Context, cfClient capi.Client, sgGUID string, spaceGUIDs []string) (*capi.ToManyRelationship, error),
 ) error {
 	cnsiGUID := ctx.Param("cnsiGuid")

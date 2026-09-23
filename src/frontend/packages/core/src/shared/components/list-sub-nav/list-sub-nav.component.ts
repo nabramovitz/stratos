@@ -1,5 +1,7 @@
 import { ChangeDetectionStrategy, Component, Input, Signal, computed, signal } from '@angular/core';
 
+import { AppBusyComponent } from '../busy-indicator/busy-indicator.component';
+
 /**
  * Primary "create new <thing>" action for a list page. Rendered as a single
  * button on the right of the L5 sub-nav row, blue background with icon +
@@ -86,12 +88,19 @@ const VARIANT_CLASSES: Record<NonNullable<ListSubNavAction['variant']>, string> 
 @Component({
   selector: 'app-list-sub-nav',
   standalone: true,
+  imports: [AppBusyComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div data-test="list-sub-nav"
          [class]="rowClasses">
       <div class="text-base font-semibold text-content-text whitespace-nowrap" data-test="list-sub-nav-title">
-        {{ title }}: <span class="text-content-muted font-medium">{{ count() }}</span>
+        {{ title }}: <span class="text-content-muted font-medium inline-flex items-center">
+          @if (isCountPending()) {
+            <app-busy variant="dots" size="1em" data-test="count-pending"></app-busy>
+          } @else {
+            {{ count() }}
+          }
+        </span>
       </div>
       @if (isAdding && isAdding()) {
         <!-- Inline add-form slot. When the consumer flips its isAdding signal
@@ -168,6 +177,12 @@ export class ListSubNavComponent {
    *  with `toSignal()`. */
   @Input({ required: true }) count!: Signal<number>;
 
+  /** When provided and true, the count renders as an ellipsis instead of
+   *  a number. Wire to "not loaded yet" (e.g. `!hasLoadedOnce()`), not to
+   *  refresh-in-flight — a hard `0` before the first fetch lands reads as
+   *  "empty" and makes the page look broken (#5766). */
+  @Input() loading?: Signal<boolean>;
+
   /** Optional primary action. Omit for read-only lists. */
   @Input() addAction?: ListSubNavAddAction;
 
@@ -189,6 +204,10 @@ export class ListSubNavComponent {
   /** When provided alongside `selectedCount`, a "Clear" link is rendered
    *  that calls this function when clicked. */
   @Input() onClearSelection?: () => void;
+
+  protected isCountPending(): boolean {
+    return !!this.loading && this.loading();
+  }
 
   protected readonly isAddVisible = computed(() => {
     const v = this.addAction?.visible;

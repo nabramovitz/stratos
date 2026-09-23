@@ -92,10 +92,16 @@ describe('CfAppsSignalConfigService', () => {
     const svc = TestBed.inject(CfAppsSignalConfigService);
     svc.initialize(['cf-1']);
     // loadAll() short-circuits because preSeed flipped the source's
-    // _preseeded flag; the HTTP stub never sees a request.
+    // _preseeded flag; the apps HTTP stub never sees a request. initialize()
+    // does still fire the eager stacks-catalog fetch (unrelated to app
+    // seeding — see loadStacksCatalog), so assert on the apps URL rather
+    // than "no calls at all".
     await svc.loadAll();
     expect(svc.orchestrator.allItems()).toEqual([a]);
-    expect(http.get).not.toHaveBeenCalled();
+    const appsCalls = (http.get as ReturnType<typeof vi.fn>).mock.calls.filter(
+      ([url]) => typeof url === 'string' && url.includes('/pp/v1/cf/apps/'),
+    );
+    expect(appsCalls).toEqual([]);
   });
 
   it('does not seed sources when EndpointDataService has not drained apps yet', async () => {
@@ -1152,6 +1158,254 @@ describe('CfAppsSignalConfigService — org catalog shares the endpoint load', (
 // The endpoint's full space list is drained by summary pages via
 // EndpointDataService.loadSpaces(); the per-org fanout here re-fetched the
 // same spaces. loadNames() now joins the shared slice when there is one.
+// Stacks-backed HTTP stub: /pp/v1/cf/stacks/{cnsi} returns the given names;
+// every other URL returns an empty page (same envelope as makeHttp).
+function makeStacksHttp(stacksByCnsi: Record<string, string[]>): HttpClient {
+  const emptyPage = {
+    resources: [],
+    pagination: { totalResults: 0, totalPages: 1, next: null, previous: null, first: { href: '' }, last: { href: '' } },
+  };
+  return {
+    get: vi.fn((url: string) => {
+      const m = url.match(/\/pp\/v1\/cf\/stacks\/([^?/]+)/);
+      if (!m) return of(emptyPage);
+      const names = stacksByCnsi[m[1]] ?? [];
+      return of({
+        resources: names.map((name, i) => ({
+          guid: `stack-${m[1]}-${i}`, name, description: '', default: i === 0,
+          cnsiGuid: m[1], createdAt: '', updatedAt: '',
+        })),
+        pagination: { totalResults: names.length, totalPages: 1, next: null, previous: null, first: { href: '' }, last: { href: '' } },
+      });
+    }),
+  } as unknown as HttpClient;
+}
+
+function makeStackApp(guid: string, stackName: string | undefined): StApp {
+  return {
+    guid, name: guid, state: 'STARTED', cnsiGuid: 'cf-1', spaceGuid: 'sp-1',
+    instances: 1, routes: [], createdAt: '', updatedAt: '',
+    ...(stackName !== undefined ? { stackName } : {}),
+  } as StApp;
+}
+
+describe('CfAppsSignalConfigService stacks', () => {
+  it('stack UI stays hidden when every scoped endpoint has a single stack', async () => {
+    const svc = makeSvc(makeStacksHttp({ 'cf-1': ['cflinuxfs4'] }));
+    svc.initialize(['cf-1']);
+    await drainUntil(() => svc.stackOptions().length > 1);
+    expect(svc.stackUiVisible()).toBe(false);
+  });
+
+  it('stack UI shows when any scoped endpoint has two installed stacks', async () => {
+    const svc = makeSvc(makeStacksHttp({ 'cf-1': ['cflinuxfs4'], 'cf-2': ['cflinuxfs4', 'cflinuxfs5'] }));
+    svc.initialize(['cf-1', 'cf-2']);
+    await drainUntil(() => svc.stackUiVisible());
+    expect(svc.stackUiVisible()).toBe(true);
+  });
+
+  it('options come from the installed catalog, deduped, cascaded to the selected CF', async () => {
+    const svc = makeSvc(makeStacksHttp({ 'cf-1': ['cflinuxfs4', 'cflinuxfs5'], 'cf-2': ['cflinuxfs4', 'windows'] }));
+    svc.initialize(['cf-1', 'cf-2']);
+    await drainUntil(() => svc.stackUiVisible());
+    // Union across scope, deduped, natural-sorted, "All" first.
+    expect(svc.stackOptions().map(o => o.label)).toEqual(['All', 'cflinuxfs4', 'cflinuxfs5', 'windows']);
+    // Cascade: narrowing to cf-2 drops cflinuxfs5.
+    svc.selectedCnsi.set('cf-2');
+    expect(svc.stackOptions().map(o => o.value)).toEqual([null, 'cflinuxfs4', 'windows']);
+  });
+
+  it('null selection (the default) passes every app, including docker apps with no stackName', async () => {
+    const svc = makeSvc(makeStacksHttp({ 'cf-1': ['cflinuxfs4', 'cflinuxfs5'] }));
+    svc.initialize(['cf-1']);
+    await drainUntil(() => svc.stackOptions().length > 1);
+    expect(svc.filter()(makeStackApp('a', 'cflinuxfs4'))).toBe(true);
+    expect(svc.filter()(makeStackApp('b', 'cflinuxfs5'))).toBe(true);
+    expect(svc.filter()(makeStackApp('c', undefined))).toBe(true);
+  });
+
+  it('a single selected name passes only matching apps; docker apps (no stackName) never match', async () => {
+    const svc = makeSvc(makeStacksHttp({ 'cf-1': ['cflinuxfs4', 'cflinuxfs5'] }));
+    svc.initialize(['cf-1']);
+    svc.selectedStacks.set(['cflinuxfs4']);
+    // Drain on a condition the PRE-effect default filter (`() => true`)
+    // can't already satisfy — filter()(a) is trivially true even before
+    // the predicate effect installs the real stack-aware filter, so
+    // gating the drain on it exits with zero ticks and leaves the
+    // assertions below reading the stale default.
+    await drainUntil(() => !svc.filter()(makeStackApp('b', 'cflinuxfs5')));
+    expect(svc.filter()(makeStackApp('a', 'cflinuxfs4'))).toBe(true);
+    expect(svc.filter()(makeStackApp('b', 'cflinuxfs5'))).toBe(false);
+    expect(svc.filter()(makeStackApp('c', undefined))).toBe(false);
+    svc.selectedStacks.set(null);
+    await drainUntil(() => svc.filter()(makeStackApp('c', undefined)));
+    expect(svc.filter()(makeStackApp('c', undefined))).toBe(true);
+  });
+
+  it('an explicitly empty selection behaves as "all" — same as null', async () => {
+    const svc = makeSvc(makeStacksHttp({ 'cf-1': ['cflinuxfs4', 'cflinuxfs5'] }));
+    svc.initialize(['cf-1']);
+    svc.selectedStacks.set(['cflinuxfs4']);
+    await drainUntil(() => !svc.filter()(makeStackApp('b', 'cflinuxfs5')));
+    svc.selectedStacks.set([]);
+    await drainUntil(() => svc.filter()(makeStackApp('b', 'cflinuxfs5')));
+    expect(svc.filter()(makeStackApp('a', 'cflinuxfs4'))).toBe(true);
+    expect(svc.filter()(makeStackApp('b', 'cflinuxfs5'))).toBe(true);
+    expect(svc.filter()(makeStackApp('c', undefined))).toBe(true);
+  });
+
+  it('clearFilters resets the stack selection to null', () => {
+    const svc = makeSvc(makeHttp());
+    svc.selectedStacks.set(['cflinuxfs4']);
+    svc.clearFilters();
+    expect(svc.selectedStacks()).toBe(null);
+  });
+
+  it('drops just the vanished name(s) from the selection when the stack catalog no longer lists them, collapsing to null when none remain', async () => {
+    const svc = makeSvc(makeStacksHttp({ 'cf-1': ['cflinuxfs4', 'cflinuxfs5'] }));
+    svc.initialize(['cf-1']);
+    await drainUntil(() => svc.stackOptions().length > 1);
+    svc.selectedStacks.set(['cflinuxfs4', 'cflinuxfs5', 'windows']);
+    await svc.loadAll();
+    TestBed.tick();
+    // 'windows' isn't in the installed catalog — it's dropped, the two
+    // still-installed names survive.
+    expect(svc.selectedStacks()).toEqual(['cflinuxfs4', 'cflinuxfs5']);
+
+    svc.selectedStacks.set(['windows']);
+    await svc.refresh();
+    TestBed.tick();
+    // Every selected name is gone — the selection collapses to null
+    // (== all), not an empty array that would silently hide every app.
+    expect(svc.selectedStacks()).toBe(null);
+  });
+
+  // #5770 review: selectedStacks is a root-singleton signal, so a value
+  // set while the stack UI was visible on one page can carry into a
+  // single-stack scope where the checklist isn't rendered at all —
+  // with no visible control and a disabled Clear button, that used to
+  // silently drop every docker app. The predicate must stay inert
+  // wherever stackUiVisible() is false.
+  it('a stack selection is inert while the stack UI is hidden (single-stack scope) — docker apps still pass', async () => {
+    const svc = makeSvc(makeStacksHttp({ 'cf-1': ['cflinuxfs4'] }));
+    svc.initialize(['cf-1']);
+    await drainUntil(() => svc.stackOptions().length > 1);
+    expect(svc.stackUiVisible()).toBe(false);
+    svc.selectedStacks.set(['cflinuxfs4']);
+    TestBed.tick();
+    expect(svc.filter()(makeStackApp('a', 'cflinuxfs4'))).toBe(true);
+    expect(svc.filter()(makeStackApp('b', undefined))).toBe(true);
+  });
+
+  it('the same selection filters normally once the stack UI is visible (2+ installed stacks)', async () => {
+    const svc = makeSvc(makeStacksHttp({ 'cf-1': ['cflinuxfs4', 'cflinuxfs5'] }));
+    svc.initialize(['cf-1']);
+    await drainUntil(() => svc.stackUiVisible());
+    svc.selectedStacks.set(['cflinuxfs4']);
+    await drainUntil(() => !svc.filter()(makeStackApp('b', undefined)));
+    expect(svc.filter()(makeStackApp('a', 'cflinuxfs4'))).toBe(true);
+    expect(svc.filter()(makeStackApp('b', undefined))).toBe(false);
+  });
+});
+
+function makeStateApp(guid: string, state: string): StApp {
+  return {
+    guid, name: guid, state, cnsiGuid: 'cf-1', spaceGuid: 'sp-1',
+    instances: 1, routes: [], createdAt: '', updatedAt: '',
+  } as StApp;
+}
+
+// Mirrors the identical mapping every app-list component defines locally
+// (application-wall, cloud-foundry-applications-signal,
+// cloud-foundry-space-apps-signal) and registers via
+// registerFilterExtractor('state', stateLabel) — these tests register it
+// the same way a real consumer's ngOnInit does, so the predicate exercises
+// the actual "reuse the registered extractor" path instead of a shortcut.
+function stateLabel(app: StApp): string {
+  const s = (app.state ?? '').toUpperCase();
+  if (s === 'STARTED') return 'Deployed - Online';
+  if (s === 'STOPPED') return 'Stopped';
+  if (s === 'CRASHED') return 'Crashed';
+  if (s === 'FAILED') return 'Failed';
+  return app.state ?? '';
+}
+
+describe('CfAppsSignalConfigService status', () => {
+  it('statusOptions is the fixed four-label set — no catalog fetch, no visibility gate', () => {
+    const svc = makeSvc(makeHttp());
+    expect(svc.statusOptions()).toEqual(['Deployed - Online', 'Stopped', 'Crashed', 'Failed']);
+  });
+
+  it('null selection (the default) passes every app regardless of state', () => {
+    const svc = makeSvc(makeHttp());
+    svc.registerFilterExtractor('state', stateLabel);
+    expect(svc.filter()(makeStateApp('a', 'STARTED'))).toBe(true);
+    expect(svc.filter()(makeStateApp('b', 'STOPPED'))).toBe(true);
+  });
+
+  it('matches by LABEL, not raw state — selecting "Deployed - Online" matches STARTED apps', async () => {
+    const svc = makeSvc(makeHttp());
+    svc.registerFilterExtractor('state', stateLabel);
+    svc.selectedStates.set(['Deployed - Online']);
+    await drainUntil(() => !svc.filter()(makeStateApp('b', 'STOPPED')));
+    expect(svc.filter()(makeStateApp('a', 'STARTED'))).toBe(true);
+    expect(svc.filter()(makeStateApp('b', 'STOPPED'))).toBe(false);
+  });
+
+  it('a multi-selection passes apps matching ANY selected label', async () => {
+    const svc = makeSvc(makeHttp());
+    svc.registerFilterExtractor('state', stateLabel);
+    svc.selectedStates.set(['Stopped', 'Crashed']);
+    await drainUntil(() => !svc.filter()(makeStateApp('a', 'STARTED')));
+    expect(svc.filter()(makeStateApp('a', 'STARTED'))).toBe(false);
+    expect(svc.filter()(makeStateApp('b', 'STOPPED'))).toBe(true);
+    expect(svc.filter()(makeStateApp('c', 'CRASHED'))).toBe(true);
+    expect(svc.filter()(makeStateApp('d', 'FAILED'))).toBe(false);
+  });
+
+  it('an explicitly empty selection behaves as "all" — same as null', async () => {
+    const svc = makeSvc(makeHttp());
+    svc.registerFilterExtractor('state', stateLabel);
+    svc.selectedStates.set(['Stopped']);
+    await drainUntil(() => !svc.filter()(makeStateApp('a', 'STARTED')));
+    svc.selectedStates.set([]);
+    await drainUntil(() => svc.filter()(makeStateApp('a', 'STARTED')));
+    expect(svc.filter()(makeStateApp('a', 'STARTED'))).toBe(true);
+    expect(svc.filter()(makeStateApp('b', 'STOPPED'))).toBe(true);
+  });
+
+  it('an app with an unknown/raw state is findable while the filter is inert, but excluded once narrowed', async () => {
+    // stateLabel falls back to the raw string for anything other than the
+    // four known lifecycle states — that fallback label is never one of
+    // the checklist's fixed options, so it can only ever fail an ACTIVE
+    // narrowed selection, never a null/empty/all-selected one. Same
+    // posture as a docker app (no stackName) under the stack filter.
+    const svc = makeSvc(makeHttp());
+    svc.registerFilterExtractor('state', stateLabel);
+    expect(svc.filter()(makeStateApp('x', 'PENDING'))).toBe(true);
+    svc.selectedStates.set(['Stopped']);
+    await drainUntil(() => !svc.filter()(makeStateApp('x', 'PENDING')));
+    expect(svc.filter()(makeStateApp('x', 'PENDING'))).toBe(false);
+  });
+
+  it('falls back to the raw app.state when no state extractor is registered', async () => {
+    const svc = makeSvc(makeHttp());
+    // No registerFilterExtractor('state', ...) call — the predicate falls
+    // back to app.state directly (mirrors the text-filter's own fallback).
+    svc.selectedStates.set(['STARTED']);
+    await drainUntil(() => !svc.filter()(makeStateApp('a', 'STOPPED')));
+    expect(svc.filter()(makeStateApp('a', 'STARTED'))).toBe(true);
+    expect(svc.filter()(makeStateApp('b', 'STOPPED'))).toBe(false);
+  });
+
+  it('clearFilters resets the status selection to null', () => {
+    const svc = makeSvc(makeHttp());
+    svc.selectedStates.set(['Stopped']);
+    svc.clearFilters();
+    expect(svc.selectedStates()).toBe(null);
+  });
+});
+
 describe('CfAppsSignalConfigService — space catalog shares the endpoint load', () => {
   const spacesFanout = (url: unknown) => typeof url === 'string' && url.includes('organization_guids=');
 
@@ -1202,5 +1456,44 @@ describe('CfAppsSignalConfigService — space catalog shares the endpoint load',
 
     const fanout = (http.get as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter(c => spacesFanout(c[0]));
     expect(fanout.length).toBeGreaterThan(0);
+  });
+});
+
+function makeRefreshedApp(guid: string, lastRefreshedAt: string | undefined): StApp {
+  return {
+    guid, name: guid, state: 'STARTED', cnsiGuid: 'cf-1', spaceGuid: 'sp-1',
+    instances: 1, routes: [], createdAt: '', updatedAt: '',
+    ...(lastRefreshedAt !== undefined ? { lastRefreshedAt } : {}),
+  } as StApp;
+}
+
+describe('CfAppsSignalConfigService last-refreshed range', () => {
+  it('predicate keeps only apps inside the active range', async () => {
+    const svc = makeSvc(makeHttp());
+    svc.initialize(['cf-1']);
+    const fresh = makeRefreshedApp('fresh', '2026-07-01T00:00:00Z');
+    const stale = makeRefreshedApp('stale', '2026-01-01T00:00:00Z');
+    svc.lastRefreshedRange.set({ op: 'gte', a: '2026-06-01' });
+    await drainUntil(() => !svc.filter()(stale));
+    expect(svc.filter()(fresh)).toBe(true);
+    expect(svc.filter()(stale)).toBe(false);
+  });
+
+  it('never-staged apps match only an inert range', async () => {
+    const svc = makeSvc(makeHttp());
+    svc.initialize(['cf-1']);
+    const never = makeRefreshedApp('never', undefined);
+    expect(svc.filter()(never)).toBe(true);
+    svc.lastRefreshedRange.set({ op: 'lt', a: '2099-01-01' });
+    await drainUntil(() => !svc.filter()(never));
+    expect(svc.filter()(never)).toBe(false);
+  });
+
+  it('clearFilters resets the range', () => {
+    const svc = makeSvc(makeHttp());
+    svc.initialize(['cf-1']);
+    svc.lastRefreshedRange.set({ op: 'lt', a: '2026-01-01' });
+    svc.clearFilters();
+    expect(svc.lastRefreshedRange()).toBeNull();
   });
 });

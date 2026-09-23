@@ -3,7 +3,8 @@ import { TestBed } from '@angular/core/testing';
 import { Component, signal } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { SignalListComponent } from './signal-list.component';
-import type { SignalListConfig, SignalListDropdown, SignalListDropdownOption, SignalListRowState } from './signal-list.component';
+import type { SignalListConfig, SignalListDropdown, SignalListDropdownOption, SignalListMultiFilter, SignalListRowState } from './signal-list.component';
+import type { SignalListRangeValue } from './range-filter';
 import { SignalListCellTemplateDirective } from './signal-list-cell-template.directive';
 
 // SignalListComponent now applies [routerLink] to the card / table row when a
@@ -80,7 +81,7 @@ describe('SignalListComponent', () => {
     // a populated table — no separate row, no layout shift.
     expect(fixture.nativeElement.querySelector('[data-test="refresh"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-test="refresh-loading"]')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-test="refresh-loading"] .spinner')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-test="refresh-loading"] app-busy')).not.toBeNull();
   });
 
   it('shows the refresh icon (not spinner) when not loading', () => {
@@ -109,7 +110,7 @@ describe('SignalListComponent', () => {
     const result = component.invokeRefresh();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[data-test="refresh-loading"]')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-test="refresh-loading"] .spinner')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-test="refresh-loading"] app-busy')).not.toBeNull();
 
     resolveRefresh();
     await result;
@@ -417,6 +418,33 @@ describe('SignalListComponent', () => {
     };
     fixture.detectChanges();
     const btn = fixture.nativeElement.querySelector('[data-test="clear-filters"]');
+    expect(btn.disabled).toBe(false);
+    selected.set(null);
+    fixture.detectChanges();
+    expect(btn.disabled).toBe(true);
+  });
+
+  it('Clear button is enabled when a filterMultis selection is non-null (narrowed or explicitly empty)', () => {
+    const fixture = TestBed.createComponent(Host);
+    const selected = signal<string[] | null>(null);
+    const fm: SignalListMultiFilter = {
+      field: 'name',
+      options: signal(['a', 'b']).asReadonly(),
+      selected,
+    };
+    fixture.componentInstance.config = {
+      ...fixture.componentInstance.config,
+      filterMultis: [fm],
+      onClear: () => { /* no-op */ },
+    };
+    fixture.detectChanges();
+    const btn = fixture.nativeElement.querySelector('[data-test="clear-filters"]');
+    expect(btn.disabled).toBe(true);
+    selected.set(['a']);
+    fixture.detectChanges();
+    expect(btn.disabled).toBe(false);
+    selected.set([]);
+    fixture.detectChanges();
     expect(btn.disabled).toBe(false);
     selected.set(null);
     fixture.detectChanges();
@@ -1425,5 +1453,616 @@ describe('SignalListComponent rowState blocked/deleting/busy (multiline-ops feed
     fixture.componentInstance.states['one'].set({ busy: true, message: 'working' });
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[data-test="row-busy"]')).not.toBeNull();
+  });
+});
+
+// Checklist-popup filter input (config.filterMultis / SignalListMultiFilter).
+// Stack is the first consumer of this control; status is the second
+// filterMultis entry on the same field-selector, elsewhere.
+@Component({
+  standalone: true,
+  imports: [SignalListComponent],
+  template: `<app-signal-list [config]="config" />`
+})
+class MultiFilterHost {
+  items = signal([
+    { name: 'one', stack: 'cflinuxfs4' },
+    { name: 'two', stack: 'cflinuxfs5' },
+  ]);
+  pageIndex = signal(0);
+  pageSize = signal(10);
+  filterField = signal('stackName');
+  selectedStacks = signal<string[] | null>(null);
+  stackOptions = signal(['cflinuxfs4', 'cflinuxfs5', 'windows']);
+  config: SignalListConfig<{ name: string; stack: string }> = {
+    pagedItems: this.items.asReadonly(),
+    totalFilteredResults: signal(2).asReadonly(),
+    totalPages: signal(1).asReadonly(),
+    pageIndex: this.pageIndex,
+    pageSize: this.pageSize,
+    isAnyLoading: signal(false).asReadonly(),
+    errorsByCnsi: signal(new Map<string, unknown>()).asReadonly(),
+    columns: [
+      { header: 'Name', key: 'name', render: r => r.name },
+      { header: 'Stack', key: 'stackName', render: r => r.stack },
+    ],
+    getRowKey: r => r.name,
+    nameFilter: signal(''),
+    filterColumns: ['name', 'stackName'],
+    filterField: this.filterField,
+    filterMultis: [{
+      field: 'stackName',
+      options: this.stackOptions.asReadonly(),
+      selected: this.selectedStacks,
+    }],
+  };
+}
+
+describe('SignalListComponent checklist-popup filter (filterMultis)', () => {
+  function componentWith(fixture: ReturnType<typeof TestBed.createComponent<MultiFilterHost>>) {
+    return fixture.debugElement.children[0].componentInstance as SignalListComponent<{ name: string; stack: string }>;
+  }
+
+  it('renders the checklist toggle instead of the text input when filterField matches a filterMultis entry', () => {
+    const fixture = TestBed.createComponent(MultiFilterHost);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-test="multi-filter-toggle"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-test="name-filter"]')).toBeNull();
+  });
+
+  it('falls back to the text input when filterField does not match any filterMultis entry', () => {
+    const fixture = TestBed.createComponent(MultiFilterHost);
+    fixture.componentInstance.filterField.set('name');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-test="multi-filter-toggle"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-test="name-filter"]')).not.toBeNull();
+  });
+
+  describe('multiSummary() — the four button-label states', () => {
+    it('reads "All (n)" when selected is null (the default)', () => {
+      const fixture = TestBed.createComponent(MultiFilterHost);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      expect(component.multiSummary(component.activeMulti()!)).toBe('All (3)');
+    });
+
+    it('reads "All (n)" when every option is explicitly selected', () => {
+      const fixture = TestBed.createComponent(MultiFilterHost);
+      fixture.componentInstance.selectedStacks.set(['cflinuxfs4', 'cflinuxfs5', 'windows']);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      expect(component.multiSummary(component.activeMulti()!)).toBe('All (3)');
+    });
+
+    it('reads the bare value when exactly one option is selected', () => {
+      const fixture = TestBed.createComponent(MultiFilterHost);
+      fixture.componentInstance.selectedStacks.set(['cflinuxfs4']);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      expect(component.multiSummary(component.activeMulti()!)).toBe('cflinuxfs4');
+    });
+
+    it('reads "x of y selected" for a partial pick', () => {
+      const fixture = TestBed.createComponent(MultiFilterHost);
+      fixture.componentInstance.selectedStacks.set(['cflinuxfs4', 'windows']);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      expect(component.multiSummary(component.activeMulti()!)).toBe('2 of 3 selected');
+    });
+
+    it('reads "None — showing all" when the selection is explicitly emptied', () => {
+      const fixture = TestBed.createComponent(MultiFilterHost);
+      fixture.componentInstance.selectedStacks.set([]);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      expect(component.multiSummary(component.activeMulti()!)).toBe('None — showing all');
+    });
+  });
+
+  describe('toggleMultiOption() set math', () => {
+    it('starting from null (all), unchecking one option produces the explicit remaining set', () => {
+      const fixture = TestBed.createComponent(MultiFilterHost);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      component.toggleMultiOption(component.activeMulti()!, 'windows');
+      expect(fixture.componentInstance.selectedStacks()).toEqual(['cflinuxfs4', 'cflinuxfs5']);
+    });
+
+    it('checking every option back on collapses the selection to null, not an explicit full list', () => {
+      const fixture = TestBed.createComponent(MultiFilterHost);
+      fixture.componentInstance.selectedStacks.set(['cflinuxfs4', 'cflinuxfs5']);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      component.toggleMultiOption(component.activeMulti()!, 'windows');
+      expect(fixture.componentInstance.selectedStacks()).toBe(null);
+    });
+
+    it('unchecking the last remaining option leaves an explicit empty array, not null', () => {
+      // Distinguishing [] from null is what lets the popup show the
+      // "showing all" note instead of silently reverting to "all".
+      const fixture = TestBed.createComponent(MultiFilterHost);
+      fixture.componentInstance.selectedStacks.set(['cflinuxfs4']);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      component.toggleMultiOption(component.activeMulti()!, 'cflinuxfs4');
+      expect(fixture.componentInstance.selectedStacks()).toEqual([]);
+    });
+
+    it('resets pageIndex to 0', () => {
+      const fixture = TestBed.createComponent(MultiFilterHost);
+      fixture.componentInstance.pageIndex.set(3);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      component.toggleMultiOption(component.activeMulti()!, 'windows');
+      expect(fixture.componentInstance.pageIndex()).toBe(0);
+    });
+  });
+
+  it('shows the "Nothing selected — showing all" note in the popup when the selection is explicitly empty', () => {
+    const fixture = TestBed.createComponent(MultiFilterHost);
+    fixture.componentInstance.selectedStacks.set([]);
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('[data-test="multi-filter-toggle"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Nothing selected — showing all');
+  });
+
+  it('toggling a checkbox in the popup updates the selection', () => {
+    const fixture = TestBed.createComponent(MultiFilterHost);
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('[data-test="multi-filter-toggle"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    const boxes = fixture.nativeElement.querySelectorAll('input[type="checkbox"]') as NodeListOf<HTMLInputElement>;
+    boxes[0].click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.selectedStacks()).toEqual(['cflinuxfs5', 'windows']);
+  });
+
+  it('closes the popup on the Close button and on any click outside the control', () => {
+    const fixture = TestBed.createComponent(MultiFilterHost);
+    fixture.detectChanges();
+    const component = componentWith(fixture);
+    (fixture.nativeElement.querySelector('[data-test="multi-filter-toggle"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(component.multiPopupOpen()).toBe(true);
+
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    fixture.detectChanges();
+    expect(component.multiPopupOpen()).toBe(false);
+  });
+
+  it('Escape closes the popup — the same affordance the text input it replaces offers', () => {
+    const fixture = TestBed.createComponent(MultiFilterHost);
+    fixture.detectChanges();
+    const component = componentWith(fixture);
+    const wrap = fixture.nativeElement.querySelector('[data-test="multi-filter-wrap"]') as HTMLElement;
+    (wrap.querySelector('[data-test="multi-filter-toggle"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(component.multiPopupOpen()).toBe(true);
+
+    wrap.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    expect(component.multiPopupOpen()).toBe(false);
+  });
+
+  it('changing filterField closes an open popup', () => {
+    const fixture = TestBed.createComponent(MultiFilterHost);
+    fixture.detectChanges();
+    const component = componentWith(fixture);
+    (fixture.nativeElement.querySelector('[data-test="multi-filter-toggle"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(component.multiPopupOpen()).toBe(true);
+    component.onFilterFieldChange('name');
+    expect(component.multiPopupOpen()).toBe(false);
+  });
+
+  describe('popup Clear button', () => {
+    function openPopup(fixture: ReturnType<typeof TestBed.createComponent<MultiFilterHost>>): HTMLButtonElement {
+      (fixture.nativeElement.querySelector('[data-test="multi-filter-toggle"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      return fixture.nativeElement.querySelector('[data-test="multi-filter-clear"]') as HTMLButtonElement;
+    }
+
+    it('is disabled while the filter is already inactive (null selection)', () => {
+      const fixture = TestBed.createComponent(MultiFilterHost);
+      fixture.detectChanges();
+      expect(openPopup(fixture).disabled).toBe(true);
+    });
+
+    it('resets the selection to null, pages back to 0, and leaves the popup open', () => {
+      const fixture = TestBed.createComponent(MultiFilterHost);
+      fixture.componentInstance.selectedStacks.set(['cflinuxfs4']);
+      fixture.componentInstance.pageIndex.set(3);
+      fixture.detectChanges();
+      const clear = openPopup(fixture);
+      expect(clear.disabled).toBe(false);
+
+      clear.click();
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.selectedStacks()).toBe(null);
+      expect(fixture.componentInstance.pageIndex()).toBe(0);
+      const component = componentWith(fixture);
+      expect(component.multiPopupOpen()).toBe(true);
+      // Visible feedback: the popup stays up while the toggle summary and
+      // the button's own disabled state flip to the neutral form
+      expect(fixture.nativeElement.querySelector('[data-test="multi-filter-clear"]')).not.toBeNull();
+      expect((fixture.nativeElement.querySelector('[data-test="multi-filter-clear"]') as HTMLButtonElement).disabled).toBe(true);
+      expect(component.multiSummary(component.activeMulti()!)).toBe('All (3)');
+    });
+  });
+});
+
+// Range-comparison filter input (config.filterRanges / SignalListRangeFilter).
+// Mirrors the checklist-popup fixture above; lastRefreshedAt is the first
+// consumer of this control.
+@Component({
+  standalone: true,
+  imports: [SignalListComponent],
+  template: `<app-signal-list [config]="config" />`
+})
+class RangeFilterHost {
+  items = signal([
+    { name: 'one', lastRefreshedAt: '2026-05-01' },
+    { name: 'two', lastRefreshedAt: '2026-06-01' },
+  ]);
+  pageIndex = signal(0);
+  pageSize = signal(10);
+  filterField = signal('lastRefreshedAt');
+  selectedRange = signal<SignalListRangeValue | null>(null);
+  config: SignalListConfig<{ name: string; lastRefreshedAt: string }> = {
+    pagedItems: this.items.asReadonly(),
+    totalFilteredResults: signal(2).asReadonly(),
+    totalPages: signal(1).asReadonly(),
+    pageIndex: this.pageIndex,
+    pageSize: this.pageSize,
+    isAnyLoading: signal(false).asReadonly(),
+    errorsByCnsi: signal(new Map<string, unknown>()).asReadonly(),
+    columns: [
+      { header: 'Name', key: 'name', render: r => r.name },
+      { header: 'Last Refreshed', key: 'lastRefreshedAt', render: r => r.lastRefreshedAt },
+    ],
+    getRowKey: r => r.name,
+    nameFilter: signal(''),
+    filterColumns: ['name', 'lastRefreshedAt'],
+    filterField: this.filterField,
+    filterRanges: [{
+      field: 'lastRefreshedAt',
+      valueType: 'date',
+      selected: this.selectedRange,
+    }],
+  };
+}
+
+describe('SignalListComponent range filter (filterRanges)', () => {
+  function componentWith(fixture: ReturnType<typeof TestBed.createComponent<RangeFilterHost>>) {
+    return fixture.debugElement.children[0].componentInstance as SignalListComponent<{ name: string; lastRefreshedAt: string }>;
+  }
+
+  it('activeRange resolves when filterField names a range field, activeMulti stays undefined', () => {
+    const fixture = TestBed.createComponent(RangeFilterHost);
+    fixture.detectChanges();
+    const component = componentWith(fixture);
+    expect(component.activeRange()?.field).toBe('lastRefreshedAt');
+    expect(component.activeMulti()).toBeUndefined();
+  });
+
+  it('updateRange collapses an empty primary bound to null (no constraint)', () => {
+    const fixture = TestBed.createComponent(RangeFilterHost);
+    fixture.detectChanges();
+    const component = componentWith(fixture);
+    const fr = component.activeRange()!;
+    component.updateRange(fr, { op: 'gte', a: '2026-05-01' });
+    expect(fixture.componentInstance.selectedRange()).toEqual({ op: 'gte', a: '2026-05-01' });
+    component.updateRange(fr, { a: '' });
+    expect(fixture.componentInstance.selectedRange()).toBe(null);
+  });
+
+  it('updateRange resets to page 0', () => {
+    const fixture = TestBed.createComponent(RangeFilterHost);
+    fixture.componentInstance.pageIndex.set(3);
+    fixture.detectChanges();
+    const component = componentWith(fixture);
+    component.updateRange(component.activeRange()!, { op: 'gte', a: '2026-05-01' });
+    expect(fixture.componentInstance.pageIndex()).toBe(0);
+  });
+
+  it('hasActiveFilter sees a non-null range selection and Clear resets it', () => {
+    const fixture = TestBed.createComponent(RangeFilterHost);
+    fixture.detectChanges();
+    const component = componentWith(fixture);
+    fixture.componentInstance.selectedRange.set({ op: 'lt', a: '2026-01-01' });
+    expect(component.hasActiveFilter()).toBe(true);
+    fixture.componentInstance.selectedRange.set(null);
+    expect(component.hasActiveFilter()).toBe(false);
+  });
+
+  it('rangeSummary renders Any / single-bound / between forms', () => {
+    const fixture = TestBed.createComponent(RangeFilterHost);
+    fixture.detectChanges();
+    const component = componentWith(fixture);
+    const fr = component.activeRange()!;
+    expect(component.rangeSummary(fr)).toBe('Any');
+
+    fixture.componentInstance.selectedRange.set({ op: 'gte', a: '2026-05-01' });
+    expect(component.rangeSummary(fr)).toBe('≥ 2026-05-01');
+
+    fixture.componentInstance.selectedRange.set({ op: 'between', a: '2026-05-01', b: '2026-06-01' });
+    expect(component.rangeSummary(fr)).toBe('2026-05-01 – 2026-06-01');
+  });
+
+  // Reproduces the real UI sequence: the "between" <select> and the two
+  // <input> bounds each fire their own (change) event, so op and a/b land
+  // in SEPARATE updateRange() calls — never merged in one patch like the
+  // collapse test above. An op-only patch must survive so the template's
+  // between-branch gate (`selected()?.op === 'between'`) can ever see the
+  // op and render the second input + inclusive checkboxes.
+  describe('updateRange sequence: pick "between" before typing any bound', () => {
+    it('(a) op-only patch to "between" with empty bounds stores a non-null selection with op "between"', () => {
+      const fixture = TestBed.createComponent(RangeFilterHost);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      const fr = component.activeRange()!;
+      component.updateRange(fr, { op: 'between' });
+      expect(fixture.componentInstance.selectedRange()).toEqual({ op: 'between', a: '' });
+      expect(component.hasActiveFilter()).toBe(false);
+    });
+
+    it('(b) then typing the first bound keeps op "between" (not reset to gte)', () => {
+      const fixture = TestBed.createComponent(RangeFilterHost);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      const fr = component.activeRange()!;
+      component.updateRange(fr, { op: 'between' });
+      component.updateRange(fr, { a: '2026-05-01' });
+      expect(fixture.componentInstance.selectedRange()).toEqual({ op: 'between', a: '2026-05-01' });
+      expect(component.hasActiveFilter()).toBe(false);
+    });
+
+    it('(c) then typing the second bound completes the range and activates the filter', () => {
+      const fixture = TestBed.createComponent(RangeFilterHost);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      const fr = component.activeRange()!;
+      component.updateRange(fr, { op: 'between' });
+      component.updateRange(fr, { a: '2026-05-01' });
+      component.updateRange(fr, { b: '2026-06-01' });
+      expect(fixture.componentInstance.selectedRange()).toEqual({ op: 'between', a: '2026-05-01', b: '2026-06-01' });
+      expect(component.hasActiveFilter()).toBe(true);
+    });
+
+    it('(d) clearing both bounds one at a time collapses back to null', () => {
+      const fixture = TestBed.createComponent(RangeFilterHost);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      const fr = component.activeRange()!;
+      component.updateRange(fr, { op: 'between' });
+      component.updateRange(fr, { a: '2026-05-01' });
+      component.updateRange(fr, { b: '2026-06-01' });
+      component.updateRange(fr, { a: '' });
+      expect(fixture.componentInstance.selectedRange()).toEqual({ op: 'between', a: '', b: '2026-06-01' });
+      component.updateRange(fr, { b: '' });
+      expect(fixture.componentInstance.selectedRange()).toBe(null);
+    });
+  });
+
+  // Relative bound modes ("older than N days / business days"): the mode
+  // select, count input, working-day toggles, and holiday count each fire
+  // their own change event — same separate-events discipline as the
+  // between sequence above.
+  describe('relative bound modes', () => {
+    it('a mode-only patch stores the mode without collapsing to null', () => {
+      const fixture = TestBed.createComponent(RangeFilterHost);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      component.updateRange(component.activeRange()!, { mode: 'days' });
+      expect(fixture.componentInstance.selectedRange()).toEqual({ op: 'gte', a: '', mode: 'days' });
+      expect(component.hasActiveFilter()).toBe(false);
+    });
+
+    it('switching mode clears the bounds but keeps the op — a date is not a count', () => {
+      const fixture = TestBed.createComponent(RangeFilterHost);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      const fr = component.activeRange()!;
+      component.updateRange(fr, { op: 'lt' });
+      component.updateRange(fr, { a: '2026-05-01' });
+      component.updateRange(fr, { mode: 'days' });
+      expect(fixture.componentInstance.selectedRange()).toEqual({ op: 'lt', a: '', mode: 'days' });
+    });
+
+    it('switching to businessDays seeds a Mon–Fri working week', () => {
+      const fixture = TestBed.createComponent(RangeFilterHost);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      component.updateRange(component.activeRange()!, { mode: 'businessDays' });
+      expect(fixture.componentInstance.selectedRange()?.workingDays).toEqual([1, 2, 3, 4, 5]);
+    });
+
+    it('toggleWorkingDay flips membership in both directions', () => {
+      const fixture = TestBed.createComponent(RangeFilterHost);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      const fr = component.activeRange()!;
+      component.updateRange(fr, { mode: 'businessDays' });
+      component.toggleWorkingDay(fr, 5); // Friday off
+      expect(fixture.componentInstance.selectedRange()?.workingDays).toEqual([1, 2, 3, 4]);
+      component.toggleWorkingDay(fr, 0); // Sunday on
+      expect(fixture.componentInstance.selectedRange()?.workingDays).toEqual([1, 2, 3, 4, 0]);
+    });
+
+    it('full event sequence: mode, then count, then toggles, then holidays', () => {
+      const fixture = TestBed.createComponent(RangeFilterHost);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      const fr = component.activeRange()!;
+      component.updateRange(fr, { op: 'lt' });
+      component.updateRange(fr, { mode: 'businessDays' });
+      expect(component.hasActiveFilter()).toBe(false); // no count yet
+      component.updateRange(fr, { a: '30' });
+      expect(component.hasActiveFilter()).toBe(true);
+      component.toggleWorkingDay(fr, 5);
+      component.updateRange(fr, { holidayCount: 2 });
+      expect(fixture.componentInstance.selectedRange()).toEqual({
+        op: 'lt', a: '30', mode: 'businessDays', workingDays: [1, 2, 3, 4], holidayCount: 2,
+      });
+      expect(component.hasActiveFilter()).toBe(true);
+    });
+
+    it('the last working day cannot be toggled off — a 7-day weekend is refused', () => {
+      const fixture = TestBed.createComponent(RangeFilterHost);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      const fr = component.activeRange()!;
+      component.updateRange(fr, { mode: 'businessDays' });
+      component.updateRange(fr, { a: '30' });
+      for (const day of [1, 2, 3, 4]) component.toggleWorkingDay(fr, day);
+      expect(fixture.componentInstance.selectedRange()?.workingDays).toEqual([5]);
+      component.toggleWorkingDay(fr, 5); // refused: would empty the working week
+      expect(fixture.componentInstance.selectedRange()?.workingDays).toEqual([5]);
+      expect(component.hasActiveFilter()).toBe(true);
+    });
+
+    it('clearing the count in a relative range keeps mode, week, and holidays', () => {
+      const fixture = TestBed.createComponent(RangeFilterHost);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      const fr = component.activeRange()!;
+      component.updateRange(fr, { mode: 'businessDays' });
+      component.updateRange(fr, { a: '30' });
+      component.toggleWorkingDay(fr, 5);
+      component.updateRange(fr, { holidayCount: 2 });
+      component.updateRange(fr, { a: '' }); // clear to retype
+      expect(fixture.componentInstance.selectedRange()).toEqual({
+        op: 'gte', a: '', mode: 'businessDays', workingDays: [1, 2, 3, 4], holidayCount: 2,
+      });
+      expect(component.hasActiveFilter()).toBe(false); // inert, but config survives
+    });
+
+    it('holidayCount patches are floored to non-negative integers', () => {
+      const fixture = TestBed.createComponent(RangeFilterHost);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      const fr = component.activeRange()!;
+      component.updateRange(fr, { mode: 'businessDays' });
+      component.updateRange(fr, { holidayCount: 1.5 });
+      expect(fixture.componentInstance.selectedRange()?.holidayCount).toBe(1);
+      component.updateRange(fr, { holidayCount: -2 });
+      expect(fixture.componentInstance.selectedRange()?.holidayCount).toBe(0);
+      component.updateRange(fr, { holidayCount: Number.NaN });
+      expect(fixture.componentInstance.selectedRange()?.holidayCount).toBe(0);
+    });
+
+    it('rangeSummary renders relative forms', () => {
+      const fixture = TestBed.createComponent(RangeFilterHost);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      const fr = component.activeRange()!;
+
+      fixture.componentInstance.selectedRange.set({ op: 'lt', a: '90', mode: 'days' });
+      expect(component.rangeSummary(fr)).toBe('older than 90 days');
+
+      fixture.componentInstance.selectedRange.set({ op: 'gte', a: '30', mode: 'businessDays', workingDays: [1, 2, 3, 4, 5] });
+      expect(component.rangeSummary(fr)).toBe('within 30 business days');
+
+      fixture.componentInstance.selectedRange.set({ op: 'gt', a: '7', mode: 'days' });
+      expect(component.rangeSummary(fr)).toBe('newer than 7 days');
+
+      fixture.componentInstance.selectedRange.set({ op: 'between', a: '90', b: '30', mode: 'days' });
+      expect(component.rangeSummary(fr)).toBe('90 – 30 days ago');
+    });
+
+    it('resolvedDayLabel names the resolved day for a complete relative bound, null otherwise', () => {
+      // Frozen clock: the component and the expectation must see the same
+      // "today", or a run straddling local midnight flakes.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 7, 10, 12, 0)); // Mon 2026-08-10
+      try {
+        const fixture = TestBed.createComponent(RangeFilterHost);
+        fixture.detectChanges();
+        const component = componentWith(fixture);
+        const fr = component.activeRange()!;
+
+        fixture.componentInstance.selectedRange.set({ op: 'lt', a: '2026-05-01' });
+        expect(component.resolvedDayLabel(fr, 'a')).toBeNull();
+
+        fixture.componentInstance.selectedRange.set({ op: 'lt', a: '1', mode: 'days' });
+        const expected = new Date(2026, 7, 9)
+          .toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+        expect(component.resolvedDayLabel(fr, 'a')).toBe(expected);
+
+        fixture.componentInstance.selectedRange.set({ op: 'lt', a: '', mode: 'days' });
+        expect(component.resolvedDayLabel(fr, 'a')).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('holiday warning is singular for one bound, plural with per-bound remedies for between', () => {
+      const fixture = TestBed.createComponent(RangeFilterHost);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      (fixture.nativeElement.querySelector('[data-test="range-filter-toggle"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      const fr = component.activeRange()!;
+      component.updateRange(fr, { mode: 'businessDays' });
+      fixture.detectChanges();
+      const warnText = () =>
+        (fixture.nativeElement.querySelector('[data-test="range-holiday-warning"]') as HTMLElement).textContent!.replace(/\s+/g, ' ').trim();
+      expect(warnText()).toContain('the resolved date');
+      expect(warnText()).not.toContain('either');
+
+      component.updateRange(fr, { op: 'between' });
+      fixture.detectChanges();
+      expect(warnText()).toContain('either resolved date');
+      expect(warnText()).toContain('holiday count shifts both dates');
+    });
+
+    it('opLabel wording follows the mode', () => {
+      const fixture = TestBed.createComponent(RangeFilterHost);
+      fixture.detectChanges();
+      const component = componentWith(fixture);
+      const fr = component.activeRange()!;
+      expect(component.opLabel(fr, 'lt')).toBe('before');
+      fixture.componentInstance.selectedRange.set({ op: 'lt', a: '90', mode: 'days' });
+      expect(component.opLabel(fr, 'lt')).toBe('older than');
+      expect(component.opLabel(fr, 'gte')).toBe('within');
+    });
+  });
+
+  describe('popup Clear button', () => {
+    function openPopup(fixture: ReturnType<typeof TestBed.createComponent<RangeFilterHost>>): HTMLButtonElement {
+      (fixture.nativeElement.querySelector('[data-test="range-filter-toggle"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      return fixture.nativeElement.querySelector('[data-test="range-filter-clear"]') as HTMLButtonElement;
+    }
+
+    it('is disabled while the filter is already inactive (null selection)', () => {
+      const fixture = TestBed.createComponent(RangeFilterHost);
+      fixture.detectChanges();
+      expect(openPopup(fixture).disabled).toBe(true);
+    });
+
+    it('discards a configured relative range, pages back to 0, and leaves the popup open reading Any', () => {
+      const fixture = TestBed.createComponent(RangeFilterHost);
+      // A relative range with configuration beyond its bounds — exactly the
+      // state updateRange's implicit collapse refuses to destroy; the
+      // explicit Clear is allowed to.
+      fixture.componentInstance.selectedRange.set({ op: 'lte', a: '5', mode: 'businessDays', workingDays: [1, 2, 3, 4], holidayCount: 2 });
+      fixture.componentInstance.pageIndex.set(2);
+      fixture.detectChanges();
+      const clear = openPopup(fixture);
+      expect(clear.disabled).toBe(false);
+
+      clear.click();
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.selectedRange()).toBe(null);
+      expect(fixture.componentInstance.pageIndex()).toBe(0);
+      const component = componentWith(fixture);
+      expect(component.multiPopupOpen()).toBe(true);
+      expect((fixture.nativeElement.querySelector('[data-test="range-filter-clear"]') as HTMLButtonElement).disabled).toBe(true);
+      expect(component.rangeSummary(component.activeRange()!)).toBe('Any');
+    });
   });
 });

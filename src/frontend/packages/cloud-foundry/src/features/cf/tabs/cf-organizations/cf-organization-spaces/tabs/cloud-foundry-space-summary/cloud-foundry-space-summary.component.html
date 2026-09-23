@@ -1,11 +1,11 @@
 <app-page-sub-nav>
-  <button class="btn btn-icon" name="rename"
+  <button class="btn btn-icon" name="rename" data-test="space-edit"
     *appCfUserPermission="permsSpaceEdit;endpointGuid:cfOrgService.cfGuid;organizationGuid:cfOrgService.orgGuid;spaceGuid:cfSpaceService.spaceGuid"
     routerLink="/cloud-foundry/{{cfEndpointService.cfGuid}}/organizations/{{cfSpaceService.orgGuid}}/spaces/{{cfSpaceService.spaceGuid}}/edit-space"
     matTooltip="Edit Space">
     <span class="material-icons">edit</span>
   </button>
-  <button class="btn btn-icon" name="delete"
+  <button class="btn btn-icon" name="delete" data-test="space-delete"
     *appCfUserPermission="permsSpaceDelete;endpointGuid:cfOrgService.cfGuid;organizationGuid:cfOrgService.orgGuid;"
     (click)="deleteSpaceWarn()" matTooltip="Delete Space">
     <span class="material-icons">delete</span>
@@ -31,7 +31,7 @@
       </app-tile>
     </app-tile-group>
     <app-loading-page [isLoading]="detailsLoading$" text="Retrieving details">
-      <app-tile-group class="tile-group-3-cols">
+      <app-tile-group class="tile-group-4-cols">
         <app-tile>
           <app-card-number-metric
             link="/cloud-foundry/{{cfSpaceService.cfGuid}}/organizations/{{cfSpaceService.orgGuid}}/spaces/{{cfSpaceService.spaceGuid}}/apps"
@@ -52,9 +52,6 @@
             value="{{ (cfSpaceService.routesCount$ | async) }}"
           limit="{{ (cfSpaceService.quotaDefinition$ | async)?.totalRoutes}}"></app-card-number-metric>
         </app-tile>
-      </app-tile-group>
-
-      <app-tile-group class="tile-group-auto">
         <app-tile>
           <app-card-number-metric
             link="/cloud-foundry/{{cfSpaceService.cfGuid}}/organizations/{{cfSpaceService.orgGuid}}/spaces/{{cfSpaceService.spaceGuid}}/users"
@@ -70,7 +67,9 @@
         </app-tile>
         @if (((cfSpaceService.userProvidedServiceInstancesCount$ | async) ?? 0) > 0) {
           <app-tile>
-            <app-card-number-metric iconFont="stratos-icons" icon="service" label="User Service Instances"
+            <app-card-number-metric
+              link="/cloud-foundry/{{cfSpaceService.cfGuid}}/organizations/{{cfSpaceService.orgGuid}}/spaces/{{cfSpaceService.spaceGuid}}/user-service-instances"
+              iconFont="stratos-icons" icon="service" label="User Service Instances"
             value="{{ (cfSpaceService.userProvidedServiceInstancesCount$ | async)}}"></app-card-number-metric>
           </app-tile>
         }

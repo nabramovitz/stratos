@@ -4,12 +4,11 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"syscall"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -26,7 +25,7 @@ var (
 )
 
 func initializeHTTPClients(timeout int64, timeoutMutating int64, connectionTimeout int64) {
-	log.Debug("initializeHTTPClients")
+	slog.Debug("initializeHTTPClients")
 
 	// Apply sensible defaults when not configured via environment variables
 	if timeout <= 0 {
@@ -64,11 +63,11 @@ func createTransport(tlsConfig *tls.Config) *http.Transport {
 	dial := (&net.Dialer{
 		Timeout:   time.Duration(defaultHTTPClientConnectionTimeout) * time.Second,
 		KeepAlive: 30 * time.Second, // should be less than any proxy connection timeout (typically 2-3 minutes)
-	}).Dial
+	}).DialContext
 
 	tr := &http.Transport{
 		Proxy:               http.ProxyFromEnvironment,
-		Dial:                dial,
+		DialContext:         dial,
 		TLSHandshakeTimeout: 10 * time.Second, // 10 seconds is a sound default value (default is 0)
 		TLSClientConfig:     tlsConfig,
 		MaxIdleConnsPerHost: 20, // Increased from 6 to handle burst parallel API requests
@@ -145,7 +144,7 @@ func (p *portalProxy) getHttpClient(skipSSLValidation bool, caCert string, mutat
 	// We need to create a client with the specified CA Cert
 	if len(caCert) > 0 {
 		// TODO: Remove
-		log.Warn("Using HTTP client with CA Cert")
+		slog.Warn("Using HTTP client with CA Cert")
 		return *getHttpClientWIthCA(caCert, mutating)
 	}
 	var client http.Client
@@ -174,7 +173,7 @@ func getHttpClientWIthCA(caCert string, mutating bool) *http.Client {
 
 	// Append our cert to the system pool
 	if ok := rootCAs.AppendCertsFromPEM([]byte(caCert)); !ok {
-		log.Warn("Could not append the CA - using system certs only")
+		slog.Warn("Could not append the CA - using system certs only")
 	}
 
 	config := &tls.Config{

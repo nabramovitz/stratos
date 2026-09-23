@@ -137,14 +137,23 @@ export class CloudFoundryOrganizationService {
         ));
       }),
     );
+    // Same membership predicate as the per-org Users tab
+    // (CfUsersSignalConfigService org lock): an org role OR a space role
+    // under one of the org's spaces. Counting orgRoles alone undercounts
+    // whenever a user's only grant is space-scoped (#5805).
     this.usersCount$ = users$.pipe(
       map(users => {
         if (!users) return null;
-        return users.filter(u => u.orgRoles.some(r => r.orgGuid === this.orgGuid)).length;
+        return users.filter(u =>
+          u.orgRoles.some(r => r.orgGuid === this.orgGuid) ||
+          u.spaceRoles.some(r => r.orgGuid === this.orgGuid),
+        ).length;
       }),
     );
 
-    this.serviceInstancesCount = this.serviceCatalog.serviceInstanceCount(this.cfGuid, this.orgGuid).value;
+    // Quota tile: managed only — user-provided instances don't count
+    // against the service-instance quota (#5769); they get their own tile.
+    this.serviceInstancesCount = this.serviceCatalog.serviceInstanceCount(this.cfGuid, this.orgGuid, undefined, 'managed').value;
     this.userProvidedServiceInstancesCount$ =
       this.cfUserProvidedServicesService.fetchUserProvidedServiceInstancesCount(this.cfGuid, this.orgGuid);
 

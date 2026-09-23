@@ -1,10 +1,12 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnInit, Output, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 
 import { StratosBrandingService } from '../../../../../theme/stratos-branding.service';
 import { AuthSignalService } from '../../../core/signals/auth-signal.service';
+import { CurrentUserPermissionsService } from '../../../core/permissions/current-user-permissions.service';
+import { StratosCurrentUserPermissions } from '../../../core/permissions/stratos-user-permissions.checker';
 import { DashboardDataService } from '../../../core/dashboard-data.service';
 import { CustomizationService, CustomizationsMetadata } from '../../../core/customizations.types';
 import { environment } from '../../../environments/environment';
@@ -42,6 +44,17 @@ export class SideNavComponent implements OnInit {
   private branding = inject(StratosBrandingService);
   private dashboardData = inject(DashboardDataService);
   private authSignals = inject(AuthSignalService);
+  private permissionsService = inject(CurrentUserPermissionsService);
+
+  // Same guard the page header uses: the 'stratos.noauth' scope means there
+  // is no session to end, so offering Sign Out is meaningless.
+  public canLogout$: Observable<boolean> = this.permissionsService
+    .can(StratosCurrentUserPermissions.CAN_NOT_LOGOUT)
+    .pipe(map(noLogout => !noLogout));
+
+  // HIDE_NAV_LOGOUT removes this button only. The header user menu keeps its
+  // own Sign Out, so hiding it here is presentation, not a capability change.
+  public hideNavLogout = computed(() => !!this.authSignals.sessionData()?.config?.hideNavLogout);
 
 
   public customizations: CustomizationsMetadata;
@@ -69,6 +82,16 @@ export class SideNavComponent implements OnInit {
 
   public environment = environment;
   public showAllMenuItems = false;
+
+  /** Debug affordance (c5c1009a85): only rendered when the deployment's
+   *  company config opts in via debug.showAllMenuItemsToggle. */
+  public showMenuItemsToggle = computed(() => this.branding.getShowAllMenuItemsToggle());
+
+  /** Effective reveal flag: a saved preference counts only while the debug
+   *  toggle is available — a hidden checkbox must not leak hidden nav items. */
+  get revealHiddenItems(): boolean {
+    return this.showMenuItemsToggle() && this.showAllMenuItems;
+  }
 
   tooltipDelay = 0;
 

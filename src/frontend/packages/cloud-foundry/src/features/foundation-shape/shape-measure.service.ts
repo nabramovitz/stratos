@@ -3,7 +3,8 @@ import { inject, Injectable, signal } from '@angular/core';
 import { forkJoin, of } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 
-import { StBuildpacksResponse, StStacksResponse } from '../../services/endpoint-data/stratos-types';
+import { drainCfPages } from '../../services/endpoint-data/drain-pages';
+import { StBuildpacksResponse, StStacksResponse, StUser } from '../../services/endpoint-data/stratos-types';
 
 /**
  * Measure-on-demand blocks for the foundation shape page (GH #5702): the
@@ -42,16 +43,31 @@ export interface MeasuredEcosystem {
   fetchedAt: Date;
 }
 
+/**
+ * Users with their org and space role grants — each `/pp/v1/cf/users/{cnsi}`
+ * page carries the whole join for its users, drained across every page (the
+ * endpoint is server-paged at 500; a bare GET keeps only the V3-default
+ * first 50 and silently drops every later user — the same truncation #5805
+ * fixed for the summary tiles). It feeds the detail export's per-org and
+ * per-space `roles`; the anonymous export never carries it.
+ */
+export interface MeasuredRoles {
+  users: StUser[];
+  fetchedAt: Date;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ShapeMeasureService {
   private readonly http = inject(HttpClient);
 
   private readonly _totals = signal<ReadonlyMap<string, MeasuredTotals>>(new Map());
   private readonly _ecosystem = signal<ReadonlyMap<string, MeasuredEcosystem>>(new Map());
+  private readonly _roles = signal<ReadonlyMap<string, MeasuredRoles>>(new Map());
   private readonly _inFlight = signal<ReadonlySet<string>>(new Set());
 
   readonly totals = this._totals.asReadonly();
   readonly ecosystem = this._ecosystem.asReadonly();
+  readonly roles = this._roles.asReadonly();
   readonly inFlight = this._inFlight.asReadonly();
 
   totalsCost(): string {
@@ -60,6 +76,10 @@ export class ShapeMeasureService {
 
   ecosystemCost(): string {
     return '2 requests';
+  }
+
+  rolesCost(): string {
+    return '1 request per 500 users';
   }
 
   measureTotals(guid: string): void {
@@ -99,6 +119,28 @@ export class ShapeMeasureService {
       }
       this.end(key);
     });
+  }
+
+  // Fetched here rather than through CnsiUsersSnapshotService because that
+  // service reports a failed fetch as an empty user list — which this page
+  // would then export as "measured, nobody has a role". A failure has to stay
+  // distinguishable from an empty foundation, so nothing is recorded on error
+  // and the retry is one click away.
+  measureRoles(guid: string): void {
+    const key = `${guid}:roles`;
+    if (!this.begin(key)) {
+      return;
+    }
+    drainCfPages<StUser>(this.http, `/pp/v1/cf/users/${guid}`)
+      .pipe(catchError(() => of(null)))
+      .subscribe(drained => {
+        if (drained) {
+          this._roles.update(all =>
+            new Map(all).set(guid, { users: drained.resources, fetchedAt: new Date() })
+          );
+        }
+        this.end(key);
+      });
   }
 
   private countProbe(guid: string, path: string) {

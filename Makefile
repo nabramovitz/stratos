@@ -15,6 +15,7 @@
 #   make stamp tag              Create + push the release tag (notes from
 #                               changelog.d fragments in the tag body)
 #   make publish                Create GitHub release + upload dist/release/*
+#                               (REPLACE=yes to replace one CI already made)
 #   make unpublish TAG=vX       Delete a GitHub release (assets and
 #                               drafts included)
 #   make stamp untag TAG=vX     Delete a tag (local + remote)
@@ -22,6 +23,8 @@
 #                               the line's newest final tag
 #   make sweep                  Remove published changelog.d fragments
 #   make changelog              Report dependency bumps since the last tag
+#   make preview                Render the assembled release notes to HTML
+#                               (GitHub's markdown API) and print the path
 #                               (./build/release-notes.sh deps drafts them)
 #   make install                Install dependencies
 #   make stage                  Stage for local testing
@@ -60,6 +63,8 @@
 #   TAG_MATCH=<glob>            Tag family scoping nearest-tag queries
 #                               (default: v$(LINE).*)
 #   DRAFT=yes                   publish creates a draft release
+#   REPLACE=yes                 publish deletes the release(s) already on
+#                               the tag and creates in their place
 #   LATEST=auto|yes|no          Whether publish marks the release Latest
 #                               (default auto: only when TAG is the
 #                               highest full-release tag of any line)
@@ -177,18 +182,16 @@ endif
 
 # Default: frontend + backend when none specified (unless e2e),
 # but only for verbs that use these modifiers (not clean/dump).
-# korifi counts as a build modifier here (make build korifi = static
-# backend only), so it must suppress the default like the others;
-# tag/untag/line are stamp modifiers and suppress it the same way.
+# tag/untag/line are stamp modifiers and suppress the default, as does
+# cert (make dev cert only writes the TLS key pair).
 ifneq ($(filter build test dev stamp,$(MAKECMDGOALS)),)
-ifeq ($($(_HIDE)WANT_FRONTEND)$($(_HIDE)WANT_BACKEND)$($(_HIDE)WANT_E2E)$($(_HIDE)WANT_WEBSITE)$($(_HIDE)WANT_BOOKLETS)$(filter korifi tag untag line,$(MAKECMDGOALS)),)
+ifeq ($($(_HIDE)WANT_FRONTEND)$($(_HIDE)WANT_BACKEND)$($(_HIDE)WANT_E2E)$($(_HIDE)WANT_WEBSITE)$($(_HIDE)WANT_BOOKLETS)$(filter tag untag line cert,$(MAKECMDGOALS)),)
   $(_HIDE)WANT_FRONTEND := yes
   $(_HIDE)WANT_BACKEND  := yes
 endif
 endif
 
 $(_HIDE)WANT_CF     :=
-$(_HIDE)WANT_KORIFI :=
 $(_HIDE)WANT_GITHUB :=
 $(_HIDE)WANT_AIO    :=
 $(_HIDE)WANT_PAGES  :=
@@ -199,9 +202,6 @@ endif
 ifneq ($(filter pages,$(MAKECMDGOALS)),)
   $(_HIDE)WANT_PAGES := yes
 endif
-ifneq ($(filter korifi,$(MAKECMDGOALS)),)
-  $(_HIDE)WANT_KORIFI := yes
-endif
 ifneq ($(filter github,$(MAKECMDGOALS)),)
   $(_HIDE)WANT_GITHUB := yes
 endif
@@ -209,7 +209,7 @@ ifneq ($(filter aio,$(MAKECMDGOALS)),)
   $(_HIDE)WANT_AIO := yes
 endif
 ifneq ($(filter release,$(MAKECMDGOALS)),)
-ifeq ($($(_HIDE)WANT_CF)$($(_HIDE)WANT_KORIFI)$($(_HIDE)WANT_GITHUB)$($(_HIDE)WANT_AIO),)
+ifeq ($($(_HIDE)WANT_CF)$($(_HIDE)WANT_GITHUB)$($(_HIDE)WANT_AIO),)
   $(_HIDE)WANT_CF     := yes
   $(_HIDE)WANT_GITHUB := yes
 endif
@@ -277,6 +277,7 @@ endif
 $(_HIDE)WANT_TAG   :=
 $(_HIDE)WANT_UNTAG :=
 $(_HIDE)WANT_LINE  :=
+$(_HIDE)WANT_CERT  :=
 
 ifneq ($(filter tag,$(MAKECMDGOALS)),)
   $(_HIDE)WANT_TAG := yes
@@ -287,6 +288,9 @@ endif
 ifneq ($(filter line,$(MAKECMDGOALS)),)
   $(_HIDE)WANT_LINE := yes
 endif
+ifneq ($(filter cert,$(MAKECMDGOALS)),)
+  $(_HIDE)WANT_CERT := yes
+endif
 
 # cf modifier defaults to linux/amd64 unless PLATFORM is set
 ifeq ($($(_HIDE)WANT_CF),yes)
@@ -296,19 +300,6 @@ ifeq ($($(_HIDE)WANT_CF),yes)
     $(_HIDE)TARGET_ARCH := amd64
     $(_HIDE)GO_ENV      := GOOS=linux GOARCH=amd64
     $(_HIDE)CURRENT_PLATFORM := linux/amd64
-  endif
-endif
-
-# korifi modifier targets linux at the host arch unless PLATFORM is set
-# (a local kind cluster runs the host arch; real clusters override,
-# e.g. make build korifi PLATFORM=linux/amd64)
-ifeq ($($(_HIDE)WANT_KORIFI),yes)
-  ifndef PLATFORM
-    PLATFORM := linux/$($(_HIDE)HOST_ARCH)
-    $(_HIDE)TARGET_OS   := linux
-    $(_HIDE)TARGET_ARCH := $($(_HIDE)HOST_ARCH)
-    $(_HIDE)GO_ENV      := GOOS=linux GOARCH=$($(_HIDE)HOST_ARCH)
-    $(_HIDE)CURRENT_PLATFORM := linux/$($(_HIDE)HOST_ARCH)
   endif
 endif
 
@@ -373,8 +364,8 @@ endif
 
 # No-op targets so modifiers don't error
 # Note: lint has its own standalone recipe — not listed here.
-.PHONY: frontend backend website booklets cf korifi github aio pages dist repo version e2e actions packages secrets gate tests coverage summary dependabot tree history licenses modrot semgrep codeql sarif upload tag untag line
-frontend backend website booklets cf korifi github aio pages dist repo version e2e actions packages secrets gate tests coverage summary dependabot tree history licenses modrot semgrep codeql sarif upload tag untag line:
+.PHONY: frontend backend website booklets cf github aio pages dist repo version e2e actions packages secrets gate tests coverage summary dependabot tree history licenses modrot semgrep codeql sarif upload tag untag line cert
+frontend backend website booklets cf github aio pages dist repo version e2e actions packages secrets gate tests coverage summary dependabot tree history licenses modrot semgrep codeql sarif upload tag untag line cert:
 	@:
 
 # No-op targets for bump modifiers (consumed by BUMP_MOD filter).
@@ -406,10 +397,10 @@ $(call register, build, frontend, $(_HIDE)stamp.frontend)
 #   PROJECT=<vitest project(s)>  e.g. PROJECT=core or PROJECT="core git"
 #   SCOPE=<path filter(s)>       e.g. SCOPE=src/frontend/packages/core/src/shared/components/stepper
 # The npm `test` script hard-codes every --project, so narrowed runs
-# invoke vitest directly with the same unhandled-errors flag.
+# invoke vitest directly.
 define test.frontend
 	@echo "Running frontend tests..."
-	$(if $(strip $(PROJECT)$(SCOPE)),bun run vitest run --dangerouslyIgnoreUnhandledErrors $(foreach p,$(PROJECT),--project $(p)) $(SCOPE),bun run test)
+	$(if $(strip $(PROJECT)$(SCOPE)),bun run vitest run $(foreach p,$(PROJECT),--project $(p)) $(SCOPE),bun run test)
 endef
 $(call register, test, frontend)
 
@@ -418,8 +409,48 @@ define clean.frontend
 endef
 $(call register, clean, frontend)
 
+# ── Dev TLS certificate ──────────────────────────────────────
+
+# Both dev servers (ng serve via angular.json, and jetstream via
+# config.properties) read dev-ssl/server.{crt,key}. The certificate must carry
+# a subjectAltName naming localhost: browsers have required SAN since Chrome 58
+# and ignore a bare CN, so a CN-only certificate fails with
+# ERR_CERT_COMMON_NAME_INVALID no matter how it is trusted. The certificate is
+# per-developer and gitignored — trusting one is a local decision, and a shared
+# key in the repo is a key everyone has.
+define dev.cert
+	@mkdir -p dev-ssl
+	@echo "Generating dev TLS certificate (SAN: localhost, 127.0.0.1, ::1)..."
+	@openssl req -x509 -newkey rsa:2048 -sha256 -days 398 -nodes \
+		-keyout dev-ssl/server.key -out dev-ssl/server.crt \
+		-subj '/CN=localhost/O=Stratos Development' \
+		-addext 'subjectAltName=DNS:localhost,IP:127.0.0.1,IP:0:0:0:0:0:0:0:1' \
+		-addext 'extendedKeyUsage=serverAuth' \
+		-addext 'basicConstraints=critical,CA:TRUE' >/dev/null 2>&1
+	@chmod 600 dev-ssl/server.key
+	@echo "Wrote dev-ssl/server.crt and dev-ssl/server.key (valid 398 days)."
+	@echo ""
+	@echo "It is self-signed, so the browser still warns until it is trusted once:"
+	@echo "  macOS: sudo security add-trusted-cert -d -r trustRoot \\"
+	@echo "           -k /Library/Keychains/System.keychain dev-ssl/server.crt"
+	@echo "  Linux: sudo cp dev-ssl/server.crt /usr/local/share/ca-certificates/stratos-dev.crt \\"
+	@echo "           && sudo update-ca-certificates"
+endef
+$(call register, dev, cert)
+
+# Regenerate when absent, or when the certificate on disk predates the SAN
+# requirement — an old CN-only cert is silently useless to every browser.
+define _ensure_dev_cert
+	@if [ ! -f dev-ssl/server.crt ] || [ ! -f dev-ssl/server.key ] || \
+		! openssl x509 -in dev-ssl/server.crt -noout -ext subjectAltName 2>/dev/null \
+			| grep -q 'DNS:localhost'; then \
+		$(MAKE) --no-print-directory dev cert; \
+	fi
+endef
+
 define dev.frontend
-	BACKEND_PORT=$(BACKEND_PORT) bun run ng serve --port $(FRONTEND_PORT) --proxy-config proxy.conf.cjs
+	$(_ensure_dev_cert)
+	BACKEND_PORT=$(BACKEND_PORT) bun run ng serve --port $(FRONTEND_PORT) --host 0.0.0.0 --disable-host-check --proxy-config proxy.conf.cjs
 endef
 $(call register, dev, frontend)
 
@@ -452,7 +483,10 @@ $(call register, build, backend, $(_HIDE)gen-plugins)
 
 define test.backend
 	@echo "Running backend tests..."
-	cd src/jetstream && go test ./... -v -count=1
+	@for m in $(GO_MODULES); do \
+		echo "==> test $$m"; \
+		(cd $$m && go test ./... -v -count=1) || exit 1; \
+	done
 endef
 $(call register, test, backend)
 
@@ -463,10 +497,12 @@ endef
 $(call register, clean, backend)
 
 define dev.backend
+	$(_ensure_dev_cert)
 	@NEED_BUILD=false; \
+	case "$$(uname -s)" in Darwin) BINFMT="Mach-O";; *) BINFMT="ELF";; esac; \
 	if [ ! -f $($(_HIDE)BIN_DIR)/jetstream ]; then \
 		NEED_BUILD=true; \
-	elif ! file $($(_HIDE)BIN_DIR)/jetstream | grep -qi "$$(uname -s)"; then \
+	elif ! file $($(_HIDE)BIN_DIR)/jetstream | grep -q "$$BINFMT"; then \
 		echo "Backend binary is not for this platform, rebuilding..."; \
 		NEED_BUILD=true; \
 	fi; \
@@ -474,7 +510,7 @@ define dev.backend
 		echo "Building backend for host platform..."; \
 		$(MAKE) build backend PLATFORM=$($(_HIDE)HOST_OS)/$($(_HIDE)HOST_ARCH); \
 	fi
-	cd src/jetstream && CONSOLE_PROXY_TLS_ADDRESS=:$(BACKEND_PORT) SESSION_STORE_EXPIRY=$(SESSION_STORE_EXPIRY) ../../$($(_HIDE)BIN_DIR)/jetstream
+	cd src/jetstream && CONSOLE_PROXY_TLS_ADDRESS=:$(BACKEND_PORT) SESSION_STORE_EXPIRY=$(SESSION_STORE_EXPIRY) ALLOWED_ORIGINS=$(ALLOWED_ORIGINS) ../../$($(_HIDE)BIN_DIR)/jetstream
 endef
 $(call register, dev, backend)
 
@@ -604,20 +640,66 @@ $(call register, clean, e2e)
 # make check coverage — unit tests with coverage
 # make check e2e      — Playwright E2E core tests
 
+# golangci-lint has to be built by a Go at least as new as jetstream's go.mod
+# target. It refuses to load its config when its own build version is lower,
+# and a release older than the toolchain cannot decode that toolchain's export
+# data either. A packaged binary is pinned to whatever Go built it, so it dies
+# on every Go bump -- hence building from source here.
+#
+# The install toolchain is pinned to the go.mod target rather than left to the
+# local Go: on a machine running an older Go, an unpinned `go install` would
+# build a binary too old for this module all over again. GOTOOLCHAIN fetches
+# the right one, so 1.26 and 1.27 developers both end up with a working linter.
+# Bump GOLANGCI_LINT_VERSION when a newer Go needs a newer release to
+# typecheck it (that release's go.mod must allow the target below).
+GOLANGCI_LINT_VERSION ?= v2.13.1
+GOLANGCI_LINT = $(shell go env GOPATH)/bin/golangci-lint
+GOLANGCI_LINT_GO = go$(shell awk '/^go /{print $$2; exit}' src/jetstream/go.mod)
+
+define ensure_golangci_lint
+	@$(GOLANGCI_LINT) --version 2>/dev/null | \
+		grep -q "$(patsubst v%,%,$(GOLANGCI_LINT_VERSION)) built with $(GOLANGCI_LINT_GO)" || \
+		(echo "Building golangci-lint $(GOLANGCI_LINT_VERSION) with $(GOLANGCI_LINT_GO)..." && \
+		 GOTOOLCHAIN=$(GOLANGCI_LINT_GO) go install \
+		   github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION))
+endef
+
+# Every Go module in the backend, discovered rather than listed: the plugins
+# are separate modules, and naming them by hand is how five of the seven came
+# to be linted by nothing at all.
+GO_MODULES = $(shell find src/jetstream -name go.mod -not -path "*/node_modules/*" -exec dirname {} \;)
+
+# go_check_all runs the Go checks over every module. It is shared by lint and
+# gate: gate has to run the Go linters too (its own summary line has always
+# claimed it did), but bun run gate-check already covers ESLint, so only this
+# half is common to both.
+define go_check_all
+	@for m in $(GO_MODULES); do \
+		echo "==> $$m"; \
+		(cd $$m && \
+		  { [ -z "$$(gofmt -l .)" ] || { echo "not gofmt-clean:"; gofmt -l .; false; }; } && \
+		  go vet ./... && $(GOLANGCI_LINT) run ./...) || exit 1; \
+	done
+endef
+
 define check.lint
 	@echo "Running lint checks..."
-	$(call require_tool,golangci-lint,See https://golangci-lint.run/welcome/install/ (macOS: brew install golangci-lint))
+	$(ensure_golangci_lint)
 	bun run lint
-	cd src/jetstream && go fmt ./... && go vet ./...
-	cd src/jetstream && golangci-lint run ./...
-	cd src/jetstream/api && golangci-lint run ./...
+	$(go_check_all)
 endef
 $(call register, check, lint)
 
+
 define check.gate
 	@echo "Running gate checks (lint + unit tests + production build)..."
+	$(ensure_golangci_lint)
 	bun run gate-check
-	cd src/jetstream && go test ./... -v -count=1
+	$(go_check_all)
+	@for m in $(GO_MODULES); do \
+		echo "==> test $$m"; \
+		(cd $$m && go test ./... -count=1) || exit 1; \
+	done
 endef
 $(call register, check, gate)
 
@@ -677,14 +759,31 @@ define audit.website
 endef
 $(call register, audit, website)
 
+# gosec exits non-zero both when it finds issues (advisory here, hence the
+# tolerated failure) and when it cannot run at all. Those are not the same
+# thing: a gosec built against an older Go fails every package with
+# "internal error: package ... without types", and `|| true` reported that as
+# a clean audit while nothing was scanned. Findings stay advisory; a scanner
+# that did not run is an error.
+define run_gosec
+	@out=$$(cd $(1) && gosec $(2) ./... 2>&1); \
+	printf '%s\n' "$$out"; \
+	if printf '%s' "$$out" | grep -q 'internal error:'; then \
+		echo "ERROR: gosec could not scan $(1) — it is likely built against an older Go than $$(go env GOVERSION)." >&2; \
+		echo "       Rebuild it: go install github.com/securego/gosec/v2/cmd/gosec@latest" >&2; \
+		exit 1; \
+	fi; \
+	exit 0
+endef
+
 define audit.backend
 	@echo "Running backend security scans..."
 	$(call require_tool,gosec,Run: go install github.com/securego/gosec/v2/cmd/gosec@latest)
 	$(call require_tool,trivy,See https://github.com/aquasecurity/trivy)
 	$(call require_tool,govulncheck,Run: go install golang.org/x/vuln/cmd/govulncheck@latest)
 	@echo "── gosec ──"
-	cd src/jetstream && gosec -quiet ./... || true
-	cd src/jetstream/api && gosec -quiet ./... || true
+	$(call run_gosec,src/jetstream,-quiet)
+	$(call run_gosec,src/jetstream/api,-quiet)
 	@echo "── trivy ──"
 	trivy fs --scanners vuln,misconfig src/jetstream || true
 	@echo "── govulncheck ──"
@@ -801,15 +900,19 @@ $(call register, audit, packages)
 define audit.secrets
 	@echo "Running secret scan (gitleaks)..."
 	$(call require_tool,gitleaks,Run: brew install gitleaks)
-	@gitleaks dir . --no-banner --redact || true
+	@gitleaks dir . --no-banner --redact || { \
+		echo "ERROR: gitleaks reported findings above." >&2; \
+		echo "       Rotate anything real. Add a reviewed false positive to .gitleaks.toml." >&2; \
+		exit 1; \
+	}
 endef
 $(call register, audit, secrets)
 
 define audit.tests
 	@echo "Running gosec including test files..."
 	$(call require_tool,gosec,Run: go install github.com/securego/gosec/v2/cmd/gosec@latest)
-	cd src/jetstream && gosec -quiet -tests -track-suppressions ./... || true
-	cd src/jetstream/api && gosec -quiet -tests -track-suppressions ./... || true
+	$(call run_gosec,src/jetstream,-quiet -tests -track-suppressions)
+	$(call run_gosec,src/jetstream/api,-quiet -tests -track-suppressions)
 endef
 $(call register, audit, tests)
 
@@ -880,37 +983,6 @@ define release.cf
 endef
 $(call register, release, cf)
 
-# ── Korifi ────────────────────────────────────────────────────
-# Korifi runs droplets on the Paketo jammy run image, which has no
-# glibc loader at the paths a dynamically linked cgo binary expects.
-# This target predates the pure-Go ncruces sqlite driver (see
-# sqlitestore.go) — that was the original reason cgo was needed here,
-# and it no longer applies: a plain CGO_ENABLED=0 build (build.backend's
-# approach) is already static with no glibc dependency, verified against
-# this same GOOS/GOARCH. Left as the static-cgo/zig build for now since
-# Korifi has no active maintainer to validate a change here; the target
-# still needs to build, just isn't worth touching further right now.
-# Korifi also has no binary_buildpack; the package manifest uses
-# paketo-buildpacks/procfile instead.
-
-define build.korifi
-	$(call require_tool,zig,Required for the static cgo cross-compile — install via: brew install zig)
-	@echo "Building static backend for $($(_HIDE)CURRENT_PLATFORM) (Korifi)..."
-	@mkdir -p $($(_HIDE)BIN_DIR)
-	cd src/jetstream && CGO_ENABLED=1 GOOS=linux GOARCH=$($(_HIDE)TARGET_ARCH) \
-		CC="zig cc -target $(if $(filter arm64,$($(_HIDE)TARGET_ARCH)),aarch64,x86_64)-linux-musl" \
-		go build -ldflags "$($(_HIDE)GO_LDFLAGS) -linkmode external -extldflags -static" \
-		-o ../../$($(_HIDE)BIN_DIR)/jetstream
-	@echo "Backend built (static): $($(_HIDE)BIN_DIR)/jetstream"
-endef
-$(call register, build, korifi, $(_HIDE)gen-plugins)
-
-define release.korifi
-	@chmod +x build/release-cf.sh
-	@./build/release-cf.sh "$($(_HIDE)SEMVER_VERSION)" korifi
-endef
-$(call register, release, korifi)
-
 # ── GitHub release ────────────────────────────────────────────
 
 define release.github
@@ -931,14 +1003,14 @@ $(call register, release, aio)
 
 # ── Release checksums ────────────────────────────────────────
 # Checksums are a property of the artifacts: every artifact-producing
-# release invocation ends by staging the loose cf/korifi zips into
+# release invocation ends by staging the loose cf zip into
 # dist/release and regenerating a single SHA256SUMS over everything
 # there. Exact-version filenames so stale zips from earlier builds are
 # never picked up. Standalone regen (post-unpublish asset fix):
 # ./build/create-checksums.sh
 define release.checksums
 	@mkdir -p $($(_HIDE)RELEASE_DIR)
-	@for z in $($(_HIDE)DIST_DIR)/stratos-cf-$($(_HIDE)SEMVER_VERSION).zip $($(_HIDE)DIST_DIR)/stratos-korifi-$($(_HIDE)SEMVER_VERSION).zip; do \
+	@for z in $($(_HIDE)DIST_DIR)/stratos-cf-$($(_HIDE)SEMVER_VERSION).zip; do \
 		if [ -f "$$z" ]; then cp "$$z" $($(_HIDE)RELEASE_DIR)/; fi; \
 	done
 	@chmod +x build/create-checksums.sh
@@ -948,11 +1020,12 @@ $(call register_always, release, checksums)
 # Appended after every artifact modifier registration so it runs last;
 # gated on an artifact actually landing in dist/ (aio only stages a
 # docker build context — nothing to checksum).
-$(_HIDE)DEPS_release += $(if $($(_HIDE)WANT_CF)$($(_HIDE)WANT_KORIFI)$($(_HIDE)WANT_GITHUB),$(_HIDE)release.checksums)
+$(_HIDE)DEPS_release += $(if $($(_HIDE)WANT_CF)$($(_HIDE)WANT_GITHUB),$(_HIDE)release.checksums)
 
 # ── Release lifecycle (tag → publish / unpublish → untag) ────
 #   make stamp tag [VERSION=X]      create + push the annotated release tag
 #   make publish [DRAFT=yes]        gh release create + upload dist/release/*
+#   make publish REPLACE=yes        same, replacing the release already there
 #   make unpublish TAG=vX           delete the GitHub release (assets included)
 #   make stamp untag TAG=vX         delete the tag (local + remote)
 #   make stamp line [LINE=X.Y]      cut maintenance branch release/X.Y.x
@@ -1067,7 +1140,15 @@ $(call register, stamp, line)
 # refuses a tag that already has one. The check goes through the API:
 # `gh release view` can't see drafts, which is exactly the duplicate
 # that needs catching.
-.PHONY: publish unpublish sweep changelog
+# REPLACE=yes is the way past that guard, and the only one: it delegates
+# to unpublish (same target, so the tag→release-id resolution lives in one
+# place) and then creates, as a single invocation. The default still
+# refuses, because a release CI already published is exactly what the
+# guard exists to keep from being overwritten by accident. The case this
+# serves is CI publishing something WRONG — release.yml runs
+# `make publish` itself on a v* tag, so by the time a human could, the
+# guard has already tripped and the recovery is a replacement.
+.PHONY: publish unpublish sweep changelog preview
 publish:
 	@test -f $($(_HIDE)RELEASE_DIR)/SHA256SUMS || { echo "ERROR: no release artifacts in $($(_HIDE)RELEASE_DIR)/ — run 'make release' first" >&2; exit 1; }
 	@TAG="$($(_HIDE)PUBLISH_TAG)"; \
@@ -1077,11 +1158,20 @@ publish:
 	fi; \
 	EXISTING=$$(gh api --paginate 'repos/{owner}/{repo}/releases' --jq '.[].tag_name' | grep -Fxc "$$TAG" || true); \
 	if [ "$$EXISTING" -gt 0 ]; then \
-		echo "ERROR: $$TAG already has $$EXISTING GitHub release(s), drafts included — 'make unpublish TAG=$$TAG' first" >&2; \
-		exit 1; \
+		if [ "$(REPLACE)" != "yes" ]; then \
+			echo "ERROR: $$TAG already has $$EXISTING GitHub release(s), drafts included — 'make unpublish TAG=$$TAG' first, or 'make publish REPLACE=yes' to do both" >&2; \
+			exit 1; \
+		fi; \
+		echo "REPLACE=yes: replacing the $$EXISTING existing release(s) on $$TAG"; \
+		$(MAKE) --no-print-directory unpublish TAG="$$TAG" DRYRUN="$(DRYRUN)" || exit 1; \
 	fi; \
 	PRERELEASE=""; case "$$TAG" in *-alpha*|*-beta*|*-rc*) PRERELEASE="--prerelease";; esac; \
-	set -- gh release create "$$TAG" --title "Stratos $$TAG" --verify-tag $$PRERELEASE $(if $(filter yes,$(DRAFT)),--draft,--latest=$($(_HIDE)LATEST_RESOLVED)) $(if $(NOTES),--notes-file "$(NOTES)",--notes-from-tag) $($(_HIDE)RELEASE_DIR)/*.tar.gz $($(_HIDE)RELEASE_DIR)/*.zip $($(_HIDE)RELEASE_DIR)/SHA256SUMS; \
+	NOTES_FILE="$(NOTES)"; \
+	if [ -z "$$NOTES_FILE" ]; then \
+		NOTES_FILE=$$(mktemp); \
+		git tag -l --format='%(contents:body)' "$$TAG" > "$$NOTES_FILE"; \
+	fi; \
+	set -- gh release create "$$TAG" --title "Stratos $$TAG" --verify-tag $$PRERELEASE $(if $(filter yes,$(DRAFT)),--draft,--latest=$($(_HIDE)LATEST_RESOLVED)) --notes-file "$$NOTES_FILE" $($(_HIDE)RELEASE_DIR)/*.tar.gz $($(_HIDE)RELEASE_DIR)/*.zip $($(_HIDE)RELEASE_DIR)/SHA256SUMS; \
 	$(if $(filter yes,$(DRYRUN)),echo "DRYRUN: $$*",echo "+ $$*"; "$$@")
 
 # unpublish resolves the tag to release ids through the API: tag-based
@@ -1115,6 +1205,14 @@ sweep:
 changelog:
 	@chmod +x build/release-notes.sh
 	@TAG_MATCH='$(TAG_MATCH)' ./build/release-notes.sh check
+
+# preview answers "what will the release page show" BEFORE a tag exists,
+# which is the only cheap moment: once a tag is pushed CI publishes from it,
+# and correcting the body afterwards leaves the tag body stale. Titled from
+# the version being released so the page matches the release it previews.
+preview:
+	@chmod +x build/release-notes.sh
+	@PREVIEW_TITLE="Stratos $($(_HIDE)NEXT_TAG)" ./build/release-notes.sh preview
 
 # ── Deploy (documentation website) ───────────────────────────
 # Grammar: make deploy website <destination> — the component says what is
@@ -1207,7 +1305,7 @@ $(_HIDE)finalize-and-reexec:
 	@./build/version-bump.sh bump release
 	@echo "Re-running: $(MAKE) $(MAKECMDGOALS)"
 	@$(MAKE) FINAL= $(MAKECMDGOALS)
-$(filter-out frontend backend cf korifi github dist version e2e actions packages secrets lint gate tests coverage tree history licenses tag untag line,$(MAKECMDGOALS)): $(_HIDE)finalize-and-reexec ; @:
+$(filter-out frontend backend cf github dist version e2e actions packages secrets lint gate tests coverage tree history licenses tag untag line,$(MAKECMDGOALS)): $(_HIDE)finalize-and-reexec ; @:
 else ifneq ($(FINAL),)
 $(error Unknown FINAL value '$(FINAL)' — supported: strip)
 endif
@@ -1253,7 +1351,7 @@ endif
 #                         (defined in the E2E section, above)
 
 define clean.release
-	rm -rf $($(_HIDE)DIST_DIR)/release $($(_HIDE)DIST_DIR)/cf-package $($(_HIDE)DIST_DIR)/korifi-package $($(_HIDE)DIST_DIR)/install $($(_HIDE)DIST_DIR)/stratos-cf-*.zip $($(_HIDE)DIST_DIR)/stratos-korifi-*.zip
+	rm -rf $($(_HIDE)DIST_DIR)/release $($(_HIDE)DIST_DIR)/cf-package $($(_HIDE)DIST_DIR)/install $($(_HIDE)DIST_DIR)/stratos-cf-*.zip
 endef
 
 define clean.dist
@@ -1296,6 +1394,14 @@ $(call declare_verb, dump)
 # ── Development ports ─────────────────────────────────────────
 BACKEND_PORT  ?= 5443
 FRONTEND_PORT ?= 5440
+
+# The dev frontend is served by ng serve on its own port, so a WebSocket
+# upgrade from it is cross-origin to the backend. jetstream rejects those
+# unless the origin is allow-listed, which otherwise makes cf push fail in
+# the dev stack with "Origin ... is not authorized for Host ...". A packaged
+# console serves the UI from jetstream itself, so this is dev-only. Both
+# host forms are listed because the browser may resolve either.
+ALLOWED_ORIGINS ?= https://localhost:$(FRONTEND_PORT),https://127.0.0.1:$(FRONTEND_PORT)
 
 # ── Simple verbs (no modifiers) ──────────────────────────────
 .PHONY: stage install lint
@@ -1346,7 +1452,6 @@ help:
 	@echo "  make build frontend       Build frontend only"
 	@echo "  make build backend        Cross-compile all backend platforms"
 	@echo "  make build backend PLATFORM=linux/amd64  Build single platform"
-	@echo "  make build korifi         Static cgo backend for Korifi (linux/host-arch)"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test                 Run all tests"
@@ -1368,12 +1473,15 @@ help:
 	@echo "Release:"
 	@echo "  make release              Create CF zip + GitHub archives (+ SHA256SUMS)"
 	@echo "  make release cf           CF-pushable zip only"
-	@echo "  make release korifi       Korifi-pushable zip (Paketo procfile manifest)"
 	@echo "  make release github       GitHub release archives only"
+	@echo "  make changelog            Warn about dependency bumps missing from changelog.d"
+	@echo "  make preview              Render the assembled release notes as the release page will show them"
 	@echo "  make stamp tag            Create + push the release tag"
 	@echo "  make publish              Create GitHub release + upload dist/release/*"
+	@echo "  make publish REPLACE=yes  Replace the release already on the tag"
 	@echo "  make unpublish TAG=vX     Delete the GitHub release (assets included)"
 	@echo "  make stamp untag TAG=vX   Delete the tag (local + remote)"
+	@echo "  make sweep                Remove the changelog.d fragments the release consumed"
 	@echo ""
 	@echo "Deploy (documentation website):"
 	@echo "  make deploy website pages Push preview to your fork's GitHub Pages"
@@ -1422,6 +1530,7 @@ help:
 	@echo "Development:"
 	@echo "  make dev frontend         Start frontend dev server (port $(FRONTEND_PORT))"
 	@echo "  make dev backend          Start backend dev server (port $(BACKEND_PORT))"
+	@echo "  make dev cert             Generate the dev TLS certificate for localhost"
 	@echo "  make dev website          Start documentation site dev server"
 	@echo "  make build website        Build the documentation website"
 	@echo "  make build booklets       Render docs booklets (epub/PDF, needs quarto)"
@@ -1445,6 +1554,7 @@ help:
 	@echo "  PLATFORM=os/arch          Override target platform"
 	@echo "  TAG=vX.Y.Z                Tag for publish/unpublish/stamp tag/untag"
 	@echo "  DRAFT=yes                 publish creates a draft release"
+	@echo "  REPLACE=yes               publish deletes the release(s) on the tag first"
 	@echo "  NOTES=<file>              Notes file for publish (default: CHANGELOG section)"
 	@echo "  RM_SITE=yes               make clean repo also removes site.mk"
 	@echo ""

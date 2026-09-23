@@ -1,7 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { importProvidersFrom, provideZonelessChangeDetection } from '@angular/core';
+import { importProvidersFrom, provideZonelessChangeDetection, signal } from '@angular/core';
 import { provideHttpClient } from '@angular/common/http';
-import { provideRouter } from '@angular/router';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { ActivatedRoute, provideRouter } from '@angular/router';
 import { firstValueFrom, of } from 'rxjs';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
@@ -9,6 +10,7 @@ import { generateCfBaseTestModulesNoShared } from "@test-framework/cf";
 import { STORE_TEST_PROVIDERS } from '@stratosui/store/testing';
 import { AppDetailDataService } from '../../../../features/applications/app-detail-data.service';
 import { CloudFoundryUserProvidedServicesService } from '../../../services/cloud-foundry-user-provided-services.service';
+import { ServiceCatalogDataService } from '../../../../services/endpoint-data/service-catalog-data.service';
 import { CsiModeService } from '../csi-mode.service';
 import { CsiStateService } from '../csi-state.service';
 import { SpecifyUserProvidedDetailsComponent } from "./specify-user-provided-details.component";
@@ -26,6 +28,7 @@ describe('SpecifyUserProvidedDetailsComponent', () => {
         provideZonelessChangeDetection(),
         provideRouter([]),
         provideHttpClient(),
+        provideHttpClientTesting(),
         ...STORE_TEST_PROVIDERS,
         importProvidersFrom(
           generateCfBaseTestModulesNoShared(),
@@ -76,6 +79,7 @@ describe('SpecifyUserProvidedDetailsComponent.onNextUpdate', () => {
       provideZonelessChangeDetection(),
       provideRouter([]),
       provideHttpClient(),
+      provideHttpClientTesting(),
       ...STORE_TEST_PROVIDERS,
       importProvidersFrom(generateCfBaseTestModulesNoShared()),
       CsiModeService,
@@ -142,5 +146,125 @@ describe('SpecifyUserProvidedDetailsComponent.onNextUpdate', () => {
       redirect: false,
       message: 'Failed to update service instance: broker rejected the update',
     });
+  });
+});
+
+// #5755 part 2 / #5768: credentials live behind a separate sub-resource
+// (the ?return=summary read never carries them — native_types.go). The
+// single-control area fetches them on load so the redacted structure preview
+// renders immediately, but real values stay off-screen until an explicit
+// reveal, and only enterEdit() puts them in the textarea. Blank textarea =
+// leave stored credentials untouched on save.
+describe('SpecifyUserProvidedDetailsComponent credentials reveal', () => {
+  function setup(creds: Record<string, unknown> | null) {
+    const upsServiceStub = {
+      getUserProvidedServices: vi.fn().mockReturnValue(of([])),
+      getUserProvidedService: vi.fn().mockReturnValue(of({
+        name: 'my-ups', syslogDrainUrl: '', routeServiceUrl: '', tags: [],
+      })),
+      updateUserProvidedService: vi.fn().mockReturnValue(of({ success: true })),
+    };
+    const credsSpy = vi.fn().mockReturnValue({
+      value: signal(creds),
+      isLoading: signal(false),
+      error: signal(null),
+    });
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [SpecifyUserProvidedDetailsComponent],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        ...STORE_TEST_PROVIDERS,
+        importProvidersFrom(generateCfBaseTestModulesNoShared()),
+        CsiModeService,
+        CsiStateService,
+        { provide: CloudFoundryUserProvidedServicesService, useValue: upsServiceStub },
+        { provide: ServiceCatalogDataService, useValue: { userProvidedCredentials: credsSpy } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: {
+              params: { endpointId: 'cf-1', serviceInstanceId: 'si-1' },
+              queryParams: {},
+              queryParamMap: { get: () => null },
+            },
+          },
+        },
+      ],
+    });
+
+    const fixture = TestBed.createComponent(SpecifyUserProvidedDetailsComponent);
+    const component = fixture.componentInstance;
+    component.cfGuid = 'cf-1';
+    component.spaceGuid = 'space-1';
+    component.serviceInstanceId = 'si-1';
+    return { fixture, component, credsSpy };
+  }
+
+  it('fetches on load but keeps the textarea blank (blank = keep stored)', () => {
+    const { fixture, component, credsSpy } = setup({ user: 'admin' });
+    fixture.detectChanges();
+
+    expect(credsSpy).toHaveBeenCalledTimes(1);
+    expect(credsSpy).toHaveBeenCalledWith('cf-1', 'si-1');
+    expect(component.createEditServiceInstance.controls.credentials.value).toBe('');
+  });
+
+  it('shows the redacted structure by default, real values only after toggleReveal', () => {
+    const { fixture, component } = setup({ user: 'admin', password: 'p' });
+    fixture.detectChanges();
+
+    expect(component.credsMode()).toBe('redacted');
+    expect(component.displayedCredentialsJson()).toContain('"user": "<redacted>"');
+    expect(component.displayedCredentialsJson()).not.toContain('admin');
+
+    component.toggleReveal();
+    expect(JSON.parse(component.displayedCredentialsJson()!))
+      .toEqual({ user: 'admin', password: 'p' });
+
+    component.toggleReveal();
+    expect(component.displayedCredentialsJson()).not.toContain('admin');
+  });
+
+  it('enterEdit fills the textarea from the sub-resource; cancelEdit blanks it', () => {
+    const { fixture, component } = setup({ user: 'admin', password: 'p' });
+    fixture.detectChanges();
+
+    component.enterEdit();
+    expect(component.credsMode()).toBe('edit');
+    expect(JSON.parse(component.createEditServiceInstance.controls.credentials.value))
+      .toEqual({ user: 'admin', password: 'p' });
+
+    component.cancelEdit();
+    expect(component.credsMode()).toBe('redacted');
+    expect(component.createEditServiceInstance.controls.credentials.value).toBe('');
+  });
+
+  it('reveal and edit round-trips are not edits — Next stays disabled', () => {
+    const { fixture, component } = setup({ user: 'admin' });
+    fixture.detectChanges();
+
+    component.toggleReveal();
+    fixture.detectChanges();
+    expect(component.validate()).toBe(false);
+
+    component.enterEdit();
+    component.cancelEdit();
+    fixture.detectChanges();
+    expect(component.validate()).toBe(false);
+  });
+
+  it('fetches once — reveal and edit reuse the loaded sub-resource', () => {
+    const { fixture, component, credsSpy } = setup({ user: 'admin' });
+    fixture.detectChanges();
+
+    component.toggleReveal();
+    component.enterEdit();
+
+    expect(credsSpy).toHaveBeenCalledTimes(1);
   });
 });

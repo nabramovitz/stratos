@@ -5,6 +5,7 @@ on:
     branches:
       - develop
       - main
+      - 'release/**'
     # tools/stb has its own gate (stb_tests.yml); skip the backend suite
     # for stb-only changes.
     paths-ignore:
@@ -14,7 +15,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: '1.26'
+  GO_VERSION: '1.27'
 
 jobs:
   test_suite:

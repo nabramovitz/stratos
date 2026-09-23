@@ -20,6 +20,22 @@ export abstract class TailwindDialogRef<T = any, R = any> {
   abstract afterOpened(): Observable<void>;
   abstract close(dialogResult?: R): void;
   abstract componentInstance: T;
+
+  /**
+   * Consulted before an *incidental* dismissal — a backdrop click or Escape.
+   * Return true to refuse it. Explicit close() calls (a Cancel or Save button)
+   * are never guarded: the user asked for those.
+   *
+   * This exists because both incidental paths discard whatever the dialog
+   * holds, with no undo. On a resizable dialog that is easy to trigger by
+   * accident: the native resize grip sits at the very corner of the panel with
+   * the backdrop immediately outside it, and a press that misses outward is
+   * indistinguishable from a deliberate click-away.
+   *
+   * Read per dismissal rather than latched at open, so a dialog can drop the
+   * guard once its edits are saved or reverted.
+   */
+  closeGuard?: () => boolean;
 }
 
 export interface TailwindDialogConfig<D = any> {
@@ -366,13 +382,22 @@ export class TailwindDialogService {
       // backdrop makes the browser synthesize a `click` whose target resolves
       // to the common ancestor (this overlay), which would wrongly dismiss the
       // dialog. Require the press to have ALSO started on the backdrop.
+      // Both incidental paths route through here so a dialog holding unsaved
+      // work only has to refuse once, rather than once per dismissal gesture.
+      const dismiss = () => {
+        if (dialogRef.closeGuard?.()) {
+          return;
+        }
+        dialogRef.close();
+      };
+
       let pressedOnBackdrop = false;
       const pointerDownListener = (event: MouseEvent) => {
         pressedOnBackdrop = event.target === dialogContainer;
       };
       const backdropClickListener = (event: MouseEvent) => {
         if (event.target === dialogContainer && pressedOnBackdrop) {
-          dialogRef.close();
+          dismiss();
         }
       };
       dialogContainer.addEventListener('mousedown', pointerDownListener);
@@ -384,7 +409,7 @@ export class TailwindDialogService {
           // Only close if this is the topmost dialog
           const topDialog = this.openDialogs[this.openDialogs.length - 1];
           if (topDialog === dialogContainer) {
-            dialogRef.close();
+            dismiss();
           }
         }
       };
@@ -434,16 +459,21 @@ export class TailwindDialogService {
     panel.style.left = `${rect.left}px`;
     panel.style.top = `${rect.top}px`;
 
-    // Cap resize at the viewport edge from the panel's current top-left. Native
-    // CSS resize grows down-right from the anchored corner, so a plain
-    // `max-height: 90vh` still lets `top + height` spill past the bottom of the
-    // viewport. Tying the max to (viewport − position) keeps the bottom-right
-    // on-screen. Recomputed after a move (below), since the anchor changes.
+    // Cap the panel at the viewport edge from its pinned top-left. The panel
+    // is pinned where it was centred at open, and content arriving later (a
+    // roles widget, a Monaco editor, a native resize) grows it from there, so
+    // a plain `max-height: 90vh` still lets `top + height` spill past the
+    // bottom of the viewport and put the action buttons out of reach. Tying
+    // the max to (viewport − position) keeps the bottom on-screen; a
+    // configured pixel maxHeight still wins when it is smaller. Recomputed
+    // after a move (below), since the anchor changes.
+    const configuredMaxHeight = /px$/.test(config.maxHeight ?? '') ? parseFloat(config.maxHeight!) : Infinity;
     const clampSizeToViewport = () => {
-      if (!config.resizable) return;
       const r = panel.getBoundingClientRect();
-      panel.style.maxWidth = `${Math.max(0, window.innerWidth - r.left)}px`;
-      panel.style.maxHeight = `${Math.max(0, window.innerHeight - r.top)}px`;
+      panel.style.maxHeight = `${Math.min(configuredMaxHeight, Math.max(0, window.innerHeight - r.top))}px`;
+      if (config.resizable) {
+        panel.style.maxWidth = `${Math.max(0, window.innerWidth - r.left)}px`;
+      }
     };
 
     if (config.resizable) {

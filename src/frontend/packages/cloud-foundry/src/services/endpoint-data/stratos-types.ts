@@ -46,6 +46,9 @@ export interface StApp {
   spaceGuid: string;
   spaceName?: string;
   stackName?: string;
+  // Newest STAGED droplet's created_at — jetstream-enriched "last
+  // refreshed" (#5770). Absent when the app never successfully staged.
+  lastRefreshedAt?: string;
   instances: number;
   memory?: number;
   diskQuota?: number;
@@ -90,8 +93,9 @@ export interface StProcess {
   memoryMb: number;
   diskMb: number;
   logRateLimitInBytesPerSecond: number;
-  command: string;
-  healthCheckType: string;
+  // command and healthCheckType are omitted by the backend when empty.
+  command?: string;
+  healthCheckType?: string;
   healthCheckEndpoint?: string;
   healthCheckInvocationTimeoutSeconds?: number;
   healthCheckTimeoutSeconds?: number;
@@ -152,7 +156,8 @@ export interface StBuild {
 // cells as "Not Available" rather than empty.
 export interface StAppDetail {
   app: StApp;
-  process: StProcess;
+  // Null when the web-process fetch failed (listed in _meta.unavailable).
+  process: StProcess | null;
   droplet: StDroplet | null;
   pkg: StPackage | null;
   build: StBuild | null;

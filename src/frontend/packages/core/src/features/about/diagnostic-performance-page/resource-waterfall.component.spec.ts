@@ -2,9 +2,10 @@ import { provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { LoadReport, ResourceRow } from '../diagnostics-data/load-performance';
+import { DocumentRow, LoadReport, ResourceRow } from '../diagnostics-data/load-performance';
 import {
   ResourceWaterfallComponent,
+  shiftDocumentRow,
   WATERFALL_GROUP_GAP_MS,
   WATERFALL_ROW_CAP,
   axisTicks,
@@ -284,6 +285,7 @@ const reportWith = (resources: ResourceRow[]): LoadReport => ({
   topology: 'local/other',
   requestId: null,
   protocol: 'h2',
+  requestStartMs: 10,
   responseStartMs: 12,
   domContentLoadedMs: 300,
   loadEventMs: 500,
@@ -292,7 +294,48 @@ const reportWith = (resources: ResourceRow[]): LoadReport => ({
   lcpElement: null,
   requestCount: resources.length,
   totalTransferBytes: resources.reduce((n, r) => n + r.transferBytes, 0),
+  initialRequestCount: resources.length,
+  initialTransferBytes: resources.reduce((n, r) => n + r.transferBytes, 0),
+  sinceLoadRequestCount: 0,
+  sinceLoadTransferBytes: 0,
+  phases: null,
+  document: null,
   resources,
+});
+
+const doc = (over: Partial<DocumentRow> = {}): DocumentRow => ({
+  path: '/',
+  startMs: 0,
+  endMs: 860,
+  transferBytes: 5000,
+  segments: [
+    { label: 'stalled', startMs: 0, durationMs: 320 },
+    { label: 'TLS', startMs: 320, durationMs: 224 },
+    { label: 'server wait', startMs: 544, durationMs: 212 },
+    { label: 'download', startMs: 756, durationMs: 104 },
+  ],
+  ...over,
+});
+
+describe('shiftDocumentRow', () => {
+  it('drops segments that end before the offset and clips one that straddles it', () => {
+    const shifted = shiftDocumentRow(doc(), 400)!;
+    expect(shifted.startMs).toBe(0);
+    expect(shifted.endMs).toBe(460);
+    expect(shifted.segments).toEqual([
+      { label: 'TLS', startMs: 0, durationMs: 144 },
+      { label: 'server wait', startMs: 144, durationMs: 212 },
+      { label: 'download', startMs: 356, durationMs: 104 },
+    ]);
+  });
+
+  it('returns the row unchanged at zero offset', () => {
+    expect(shiftDocumentRow(doc(), 0)).toEqual(doc());
+  });
+
+  it('passes null through', () => {
+    expect(shiftDocumentRow(null, 100)).toBeNull();
+  });
 });
 
 /** One resource per group: starts spaced past the gap so nothing clusters. */
@@ -316,6 +359,24 @@ describe('ResourceWaterfallComponent', () => {
       providers: [provideZonelessChangeDetection()],
     }).compileComponents();
     fixture = TestBed.createComponent(ResourceWaterfallComponent);
+  });
+
+  it('renders the document request as a pinned segmented row', () => {
+    render({ ...reportWith(spacedResources(2)), document: doc() });
+    const documentEl = query('[data-test="waterfall-document"]');
+    expect(documentEl).not.toBeNull();
+    expect(documentEl!.textContent).toContain('document');
+    expect(documentEl!.querySelectorAll('[data-test="waterfall-document-segment"]').length).toBe(4);
+  });
+
+  it('omits the document row when the report has none', () => {
+    render(reportWith(spacedResources(2)));
+    expect(query('[data-test="waterfall-document"]')).toBeNull();
+  });
+
+  it('extends the scale to cover a document outliving every resource', () => {
+    render({ ...reportWith([row({ startMs: 0, durationMs: 10 })]), loadEventMs: 100, document: doc({ endMs: 2000 }) });
+    expect(fixture.componentInstance.scaleMax()).toBeGreaterThanOrEqual(2000);
   });
 
   it('summarises resources and groups in the banner', () => {
@@ -360,6 +421,38 @@ describe('ResourceWaterfallComponent', () => {
     query<HTMLButtonElement>('[data-test="waterfall-group"]')?.click();
     fixture.detectChanges();
     expect(el().textContent).not.toContain('b.js');
+  });
+
+  it('shifts resources and milestones to the Stratos clock when toggled', () => {
+    render({
+      ...reportWith([row({ path: '/a.js', startMs: 250 })]),
+      requestStartMs: 200,
+      domContentLoadedMs: 300,
+      loadEventMs: 500,
+    });
+    const toggle = query<HTMLInputElement>('[data-test="waterfall-clock"]');
+    expect(toggle).toBeTruthy();
+    expect(toggle?.checked).toBe(false);
+
+    toggle?.click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.groups()[0].startMs).toBe(50);
+    expect(fixture.componentInstance.milestones().find(m => m.label === 'DCL')?.ms).toBe(100);
+    expect(fixture.componentInstance.milestones().find(m => m.label === 'Load')?.ms).toBe(300);
+  });
+
+  it('keeps the initial-load filter aligned with the shifted clock', () => {
+    render({
+      ...reportWith([row({ path: '/early.js', startMs: 400 }), row({ path: '/late.js', startMs: 501 })]),
+      requestStartMs: 200,
+      loadEventMs: 500,
+    });
+    query<HTMLInputElement>('[data-test="waterfall-clock"]')?.click();
+    query<HTMLInputElement>('[data-test="waterfall-initial-only"]')?.click();
+    fixture.detectChanges();
+    const paths = fixture.componentInstance.visibleResources().map(r => r.path);
+    expect(paths).toContain('/early.js');
+    expect(paths).not.toContain('/late.js');
   });
 
   it('resets to the first page when a new report arrives', async () => {

@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, effect, input, signal } from '@angular/core';
 
 import { formatBytes } from '../diagnostics-data/entity-footprint';
-import { LoadReport, ResourceRow } from '../diagnostics-data/load-performance';
+import { DocSegment, DocumentRow, LoadReport, ResourceRow } from '../diagnostics-data/load-performance';
 
 /** Group lines per waterfall page. */
 export const WATERFALL_ROW_CAP = 40;
@@ -115,6 +115,26 @@ export function groupRows(resources: ResourceRow[], gapMs: number = WATERFALL_GR
   return groups;
 }
 
+/** Clock-shift a document row: segments wholly before the offset vanish, a
+ *  straddling one is clipped, the rest slide left. Under the Stratos clock
+ *  this collapses the row to server wait + download — the app-influenced part. */
+export function shiftDocumentRow(d: DocumentRow | null, offsetMs: number): DocumentRow | null {
+  if (!d || !offsetMs) { return d; }
+  const segments = d.segments
+    .map(s => {
+      const start = Math.max(0, s.startMs - offsetMs);
+      const end = Math.max(0, s.startMs + s.durationMs - offsetMs);
+      return { ...s, startMs: start, durationMs: end - start };
+    })
+    .filter(s => s.durationMs > 0);
+  return {
+    ...d,
+    startMs: Math.max(0, d.startMs - offsetMs),
+    endMs: Math.max(0, d.endMs - offsetMs),
+    segments,
+  };
+}
+
 /** Resources that started before the load event; everything when the load
  *  event is unknown (0) — a filter that hides all rows helps nobody. */
 export function initialLoadResources(resources: ResourceRow[], loadEventMs: number): ResourceRow[] {
@@ -203,6 +223,14 @@ export function rowLabel(path: string): string {
           [checked]="initialOnly()" (change)="initialOnly.set($any($event.target).checked)">
         Initial load only
       </label>
+      <label
+        class="flex items-center gap-1.5 cursor-pointer select-none"
+        title="Start the timeline when the document request hit the wire — browser stall, DNS, TCP and TLS subtracted. This is the part Stratos controls.">
+        <input
+          type="checkbox" data-test="waterfall-clock"
+          [checked]="stratosClock()" (change)="setClock($any($event.target).checked)">
+        Stratos clock
+      </label>
       @if (viewWindow(); as w) {
         <span data-test="waterfall-zoom-range">{{ formatTick(w.startMs) }} &ndash; {{ formatTick(w.endMs) }}</span>
         <button
@@ -273,6 +301,28 @@ export function rowLabel(path: string): string {
         </div>
       </div>
 
+      <!-- Row 0: the document request itself, segmented by phase. It is not a
+           resource-timing entry, so without this row a slow connection draws
+           an unexplained void until the HTML arrives. -->
+      @if (windowDocument(); as d) {
+        <div
+          class="flex h-5 items-stretch hover:bg-content-secondary transition-colors"
+          data-test="waterfall-document" [title]="documentTitle(d)">
+          <div class="w-56 shrink-0 pr-2 text-xs leading-5 text-content-muted truncate">document · {{ rowLabel(d.path) }}</div>
+          <div class="relative flex-1 min-w-0">
+            @for (s of d.segments; track s.label; let first = $first; let last = $last) {
+              <div
+                data-test="waterfall-document-segment"
+                class="absolute top-1/2 -translate-y-1/2 h-2.5 bg-[#2a78d6] dark:bg-[#3987e5] min-w-[1px]"
+                [class.rounded-l]="first" [class.rounded-r]="last"
+                [style.opacity]="segmentOpacity(s.label)"
+                [style.left.%]="pct(s.startMs)"
+                [style.width.%]="spanPct(s.startMs, s.durationMs)"></div>
+            }
+          </div>
+        </div>
+      }
+
       <!-- One line per group: single-member groups render as plain resource
            rows; multi-member groups render a summary line that expands. -->
       @for (g of pagedGroups(); track g.key) {
@@ -334,7 +384,12 @@ export function rowLabel(path: string): string {
       Dashed lines mark page milestones: DCL = DOM content loaded, Load = load event,
       FCP = first contentful paint, LCP = largest contentful paint (hover a label for its time).
       Drag along the top axis to zoom to a time range; drag again to drill deeper,
-      double-click the axis (or Reset zoom) to zoom back out.
+      double-click the axis (or Reset zoom) to zoom back out. The browser clock starts
+      at navigation; the document row's leading segments show the browser stall + DNS +
+      TCP + TLS spent before the request hit the wire (hover the row for each phase's
+      time) &mdash; switch to the Stratos clock to subtract them.
+      On a warm (cached) load most bars are near-invisible slivers: cache hits complete
+      in ~0 ms and transfer 0 bytes.
     </div>
   `,
 })
@@ -344,12 +399,50 @@ export class ResourceWaterfallComponent {
   /** Hide fetches that started after the load event (lazy route chunks from
    *  post-load navigation) so the scale stays comparable between looks. */
   initialOnly = signal(false);
+
+  /** Stratos clock: shift every time by requestStart so the axis starts when
+   *  the document request hit the wire, hiding browser/network setup the app
+   *  cannot influence (the otherwise-unexplained empty stretch on the left). */
+  stratosClock = signal(false);
+  private clockOffsetMs = computed(() => this.stratosClock() ? this.report().requestStartMs : 0);
+  private shiftedResources = computed(() => {
+    const offset = this.clockOffsetMs();
+    return offset
+      ? this.report().resources.map(r => ({ ...r, startMs: Math.max(0, r.startMs - offset) }))
+      : this.report().resources;
+  });
+  private shiftedLoadEventMs = computed(() => {
+    const loadEventMs = this.report().loadEventMs;
+    return loadEventMs > 0 ? Math.max(0, loadEventMs - this.clockOffsetMs()) : loadEventMs;
+  });
+
   visibleResources = computed(() =>
-    this.initialOnly() ? initialLoadResources(this.report().resources, this.report().loadEventMs) : this.report().resources);
+    this.initialOnly() ? initialLoadResources(this.shiftedResources(), this.shiftedLoadEventMs()) : this.shiftedResources());
 
   groups = computed(() => groupRows(this.visibleResources()));
-  milestones = computed(() => milestoneLines(this.report()));
-  scaleMax = computed(() => waterfallScaleMax(this.report().loadEventMs, this.visibleResources(), this.milestones()));
+  milestones = computed(() => {
+    const offset = this.clockOffsetMs();
+    return milestoneLines(this.report()).map(m => ({ ...m, ms: Math.max(0, m.ms - offset) }));
+  });
+
+  /** The document request, clock-shifted; always part of the initial load so
+   *  the initial-only filter never hides it. */
+  private shiftedDocument = computed(() => shiftDocumentRow(this.report().document, this.clockOffsetMs()));
+  /** The document row when it intersects the current view window. */
+  windowDocument = computed(() => {
+    const d = this.shiftedDocument();
+    if (!d) { return null; }
+    const v = this.view();
+    return d.endMs >= v.startMs && d.startMs <= v.endMs ? d : null;
+  });
+
+  scaleMax = computed(() => {
+    const d = this.shiftedDocument();
+    const spans = d
+      ? [...this.visibleResources(), { startMs: d.startMs, durationMs: d.endMs - d.startMs }]
+      : this.visibleResources();
+    return waterfallScaleMax(this.shiftedLoadEventMs(), spans, this.milestones());
+  });
 
   /** Brush zoom: null = full scale. */
   viewWindow = signal<ViewWindow | null>(null);
@@ -449,6 +542,12 @@ export class ResourceWaterfallComponent {
     this.page.set(0);
   }
 
+  /** A zoom window taken on one clock is meaningless on the other. */
+  setClock(stratos: boolean): void {
+    this.stratosClock.set(stratos);
+    this.resetZoom();
+  }
+
   prevPage(): void {
     this.page.set(Math.max(0, this.safePage() - 1));
   }
@@ -465,6 +564,28 @@ export class ResourceWaterfallComponent {
       next.add(key);
     }
     this.expanded.set(next);
+  }
+
+  /** Phase-graded opacity: setup phases faint, app-influenced phases solid. */
+  segmentOpacity(label: DocSegment['label']): number {
+    switch (label) {
+      case 'redirect': return 0.25;
+      case 'stalled': return 0.3;
+      case 'DNS': return 0.42;
+      case 'TCP': return 0.55;
+      case 'TLS': return 0.68;
+      case 'server wait': return 0.85;
+      default: return 1;
+    }
+  }
+
+  documentTitle(d: DocumentRow): string {
+    return [
+      `${d.path} (document)`,
+      ...d.segments.map(s => `${s.label}: ${s.durationMs.toFixed(0)} ms`),
+      `total to last byte: ${(d.endMs - d.startMs).toFixed(0)} ms`,
+      `transfer: ${formatBytes(d.transferBytes)}`,
+    ].join('\n');
   }
 
   barTitle(r: ResourceRow): string {

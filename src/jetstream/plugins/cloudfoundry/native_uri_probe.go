@@ -3,11 +3,11 @@ package cloudfoundry
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
-	"github.com/labstack/echo/v4"
-	log "github.com/sirupsen/logrus"
+	"github.com/labstack/echo/v5"
 )
 
 // Operator-triggered probe of an endpoint's composite URI-length ceiling
@@ -123,7 +123,7 @@ func probeURITargetLen(client *http.Client, apiBase string, targetLen int) (bool
 // probeEndpointURILimit handles GET /pp/v1/cf/diag/urilimit/:cnsiGuid —
 // the diagnostics-page button. Reports probed vs configured and the
 // recommended STRATOS_CF_GUID_CHUNK for this endpoint's chain.
-func (c *CloudFoundrySpecification) probeEndpointURILimit(ctx echo.Context) error {
+func (c *CloudFoundrySpecification) probeEndpointURILimit(ctx *echo.Context) error {
 	cnsiGUID := ctx.Param("cnsiGuid")
 	record, err := c.nativeProxy().GetCNSIRecord(cnsiGUID)
 	if err != nil {
@@ -153,7 +153,9 @@ func (c *CloudFoundrySpecification) probeEndpointURILimit(ctx echo.Context) erro
 		RecommendedChunk: recommended,
 		Requests:         requests,
 	}
-	log.Infof("URI-limit probe cnsi=%s: chain accepts %d bytes (capped=%v, %d requests); configured %s=%d uses %d bytes; recommended %d",
-		cnsiGUID, limit, capped, requests, guidChunkEnv, configured, result.ConfiguredBytes, recommended)
+	slog.Info("URI-limit probe",
+		"cnsi", cnsiGUID, "accepts_bytes", limit, "capped", capped, "requests", requests,
+		"setting", guidChunkEnv, "configured", configured, "configured_bytes", result.ConfiguredBytes,
+		"recommended", recommended)
 	return ctx.JSON(http.StatusOK, result)
 }

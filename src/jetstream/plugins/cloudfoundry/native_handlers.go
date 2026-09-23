@@ -4,16 +4,15 @@ package cloudfoundry
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-
 	"github.com/fivetwenty-io/capi/v3/pkg/capi"
 	"github.com/fivetwenty-io/capi/v3/pkg/cfclient"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/cloudfoundry/stratos/src/jetstream/api"
@@ -26,7 +25,7 @@ const stratosSchemaVersion = "1"
 type nativeCFProxy interface {
 	GetCNSIRecord(guid string) (api.CNSIRecord, error)
 	GetCNSITokenRecord(cnsiGUID string, userGUID string) (api.TokenRecord, bool)
-	GetSessionStringValue(ctx echo.Context, key string) (string, error)
+	GetSessionStringValue(ctx *echo.Context, key string) (string, error)
 	RefreshOAuthToken(skipSSLValidation bool, cnsiGUID, userGUID, client, clientSecret, tokenEndpoint string) (api.TokenRecord, error)
 	DoProxySingleRequestWithToken(cnsiGUID string, token *api.TokenRecord, method, requestURL string, headers http.Header, body []byte) (*api.CNSIRequest, error)
 	GetUserTokenInfo(token string) (*api.JWTUserTokenInfo, error)
@@ -34,7 +33,7 @@ type nativeCFProxy interface {
 }
 
 // getUserGUID extracts the logged-in user GUID from the session.
-func (c *CloudFoundrySpecification) getUserGUID(ctx echo.Context) (string, error) {
+func (c *CloudFoundrySpecification) getUserGUID(ctx *echo.Context) (string, error) {
 	return c.nativeProxy().GetSessionStringValue(ctx, "user_id")
 }
 
@@ -42,7 +41,7 @@ func (c *CloudFoundrySpecification) getUserGUID(ctx echo.Context) (string, error
 // token Jetstream stored for the given CF endpoint. getUserGUID() returns
 // the Stratos session user; this returns the user_id claim from the CF
 // token — the value /v3/roles?user_guids= filters expect.
-func (c *CloudFoundrySpecification) getCFUserGUIDForEndpoint(ctx echo.Context, cnsiGUID string) (string, error) {
+func (c *CloudFoundrySpecification) getCFUserGUIDForEndpoint(ctx *echo.Context, cnsiGUID string) (string, error) {
 	sessionUser, err := c.getUserGUID(ctx)
 	if err != nil {
 		return "", echo.NewHTTPError(http.StatusUnauthorized, "could not determine session user")
@@ -68,7 +67,7 @@ func (c *CloudFoundrySpecification) nativeProxy() nativeCFProxy {
 }
 
 // newCapiClient creates a capi client authenticated with Jetstream's stored token.
-// Uses cfclient.NewWithToken so no UAA discovery occurs — the token is passed directly.
+// Uses an explicit AccessToken so no UAA discovery occurs — the token is passed directly.
 //
 // Proactively refreshes the stored token if it has expired before handing it
 // to capi. Without this check, cfclient sends a dead token and CF returns
@@ -85,24 +84,41 @@ func newCapiClient(ctx context.Context, proxy nativeCFProxy, cnsiGUID, userGUID 
 		return nil, echo.NewHTTPError(http.StatusForbidden, "no token for endpoint")
 	}
 	if tokenRecord.TokenExpiry > 0 && time.Unix(tokenRecord.TokenExpiry, 0).Before(time.Now()) {
-		log.Infof("[diag refresh] newCapiClient proactive refresh cnsi=%s user=%s expiry=%d (age=%s)",
-			cnsiGUID, userGUID, tokenRecord.TokenExpiry, time.Since(time.Unix(tokenRecord.TokenExpiry, 0)))
+		slog.Info("[diag refresh] newCapiClient proactive refresh",
+			"cnsi", cnsiGUID, "user", userGUID, "expiry", tokenRecord.TokenExpiry,
+			"age", time.Since(time.Unix(tokenRecord.TokenExpiry, 0)))
 		refreshed, refreshErr := proxy.RefreshOAuthToken(
 			cnsiRecord.SkipSSLValidation,
 			cnsiGUID, userGUID,
 			cnsiRecord.ClientId, cnsiRecord.ClientSecret, cnsiRecord.TokenEndpoint,
 		)
 		if refreshErr != nil {
-			log.Warnf("[diag refresh] CF token refresh FAILED for cnsi=%s user=%s: %v", cnsiGUID, userGUID, refreshErr)
+			slog.Warn("[diag refresh] CF token refresh FAILED", "cnsi", cnsiGUID, "user", userGUID, "err", refreshErr)
 			// Return the raw refresh error (preserving its api.ErrHTTPRequest
 			// type) so the classifyNativeErrors middleware can distinguish an
 			// unreachable endpoint (5xx/timeout) from a rejected token (401).
 			return nil, fmt.Errorf("token refresh failed: %w", refreshErr)
 		}
-		log.Infof("[diag refresh] OK cnsi=%s user=%s new_expiry=%d", cnsiGUID, userGUID, refreshed.TokenExpiry)
+		slog.Info("[diag refresh] OK", "cnsi", cnsiGUID, "user", userGUID, "new_expiry", refreshed.TokenExpiry)
 		tokenRecord = refreshed
 	}
-	client, err := cfclient.NewWithToken(ctx, cnsiRecord.APIEndpoint.String(), tokenRecord.AuthToken)
+	// The endpoint's CA has to travel with the client. Without it a
+	// foundation using a private CA — a lab, or CF on Kubernetes — fails
+	// every native read with "x509: certificate signed by unknown authority"
+	// while the endpoint still shows as connected, so the console reports it
+	// unreachable and points at the network rather than at trust.
+	//
+	// SkipSSLValidation is deliberately NOT forwarded. capi gates
+	// SkipTLSVerify behind CAPI_DEV_MODE and treats CACertPEM as the
+	// supported route for a real foundation, so registering the endpoint
+	// with its CA is what makes these reads work. Setting skip-ssl alone
+	// leaves this path failing on purpose rather than silently disabling
+	// verification for every native call.
+	client, err := cfclient.New(ctx, &capi.Config{
+		APIEndpoint: cnsiRecord.APIEndpoint.String(),
+		AccessToken: tokenRecord.AuthToken,
+		CACertPEM:   cnsiRecord.CACert,
+	})
 	if err != nil {
 		// Raw error so the middleware can classify (e.g. an unreachable API
 		// endpoint surfaces as a transport/net error → unreachable).
@@ -163,7 +179,7 @@ func listWithRouterFlapRetry[T any](ctx context.Context, op string, fn func() (T
 		if err == nil || attempt >= routerFlapRetries || !isRouterRouteMissing(err) || ctx.Err() != nil {
 			return res, err
 		}
-		log.Warnf("[diag drain] router-flap retry op=%s attempt=%d wait=%s err=%v", op, attempt+1, wait, err)
+		slog.Warn("[diag drain] router-flap retry", "op", op, "attempt", attempt+1, "wait", wait, "err", err)
 		select {
 		case <-ctx.Done():
 			return res, err
@@ -174,11 +190,15 @@ func listWithRouterFlapRetry[T any](ctx context.Context, op string, fn func() (T
 }
 
 // normaliseStringMap ensures nil maps are returned as empty maps (not null in JSON).
-func normaliseStringMap(m map[string]string) map[string]string {
-	if m == nil {
-		return map[string]string{}
+// normaliseStringMap flattens a CF metadata map (map[string]*string since
+// fw-capi 3.229.1, where nil means "delete this key" on PATCH) into the plain
+// map the frontend consumes. A nil value reads as an empty string.
+func normaliseStringMap(m map[string]*string) map[string]string {
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = capi.StringValue(v)
 	}
-	return m
+	return out
 }
 
 // metaLabels/metaAnnotations safely extract labels/annotations from a *capi.Metadata (may be nil).
@@ -218,18 +238,39 @@ func keyByGUID[T any](items []T, guid func(T) string) map[string]T {
 
 // ---- handlers ----
 
-// fullPagePerRequest is the page size used when draining every page of a CF
-// list endpoint. Default 500 so each request completes well under the 30s
-// CAPI client timeout (adepttech /v3/spaces at per_page=5000 clocked
-// ~27s/request). Override via env var STRATOS_CF_PER_PAGE for environments
-// with different CAPI performance characteristics.
-var fullPagePerRequest = envIntWithDefault("STRATOS_CF_PER_PAGE", 500)
+const (
+	// defaultPerPage is the page size used when draining every page of a CF
+	// list endpoint. 500 so each request completes well under the 30s CAPI
+	// client timeout (adepttech /v3/spaces at per_page=5000 clocked
+	// ~27s/request). Override via env var STRATOS_CF_PER_PAGE for
+	// environments with different CAPI performance characteristics.
+	defaultPerPage = 500
 
-// maxParallelPages bounds the concurrency of the page-2..N fetch after the
-// first page returns TotalPages. Default 5. Override via env var
-// STRATOS_CF_MAX_PARALLEL_PAGES if the CAPI tolerates more/fewer concurrent
-// requests.
-var maxParallelPages = envIntWithDefault("STRATOS_CF_MAX_PARALLEL_PAGES", 5)
+	// defaultMaxParallelPages bounds the concurrency of the page-2..N fetch
+	// after the first page returns TotalPages. Override via env var
+	// STRATOS_CF_MAX_PARALLEL_PAGES if the CAPI tolerates more/fewer
+	// concurrent requests.
+	defaultMaxParallelPages = 5
+)
+
+// These hold the defaults until resolvePagingConfig runs. They are not
+// initialised from the environment here: a package-level initialiser runs
+// before main installs the slog handler, so the two lines reporting the
+// resolved values were written by slog's default logger and came out in the
+// standard log package's format — plain text even under LOG_TO_JSON, which
+// gives a log collector two unparseable records on every boot.
+var (
+	fullPagePerRequest = defaultPerPage
+	maxParallelPages   = defaultMaxParallelPages
+)
+
+// resolvePagingConfig reads the paging overrides from the environment. It is
+// called from the plugin's Init, which runs after the log handler is
+// installed, so the values it reports are formatted like every other record.
+func resolvePagingConfig() {
+	fullPagePerRequest = envIntWithDefault("STRATOS_CF_PER_PAGE", defaultPerPage)
+	maxParallelPages = envIntWithDefault("STRATOS_CF_MAX_PARALLEL_PAGES", defaultMaxParallelPages)
+}
 
 // logCapiTiming emits a structured log line for one CAPI list call. Used at
 // every cfClient.X.List() call site in the drain helpers so a future 504
@@ -242,27 +283,21 @@ var maxParallelPages = envIntWithDefault("STRATOS_CF_MAX_PARALLEL_PAGES", 5)
 // rows/total=-1 when the call errored and no response is available.
 func logCapiTiming(op string, page, perPage, filterOrgs int, start time.Time, err error, rows, total int) {
 	dur := time.Since(start)
-	fields := log.Fields{
-		"op":       op,
-		"page":     page,
-		"per_page": perPage,
-		"duration": dur.String(),
-	}
+	attrs := []any{"op", op, "page", page, "per_page", perPage, "duration", dur.String()}
 	if filterOrgs >= 0 {
-		fields["filter_orgs"] = filterOrgs
+		attrs = append(attrs, "filter_orgs", filterOrgs)
 	}
 	if rows >= 0 {
-		fields["rows"] = rows
+		attrs = append(attrs, "rows", rows)
 	}
 	if total >= 0 {
-		fields["total"] = total
+		attrs = append(attrs, "total", total)
 	}
 	if err != nil {
-		fields["err"] = err.Error()
-		log.WithFields(fields).Warn("[trace capi]")
+		slog.Warn("[trace capi]", append(attrs, "err", err.Error())...)
 		return
 	}
-	log.WithFields(fields).Info("[trace capi]")
+	slog.Info("[trace capi]", attrs...)
 }
 
 // logHandlerTiming emits a structured log line for one handler invocation.
@@ -272,20 +307,15 @@ func logCapiTiming(op string, page, perPage, filterOrgs int, start time.Time, er
 // timeout) this line will not appear, which itself is the diagnostic signal.
 func logHandlerTiming(op, cnsiGUID string, start time.Time, errPtr *error, rowsPtr *int) {
 	dur := time.Since(start)
-	fields := log.Fields{
-		"op":             op,
-		"cnsi":           cnsiGUID,
-		"total_duration": dur.String(),
-	}
+	attrs := []any{"op", op, "cnsi", cnsiGUID, "total_duration", dur.String()}
 	if rowsPtr != nil {
-		fields["rows"] = *rowsPtr
+		attrs = append(attrs, "rows", *rowsPtr)
 	}
 	if errPtr != nil && *errPtr != nil {
-		fields["err"] = (*errPtr).Error()
-		log.WithFields(fields).Warn("[trace handler]")
+		slog.Warn("[trace handler]", append(attrs, "err", (*errPtr).Error())...)
 		return
 	}
-	log.WithFields(fields).Info("[trace handler]")
+	slog.Info("[trace handler]", attrs...)
 }
 
 // envIntWithDefault reads a positive integer from the named env var, falling
@@ -295,15 +325,15 @@ func logHandlerTiming(op, cnsiGUID string, start time.Time, errPtr *error, rowsP
 func envIntWithDefault(name string, def int) int {
 	raw := os.Getenv(name)
 	if raw == "" {
-		log.Infof("%s unset, using default %d", name, def)
+		slog.Info("env var unset, using the default", "var", name, "default", def)
 		return def
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil || n <= 0 {
-		log.Warnf("%s=%q is not a positive integer, using default %d", name, raw, def)
+		slog.Warn("env var is not a positive integer, using the default", "var", name, "value", raw, "default", def)
 		return def
 	}
-	log.Infof("%s=%d (overrides default %d)", name, n, def)
+	slog.Info("env var overrides the default", "var", name, "value", n, "default", def)
 	return n
 }
 
@@ -375,7 +405,7 @@ func toStSpace(r capi.Space, cnsiGUID string) StSpace {
 //   - (default): single CAPI page passthrough, Stratos paged envelope.
 //     Caller's per_page/page forward verbatim to /v3/organizations; absent,
 //     V3 server defaults apply.
-func (c *CloudFoundrySpecification) getNativeOrgs(ctx echo.Context) error {
+func (c *CloudFoundrySpecification) getNativeOrgs(ctx *echo.Context) error {
 	cnsiGUID := ctx.Param("cnsiGuid")
 	userGUID, err := c.getUserGUID(ctx)
 	if err != nil {
@@ -430,7 +460,7 @@ func (c *CloudFoundrySpecification) getNativeOrgs(ctx echo.Context) error {
 	// (errgroup). The apps-to-org attribution needs the space→org map
 	// but the HTTP drain itself doesn't, so we split the drain from the
 	// attribution and fan them out in parallel. fetchSpacesForOrgs and
-	// drainAppsForOrgs both take context.Context (not echo.Context) so
+	// drainAppsForOrgs both take context.Context (not *echo.Context) so
 	// they're safe to call from goroutines; fw-capi's underlying
 	// retryablehttp.Client is concurrent-safe. Each goroutine writes to
 	// disjoint output vars and eg.Wait() establishes happens-before for
@@ -440,7 +470,7 @@ func (c *CloudFoundrySpecification) getNativeOrgs(ctx echo.Context) error {
 	// slightly-worse p50 vs sequential — most likely because the
 	// upstream CAPI is the bottleneck and two concurrent drains
 	// contend on its connection pool. Kept parallel anyway because:
-	// (1) it eliminates a latent goroutine-safety landmine (echo.Context
+	// (1) it eliminates a latent goroutine-safety landmine (*echo.Context
 	// is not concurrent-safe), (2) it leaves the door open for future
 	// fw-capi / CAPI improvements that benefit from parallelism, and
 	// (3) the real perf win lives in the frontend cache short-circuit
@@ -461,7 +491,7 @@ func (c *CloudFoundrySpecification) getNativeOrgs(ctx echo.Context) error {
 		sc, sm, err := fetchSpacesForOrgs(egCtx, cfClient, orgGUIDs)
 		spaceCounts, spaceToOrg = sc, sm
 		if err != nil {
-			log.Warnf("[diag drain] op=orgs.relations.spaces fail_kind=%s err=%v", diagFailKind(ctx.Request().Context(), err), err)
+			slog.Warn("[diag drain]", "op", "orgs.relations.spaces", "fail_kind", diagFailKind(ctx.Request().Context(), err), "err", err)
 		}
 		return err
 	})
@@ -469,7 +499,7 @@ func (c *CloudFoundrySpecification) getNativeOrgs(ctx echo.Context) error {
 		a, err := drainAppsForOrgs(egCtx, cfClient, orgGUIDs)
 		rawApps = a
 		if err != nil {
-			log.Warnf("[diag drain] op=orgs.relations.apps fail_kind=%s err=%v", diagFailKind(ctx.Request().Context(), err), err)
+			slog.Warn("[diag drain]", "op", "orgs.relations.apps", "fail_kind", diagFailKind(ctx.Request().Context(), err), "err", err)
 		}
 		return err
 	})
@@ -501,7 +531,7 @@ func (c *CloudFoundrySpecification) getNativeOrgs(ctx echo.Context) error {
 //     Apps-Attached column resolver). Triggers the enrichment-skip path
 //     (no per-app process / space / route fan-out) and returns the flat
 //     StAppsResponse envelope since the caller only needs guid → name.
-func (c *CloudFoundrySpecification) getNativeApps(ctx echo.Context) error {
+func (c *CloudFoundrySpecification) getNativeApps(ctx *echo.Context) error {
 	cnsiGUID := ctx.Param("cnsiGuid")
 	userGUID, err := c.getUserGUID(ctx)
 	if err != nil {
@@ -662,6 +692,10 @@ func (c *CloudFoundrySpecification) getNativeApps(ctx echo.Context) error {
 	// is intentionally minimal (the summary path carries the full
 	// _meta.unavailable / _meta.errors envelope).
 	routesByApp, _ := fetchRoutesForApps(ctx, cfClient, appGUIDs)
+	// Droplets are fetched lazily-non-fatal too — same posture as routes
+	// above. On error, dropletsByApp is nil and every row's lookup below
+	// simply misses, leaving LastRefreshedAt at its zero value.
+	dropletsByApp, _ := fetchDropletsForApps(ctx, cfClient, appGUIDs)
 	// Orgs-by-guid: derives the unique org guids from the spaces we
 	// already fetched and stitches OrgName per row. Mirrors the
 	// getNativeAppsSummary path so frontend can render the CF/Org/Space
@@ -700,6 +734,9 @@ func (c *CloudFoundrySpecification) getNativeApps(ctx echo.Context) error {
 		if rts, ok := routesByApp[r.GUID]; ok {
 			s.Routes = rts
 		}
+		if ts, ok := dropletsByApp[r.GUID]; ok {
+			s.LastRefreshedAt = ts
+		}
 		apps = append(apps, s)
 	}
 	return ctx.JSON(http.StatusOK, StratosPagedResponse[StApp]{
@@ -720,7 +757,7 @@ func (c *CloudFoundrySpecification) getNativeApps(ctx echo.Context) error {
 //
 // Either filter triggers the enrichment-skip path (no per-space app/route
 // counts) since the App Wall name resolver only needs name → guid mapping.
-func (c *CloudFoundrySpecification) getNativeSpaces(ctx echo.Context) (err error) {
+func (c *CloudFoundrySpecification) getNativeSpaces(ctx *echo.Context) (err error) {
 	cnsiGUID := ctx.Param("cnsiGuid")
 	rows := 0
 	start := time.Now()
@@ -906,7 +943,7 @@ func listAllRoutes(ctx context.Context, cfClient capi.Client, spaceGUIDs string)
 				return cfClient.Routes().List(gctx, params)
 			})
 			if err != nil {
-				log.Warnf("[diag drain] op=routes.pageN page=%d fail_kind=%s err=%v", p, diagFailKind(ctx, err), err)
+				slog.Warn("[diag drain]", "op", "routes.pageN", "page", p, "fail_kind", diagFailKind(ctx, err), "err", err)
 				return err
 			}
 			pageResources[p] = raw.Resources
@@ -937,7 +974,7 @@ func listAllRoutes(ctx context.Context, cfClient capi.Client, spaceGUIDs string)
 // The query-param dispatch mirrors getNativeOrgs/getNativeApps/getNativeSpaces.
 // "counts" retains the original wire format on the same URL so endpoint-data
 // consumers don't need to change URLs.
-func (c *CloudFoundrySpecification) getNativeRouteCount(ctx echo.Context) error {
+func (c *CloudFoundrySpecification) getNativeRouteCount(ctx *echo.Context) error {
 	cnsiGUID := ctx.Param("cnsiGuid")
 	// space_guids forwards CF v3's /v3/routes?space_guids= filter to narrow
 	// the drain. Used by slice 3.5's map-routes picker so production tenants
@@ -1004,7 +1041,7 @@ func (c *CloudFoundrySpecification) getNativeRouteCount(ctx echo.Context) error 
 	})
 }
 
-func (c *CloudFoundrySpecification) getNativeOrgDetail(ctx echo.Context) error {
+func (c *CloudFoundrySpecification) getNativeOrgDetail(ctx *echo.Context) error {
 	cnsiGUID := ctx.Param("cnsiGuid")
 	orgGUID := ctx.Param("orgGuid")
 	userGUID, err := c.getUserGUID(ctx)
@@ -1038,7 +1075,7 @@ func (c *CloudFoundrySpecification) getNativeOrgDetail(ctx echo.Context) error {
 // space resource). The feature fetch is best-effort: on failure we log
 // and return AllowSSH=false rather than failing the whole detail call —
 // the SSH/env-var UI just falls back to its disabled state.
-func (c *CloudFoundrySpecification) getNativeSpaceDetail(ctx echo.Context) error {
+func (c *CloudFoundrySpecification) getNativeSpaceDetail(ctx *echo.Context) error {
 	cnsiGUID := ctx.Param("cnsiGuid")
 	spaceGUID := ctx.Param("spaceGuid")
 	userGUID, err := c.getUserGUID(ctx)
@@ -1072,7 +1109,7 @@ func (c *CloudFoundrySpecification) getNativeSpaceDetail(ctx echo.Context) error
 	// Best-effort SSH-feature lookup. V3 split this off the space resource
 	// to /v3/spaces/{guid}/features/ssh; failure here is non-fatal.
 	if feature, ferr := cfClient.Spaces().GetFeature(ctx.Request().Context(), spaceGUID, "ssh"); ferr != nil {
-		log.Warnf("getNativeSpaceDetail: ssh feature lookup failed for space %s: %v", spaceGUID, ferr)
+		slog.Warn("getNativeSpaceDetail: ssh feature lookup failed", "space", spaceGUID, "err", ferr)
 	} else if feature != nil {
 		detail.AllowSSH = feature.Enabled
 	}
@@ -1086,7 +1123,7 @@ func (c *CloudFoundrySpecification) getNativeSpaceDetail(ctx echo.Context) error
 // Returns spaces for one org as a single CAPI page passthrough. Caller's
 // per_page/page forward verbatim to /v3/spaces?organization_guids={orgGuid};
 // absent, V3 server defaults apply.
-func (c *CloudFoundrySpecification) getNativeOrgSpaces(ctx echo.Context) error {
+func (c *CloudFoundrySpecification) getNativeOrgSpaces(ctx *echo.Context) error {
 	cnsiGUID := ctx.Param("cnsiGuid")
 	orgGUID := ctx.Param("orgGuid")
 	userGUID, err := c.getUserGUID(ctx)

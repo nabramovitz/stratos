@@ -5,10 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/url"
 
-	"github.com/labstack/echo/v4"
-	log "github.com/sirupsen/logrus"
+	"github.com/labstack/echo/v5"
 	"sigs.k8s.io/yaml"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,8 +20,6 @@ import (
 
 	"github.com/cloudfoundry/stratos/src/jetstream/api"
 )
-
-const chartCollection = "charts"
 
 type installRequest struct {
 	Endpoint          string `json:"endpoint"`
@@ -50,10 +48,12 @@ type upgradeRequest struct {
 }
 
 // InstallRelease will install a Helm 3 release
-func (c *KubernetesSpecification) InstallRelease(ec echo.Context) error {
+func (c *KubernetesSpecification) InstallRelease(ec *echo.Context) error {
 	bodyReader := ec.Request().Body
 	buf := new(bytes.Buffer)
-	buf.ReadFrom(bodyReader)
+	if _, err := buf.ReadFrom(bodyReader); err != nil {
+		return api.NewJetstreamUserErrorf("Could not read the request body: %v", err)
+	}
 
 	var params installRequest
 	err := json.Unmarshal(buf.Bytes(), &params)
@@ -110,7 +110,7 @@ func (c *KubernetesSpecification) InstallRelease(ec echo.Context) error {
 
 	release, err := install.Run(chart, userSuppliedValues)
 	if err != nil {
-		return api.NewJetstreamUserErrorf(fmt.Sprintf("Error installing: %+v", err))
+		return api.NewJetstreamUserErrorf("Error installing: %+v", err)
 	}
 
 	return ec.JSON(200, release)
@@ -118,7 +118,7 @@ func (c *KubernetesSpecification) InstallRelease(ec echo.Context) error {
 
 // Load the Helm chart for the given repository, name and version
 func (c *KubernetesSpecification) loadChart(downloadURL string) (*chart.Chart, error) {
-	log.Debugf("Helm Chart Download URL: %s", downloadURL)
+	slog.Debug("loading the Helm chart", "url", downloadURL)
 
 	target, err := url.Parse(downloadURL)
 	if err != nil || (target.Scheme != "https" && target.Scheme != "http") || target.Host == "" {
@@ -135,13 +135,13 @@ func (c *KubernetesSpecification) loadChart(downloadURL string) (*chart.Chart, e
 		return nil, fmt.Errorf("Could not download Chart Archive: %s", resp.Status)
 	}
 
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return loader.LoadArchive(resp.Body)
 }
 
 // DeleteRelease will delete a release
-func (c *KubernetesSpecification) DeleteRelease(ec echo.Context) error {
+func (c *KubernetesSpecification) DeleteRelease(ec *echo.Context) error {
 	endpointGUID := ec.Param("endpoint")
 	releaseName := ec.Param("name")
 	namespace := ec.Param("namespace")
@@ -165,7 +165,7 @@ func (c *KubernetesSpecification) DeleteRelease(ec echo.Context) error {
 }
 
 // GetReleaseHistory will get the history for a release
-func (c *KubernetesSpecification) GetReleaseHistory(ec echo.Context) error {
+func (c *KubernetesSpecification) GetReleaseHistory(ec *echo.Context) error {
 	endpointGUID := ec.Param("endpoint")
 	releaseName := ec.Param("name")
 	namespace := ec.Param("namespace")
@@ -189,7 +189,7 @@ func (c *KubernetesSpecification) GetReleaseHistory(ec echo.Context) error {
 }
 
 // UpgradeRelease will upgrade the specified release
-func (c *KubernetesSpecification) UpgradeRelease(ec echo.Context) error {
+func (c *KubernetesSpecification) UpgradeRelease(ec *echo.Context) error {
 	endpointGUID := ec.Param("endpoint")
 	releaseName := ec.Param("name")
 	namespace := ec.Param("namespace")
@@ -198,7 +198,9 @@ func (c *KubernetesSpecification) UpgradeRelease(ec echo.Context) error {
 
 	bodyReader := ec.Request().Body
 	buf := new(bytes.Buffer)
-	buf.ReadFrom(bodyReader)
+	if _, err := buf.ReadFrom(bodyReader); err != nil {
+		return api.NewJetstreamUserErrorf("Could not read the request body: %v", err)
+	}
 
 	var params upgradeRequest
 	err := json.Unmarshal(buf.Bytes(), &params)

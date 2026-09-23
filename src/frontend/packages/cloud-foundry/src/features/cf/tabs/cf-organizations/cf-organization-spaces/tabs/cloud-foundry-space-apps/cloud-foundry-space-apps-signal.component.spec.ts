@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { importProvidersFrom, provideZonelessChangeDetection, signal } from '@angular/core';
 import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
@@ -41,6 +42,7 @@ function makeStubAppsConfig() {
     errorsByCnsi: signal(new Map<string, unknown>()).asReadonly(),
   };
   const stats = signal(new Map<string, { running: number; total: number }>());
+  const allOption = { label: 'All', value: null };
   return {
     initialize: vi.fn(),
     initializeForSpace: vi.fn(),
@@ -50,6 +52,8 @@ function makeStubAppsConfig() {
     deleteApp: vi.fn().mockResolvedValue(undefined),
     bulkDeleteApps: vi.fn().mockResolvedValue({ results: [], succeeded: 0, failed: 0, pending: 0 }),
     startStatsPolling: vi.fn(),
+    registerSortExtractor: vi.fn(),
+    registerFilterExtractor: vi.fn(),
     appStats: stats,
     filter: filterSig,
     sort: sortSig,
@@ -58,7 +62,14 @@ function makeStubAppsConfig() {
     view,
     orchestrator,
     nameFilter: signal(''),
+    filterField: signal('name'),
     viewMode: signal<'card' | 'table'>('card'),
+    selectedStacks: signal<string[] | null>(null),
+    selectedStates: signal<string[] | null>(null),
+    lastRefreshedRange: signal<any>(null),
+    stackUiVisible: signal(false).asReadonly(),
+    stackOptions: signal([allOption]).asReadonly(),
+    statusOptions: signal(['Deployed - Online', 'Stopped', 'Crashed', 'Failed']).asReadonly(),
   };
 }
 
@@ -81,6 +92,7 @@ describe('CloudFoundrySpaceAppsSignalComponent', () => {
         provideZonelessChangeDetection(),
         provideRouter([]),
         provideHttpClient(),
+        provideHttpClientTesting(),
         ...STORE_TEST_PROVIDERS,
         importProvidersFrom(generateCfBaseTestModulesNoShared()),
         TabNavService,
@@ -120,7 +132,7 @@ describe('CloudFoundrySpaceAppsSignalComponent', () => {
     const cfg = component.listConfig();
     expect(cfg).toBeDefined();
     expect(cfg!.columns.map(c => c.header)).toEqual([
-      '', 'Name', 'Status', 'Instances', 'Memory', 'Disk', 'Created', '', '',
+      '', 'Name', 'Status', 'Instances', 'Memory', 'Disk', 'Created', 'Last Refreshed', '', '',
     ]);
     // No filter dropdowns — single-CNSI single-space tab.
     expect(cfg!.filterDropdowns).toBeUndefined();
@@ -129,6 +141,35 @@ describe('CloudFoundrySpaceAppsSignalComponent', () => {
       cnsiGuid: 'cnsi-1', guid: 'app-1', name: 'a', state: 'STARTED',
       spaceGuid: 'space-1', instances: 1, createdAt: '', updatedAt: '',
     } as any)).toBe('cnsi-1:app-1');
+  });
+
+  it('renders the Last Refreshed column via the component formatter, em-dash when absent', async () => {
+    await component.ngOnInit();
+    const cfg = component.listConfig();
+    const lastRefreshedCol = cfg!.columns.find(c => c.header === 'Last Refreshed');
+    expect(lastRefreshedCol).toBeDefined();
+    expect(lastRefreshedCol!.key).toBe('lastRefreshedAt');
+    expect(lastRefreshedCol!.sortField).toBe('lastRefreshedAt');
+    const withRefresh: any = {
+      cnsiGuid: 'cnsi-1', guid: 'app-1', name: 'a', state: 'STARTED',
+      spaceGuid: 'space-1', instances: 1, createdAt: '', updatedAt: '',
+      lastRefreshedAt: '2026-07-15T12:00:00Z',
+    };
+    expect(lastRefreshedCol!.render(withRefresh))
+      .toBe(CloudFoundrySpaceAppsSignalComponent.formatDate('2026-07-15T12:00:00Z'));
+    const withoutRefresh: any = { ...withRefresh, lastRefreshedAt: undefined };
+    expect(lastRefreshedCol!.render(withoutRefresh)).toBe('—');
+  });
+
+  it('includes lastRefreshedAt in filterColumns and wires filterRanges to appsConfig.lastRefreshedRange', async () => {
+    await component.ngOnInit();
+    const cfg = component.listConfig();
+    expect(cfg!.filterColumns).toContain('lastRefreshedAt');
+    expect(cfg!.filterRanges).toBeDefined();
+    const range = cfg!.filterRanges!.find(r => r.field === 'lastRefreshedAt');
+    expect(range).toBeDefined();
+    expect(range!.valueType).toBe('date');
+    expect(range!.selected).toBe(stubAppsConfig.lastRefreshedRange);
   });
 
   it('defaults to card view at page size 6 for the per-space presentation', async () => {

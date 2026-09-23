@@ -3,7 +3,10 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 
 import { UsageGaugeComponent } from '../usage-gauge/usage-gauge.component';
+import { AppBusyComponent } from '../busy-indicator/busy-indicator.component';
+import { AppAreaLoaderComponent } from '../area-loader/area-loader.component';
 import { SignalListCellTemplateDirective } from './signal-list-cell-template.directive';
+import { rangeIsComplete, resolveRelativeDay, SignalListRangeBoundMode, SignalListRangeValue, SignalListRangeValueType } from './range-filter';
 
 export type SignalListPillColor = 'success' | 'warning' | 'danger' | 'neutral';
 
@@ -280,6 +283,44 @@ export interface SignalListDropdown {
   loading?: Signal<boolean>;
 }
 
+// Binding for a filter field whose input is a checklist popup instead of
+// the free-text box (see SignalListConfig.filterMultis). Used for fields
+// whose domain is a small closed set of discrete values — e.g. stack
+// name — where a fuzzy text match is the wrong affordance and the user
+// wants to pick from what's actually installed, possibly several at
+// once. `field` names the filterColumns entry this control activates
+// for: the active entry is whichever filterMultis element's `field`
+// equals filterField(), so the component only needs one popup-open
+// state (filterField() can only name one column at a time).
+// `selected === null` means "all" (no constraint) — same as no filter.
+// An explicitly EMPTY selection is ALSO treated as all, with a visible
+// note in the popup, rather than silently matching zero rows: a filter
+// that shows nothing reads as a bug, not a deliberate choice.
+export interface SignalListMultiFilter {
+  readonly field: string;
+  readonly options: Signal<string[]>;
+  readonly selected: WritableSignal<string[] | null>;
+}
+
+// Binding for a filter field whose input is a range-comparison popup
+// (date or number bounds) instead of the free-text box or the checklist —
+// see SignalListMultiFilter above for the sibling mechanism this parallels.
+// `field` names the filterColumns entry this control activates for, same
+// contract as SignalListMultiFilter.field: the active entry is whichever
+// filterRanges element's `field` equals filterField(), so the two popup
+// kinds share the component's single `multiPopupOpen` state — filterField()
+// can only name one column at a time, so at most one of activeMulti() /
+// activeRange() is ever defined.
+// `selected === null` means "no constraint" — the range comparator in
+// range-filter.ts treats it the same way.
+export interface SignalListRangeFilter {
+  readonly field: string;
+  readonly valueType: SignalListRangeValueType;
+  readonly selected: WritableSignal<SignalListRangeValue | null>;
+  // Display suffix appended to numeric bounds in the summary/popup, e.g. 'MB'.
+  readonly unit?: string;
+}
+
 export type SignalListViewMode = 'table' | 'card';
 
 /**
@@ -433,12 +474,25 @@ export interface SignalListConfig<T> {
   // happens behind a confirm dialog after `run()` has already returned, so the
   // bar can't infer the in-flight state itself. Omit to keep the bar static.
   readonly bulkRunning?: Signal<boolean>;
+  // Filter fields whose input is a checklist popup rather than the plain
+  // text box — see SignalListMultiFilter. An array (not a single slot)
+  // because more than one filterColumns entry can want this treatment:
+  // stack is the first checklist consumer, status is the second, and
+  // range/comparison inputs are modeled by the separate `filterRanges`
+  // array below. Only the entry whose `field` matches the current
+  // filterField() renders.
+  readonly filterMultis?: readonly SignalListMultiFilter[];
+  // Filter fields whose input is a range-comparison popup (date or number
+  // bounds) rather than the plain text box or checklist — see
+  // SignalListRangeFilter. lastRefreshedAt is the first consumer. Only the
+  // entry whose `field` matches the current filterField() renders.
+  readonly filterRanges?: readonly SignalListRangeFilter[];
 }
 
 @Component({
   selector: 'app-signal-list',
   standalone: true,
-  imports: [CommonModule, RouterModule, UsageGaugeComponent],
+  imports: [CommonModule, RouterModule, UsageGaugeComponent, AppBusyComponent, AppAreaLoaderComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './signal-list.component.html',
   host: { class: 'block h-full min-h-0' },
@@ -1135,6 +1189,204 @@ export class SignalListComponent<T> implements AfterViewInit {
   onFilterFieldChange(field: string): void {
     this.config.filterField?.set(field);
     this.config.pageIndex.set(0);
+    this.multiPopupOpen.set(false);
+  }
+
+  // Popup-open state for the checklist-style filter input (see
+  // SignalListMultiFilter). Only one checklist field can be active at a
+  // time — filterField() names a single column — so a single boolean
+  // suffices rather than one open-flag per configured field.
+  readonly multiPopupOpen = signal(false);
+
+  // The filterMultis entry whose field matches the active filterField(),
+  // or undefined when the current field uses the plain text input.
+  activeMulti(): SignalListMultiFilter | undefined {
+    const field = this.config.filterField?.();
+    return this.config.filterMultis?.find(m => m.field === field);
+  }
+
+  // The filterRanges entry whose field matches the active filterField().
+  // Same single-active-field contract as activeMulti — the two popups
+  // can never be live simultaneously, so they share multiPopupOpen.
+  activeRange(): SignalListRangeFilter | undefined {
+    const field = this.config.filterField?.();
+    return this.config.filterRanges?.find(r => r.field === field);
+  }
+
+  // Single source of truth for a range filter's bound mode: number-domain
+  // filters are always absolute, date-domain ones follow the stored mode.
+  // Every relative-vs-absolute decision (labels, summary, input types)
+  // routes through here.
+  private rangeMode(fr: SignalListRangeFilter): SignalListRangeBoundMode {
+    return fr.valueType === 'date' ? (fr.selected()?.mode ?? 'date') : 'date';
+  }
+
+  rangeSummary(fr: SignalListRangeFilter): string {
+    const sel = fr.selected();
+    if (sel === null) return 'Any';
+    const mode = this.rangeMode(fr);
+    if (mode !== 'date') {
+      const relUnit = mode === 'businessDays' ? 'business days' : 'days';
+      const n = sel.a || '…';
+      switch (sel.op) {
+        case 'lt': return `older than ${n} ${relUnit}`;
+        case 'lte': return `at least ${n} ${relUnit} old`;
+        case 'gt': return `newer than ${n} ${relUnit}`;
+        case 'gte': return `within ${n} ${relUnit}`;
+        case 'between': return `${n} – ${sel.b || '…'} ${relUnit} ago`;
+      }
+    }
+    const unit = fr.unit ? ` ${fr.unit}` : '';
+    const sym: Record<string, string> = { lt: '<', lte: '≤', gt: '>', gte: '≥' };
+    if (sel.op === 'between') return `${sel.a || '…'}${unit} – ${sel.b || '…'}${unit}`;
+    return `${sym[sel.op]} ${sel.a || '…'}${unit}`;
+  }
+
+  // Op wording tracks the bound mode: absolute dates read as positions on a
+  // calendar ("before"), relative counts read as ages ("older than").
+  opLabel(fr: SignalListRangeFilter, op: SignalListRangeValue['op']): string {
+    const labels: Record<SignalListRangeValue['op'], string> = this.isRelativeRange(fr)
+      ? { lt: 'older than', lte: 'at least', gt: 'newer than', gte: 'within', between: 'between' }
+      : { lt: 'before', lte: 'on or before', gt: 'after', gte: 'on or after', between: 'between' };
+    return labels[op];
+  }
+
+  // The calendar day a relative bound currently resolves to, formatted for
+  // the popup ("Fri, Aug 7, 2026"), or null when the bound is absolute or
+  // not yet parsable. Shown next to the holiday warning so the user can
+  // verify the date and bump the holiday count if it lands on one.
+  resolvedDayLabel(fr: SignalListRangeFilter, bound: 'a' | 'b'): string | null {
+    const sel = fr.selected();
+    if (sel === null || fr.valueType !== 'date') return null;
+    const day = resolveRelativeDay(sel, bound);
+    if (day === null) return null;
+    return day.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  isRelativeRange(fr: SignalListRangeFilter): boolean {
+    return this.rangeMode(fr) !== 'date';
+  }
+
+  // Thursday-first so every real-world weekend reads as a consecutive run:
+  // Thu–Fri (Iran, Afghanistan), Fri–Sat (much of MENA), Sat–Sun (most of
+  // the world), and the single-day conventions all sit in the head of the
+  // row with nothing wrapping (Sun-first split the default Sat+Sun weekend
+  // across the row's two far ends). Values stay getDay() numbers.
+  readonly weekdayToggles = [
+    { value: 4, label: 'Th' }, { value: 5, label: 'Fr' }, { value: 6, label: 'Sa' },
+    { value: 0, label: 'Su' }, { value: 1, label: 'Mo' }, { value: 2, label: 'Tu' },
+    { value: 3, label: 'We' },
+  ];
+
+  // Clear button in the checklist/range popups: resets THIS filter to its
+  // neutral state and leaves the popup open, so the toggle summary flipping
+  // to All/Any is the visible feedback. For a relative range this is the
+  // one deliberate gesture that discards the stored configuration — the
+  // implicit collapse rules in updateRange stay date-mode-only.
+  clearPopupFilter(f: SignalListMultiFilter | SignalListRangeFilter): void {
+    f.selected.set(null);
+    this.config.pageIndex.set(0);
+  }
+
+  // Flips one weekday in the business-day working week. Routed through
+  // updateRange so paging reset and storage rules stay in one place.
+  // Removing the last working day is refused — a 7-day weekend would make
+  // the walk unresolvable while the summary still reads as a constraint.
+  toggleWorkingDay(fr: SignalListRangeFilter, day: number): void {
+    const curr = fr.selected()?.workingDays ?? [];
+    if (curr.includes(day) && curr.length === 1) return;
+    const workingDays = curr.includes(day) ? curr.filter(d => d !== day) : [...curr, day];
+    this.updateRange(fr, { workingDays });
+  }
+
+  // Merges a partial edit into the current range. Only collapses to null
+  // when the edit touched a BOUND ('a' or 'b') and every bound is now
+  // empty — an op-only change (e.g. picking "between" before typing any
+  // date) must never collapse, or the template's between-branch gate
+  // (`selected()?.op === 'between'`) would never see the op and the
+  // second input/checkboxes could never render. Half-typed non-empty
+  // ranges are stored as-is; hasActiveFilter() and the row predicate both
+  // treat an incomplete bound as inert rather than as "no constraint", so
+  // a stray non-null selected() here can't blank the list or the Clear
+  // button under the user's cursor mid-edit.
+  updateRange(fr: SignalListRangeFilter, patch: Partial<SignalListRangeValue>): void {
+    const curr = fr.selected() ?? { op: 'gte' as const, a: '' };
+    let next: SignalListRangeValue = { ...curr, ...patch };
+    // A mode switch clears the bounds — `a`/`b` change meaning between a
+    // date string and a day count, so carrying one across modes would store
+    // garbage. The op and any chosen working week survive; businessDays
+    // seeds Mon–Fri on first entry so the toggles have a sane start.
+    if (patch.mode !== undefined && patch.mode !== (curr.mode ?? 'date')) {
+      next = { ...next, a: '', b: undefined };
+      if (patch.mode === 'businessDays' && next.workingDays === undefined) {
+        next = { ...next, workingDays: [1, 2, 3, 4, 5] };
+      }
+    }
+    if (patch.holidayCount !== undefined) {
+      const n = Math.floor(Number(patch.holidayCount));
+      next = { ...next, holidayCount: Number.isFinite(n) && n > 0 ? n : 0 };
+    }
+    const touchedBound = 'a' in patch || 'b' in patch;
+    const allBoundsEmpty = next.a === '' && !next.b;
+    // Collapse-to-null is a date-mode rule only: a relative range carries
+    // configuration beyond its bounds (mode, working week, holiday count)
+    // that emptying a count input to retype it must not destroy. An empty
+    // relative range is simply inert; Clear remains the real reset.
+    const collapse = touchedBound && allBoundsEmpty && (next.mode ?? 'date') === 'date';
+    fr.selected.set(collapse ? null : next);
+    this.config.pageIndex.set(0);
+  }
+
+  // Button label for the checklist popup: "All (n)" when every option is
+  // implicitly or explicitly selected, the bare value for a single pick,
+  // "x of y selected" for a partial pick, and a "showing all" note when
+  // the user has explicitly unchecked everything (see toggleMultiOption
+  // for why that's kept distinct from null rather than collapsed to it).
+  multiSummary(fm: SignalListMultiFilter): string {
+    const sel = fm.selected();
+    const total = fm.options().length;
+    if (sel === null || sel.length === total) return `All (${total})`;
+    if (sel.length === 0) return 'None — showing all';
+    if (sel.length === 1) return sel[0];
+    return `${sel.length} of ${total} selected`;
+  }
+
+  // Closes the checklist popup on any click outside its wrapper — the
+  // same "click away" pattern as the row-actions kebab menu, keyed off
+  // the multi-filter-wrap data-test hook so it works uniformly across
+  // every consumer without a template ref.
+  @HostListener('document:click', ['$event'])
+  onDocumentClickForMultiPopup(event: Event): void {
+    if (!this.multiPopupOpen()) return;
+    const target = event.target as HTMLElement | null;
+    if (target && !target.closest('[data-test="multi-filter-wrap"], [data-test="range-filter-wrap"]')) {
+      this.multiPopupOpen.set(false);
+    }
+  }
+
+  // selected === null (or, degenerately, an explicit list containing
+  // every option) reads as "all" — every checkbox renders checked
+  // without the caller having to populate a full option list up front.
+  multiChecked(fm: SignalListMultiFilter, name: string): boolean {
+    const sel = fm.selected();
+    return sel === null || sel.includes(name);
+  }
+
+  // Checking every option back on collapses the selection to null
+  // (matching multiChecked's "all == every option" read) rather than
+  // leaving an explicit full list around, so `selected === null` stays
+  // the one canonical "no constraint" state for predicates to check.
+  // Unchecking the LAST option is deliberately NOT collapsed to null —
+  // it's preserved as [] so the popup can render its "showing all" note;
+  // silently reverting to null there would hide that the user just
+  // cleared every box, and a filter that quietly shows everything after
+  // an all-uncheck reads as a bug.
+  toggleMultiOption(fm: SignalListMultiFilter, name: string): void {
+    const all = fm.options();
+    const curr = fm.selected() ?? all;
+    const next = curr.includes(name) ? curr.filter(n => n !== name) : [...curr, name];
+    fm.selected.set(next.length === all.length ? null : next);
+    this.config.pageIndex.set(0);
   }
 
   // Page position saved when the user starts typing a filter, restored
@@ -1204,6 +1456,21 @@ export class SignalListComponent<T> implements AfterViewInit {
   hasActiveFilter(): boolean {
     for (const dd of this.config.filterDropdowns ?? []) {
       if (dd.selected() != null) return true;
+    }
+    // A filterMultis selection of null means "all" (inactive); toggling
+    // any option away from that — including down to an explicit empty
+    // selection — sets a non-null value, so this mirrors the dropdown
+    // check above without needing to special-case the checklist's
+    // null/[]/partial states individually.
+    for (const fm of this.config.filterMultis ?? []) {
+      if (fm.selected() != null) return true;
+    }
+    // updateRange stores a half-typed range (e.g. op picked, no date yet)
+    // as non-null so the popup keeps the user's choice across keystrokes —
+    // so `!= null` alone would flag Clear active on an inert filter.
+    // rangeIsComplete gates on the bound(s) actually parsing.
+    for (const fr of this.config.filterRanges ?? []) {
+      if (rangeIsComplete(fr.selected(), fr.valueType)) return true;
     }
     if (this.config.nameFilter && this.config.nameFilter().length > 0) return true;
     return false;

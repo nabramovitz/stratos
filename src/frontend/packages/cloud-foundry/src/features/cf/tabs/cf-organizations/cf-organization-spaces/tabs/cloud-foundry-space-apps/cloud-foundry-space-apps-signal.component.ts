@@ -1,6 +1,8 @@
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { Component, ChangeDetectionStrategy, OnInit, Signal, WritableSignal, inject, signal } from '@angular/core';
+import {
+  Component, ChangeDetectionStrategy, OnInit, Signal, WritableSignal, computed, inject, signal, Injector, effect,
+} from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterModule } from '@angular/router';
 import { map } from 'rxjs/operators';
@@ -13,6 +15,7 @@ import {
   ListSubNavAddAction,
   ListSubNavComponent,
   SignalListBulkAction,
+  SignalListColumn,
   SignalListComponent,
   SignalListConfig,
   SignalListPillColor,
@@ -65,6 +68,7 @@ export class CloudFoundrySpaceAppsSignalComponent implements OnInit {
   private http = inject(HttpClient);
   private router = inject(Router);
   private permissionsService = inject(CurrentUserPermissionsService);
+  private readonly injector = inject(Injector);
 
   /** Total app count in this space for the L5 sub-nav. */
   public totalApplications!: Signal<number>;
@@ -130,6 +134,35 @@ export class CloudFoundrySpaceAppsSignalComponent implements OnInit {
     this.appsConfig.initializeForSpace(cfGuid, spaceGuid);
     this.totalApplications = this.appsConfig.view.totalItems;
 
+    // Stack filtering rides the field-selectable filter rather than its
+    // own dropdown: "Stack" is a filter-field whose input is a checklist
+    // popup (multi-select, default all) — see SignalListMultiFilter. The
+    // stacks catalog is still fetched eagerly (visibility depends on it).
+    const stackFilterMulti = {
+      field: 'stackName',
+      options: computed(() => this.appsConfig.stackOptions().filter(o => o.value !== null).map(o => o.label)),
+      selected: this.appsConfig.selectedStacks,
+    };
+    // Status rides the same field-selectable filter, no visibility gate
+    // (CF always reports 2+ possible states): picking "Status" swaps the
+    // text input for the checklist populated from the fixed label set.
+    const statusFilterMulti = {
+      field: 'state',
+      options: this.appsConfig.statusOptions,
+      selected: this.appsConfig.selectedStates,
+    };
+    const stackColumn: SignalListColumn<StApp> = {
+      header: 'Stack', key: 'stackName', sortField: 'stackName',
+      render: (app: StApp) => app.stackName || '—',
+      widthHint: '9rem',
+    };
+    const lastRefreshedColumn: SignalListColumn<StApp> = {
+      header: 'Last Refreshed', key: 'lastRefreshedAt', sortField: 'lastRefreshedAt',
+      render: (app: StApp) => app.lastRefreshedAt
+        ? CloudFoundrySpaceAppsSignalComponent.formatDate(app.lastRefreshedAt) : '—',
+      widthHint: '12rem',
+    };
+
     const stateColor = (app: StApp): SignalListPillColor => {
       const s = (app.state ?? '').toUpperCase();
       if (s === 'STARTED') return 'success';
@@ -145,104 +178,146 @@ export class CloudFoundrySpaceAppsSignalComponent implements OnInit {
       return app.state ?? '';
     };
 
-    this.listConfig.set({
-      pagedItems: this.appsConfig.view.pagedItems,
-      totalFilteredResults: this.appsConfig.view.totalFilteredResults,
-      totalPages: this.appsConfig.view.totalPages,
-      pageIndex: this.appsConfig.pageIndex,
-      pageSize: this.appsConfig.pageSize,
-      isAnyLoading: this.appsConfig.orchestrator.isAnyLoading,
-      errorsByCnsi: this.appsConfig.orchestrator.errorsByCnsi,
-      columns: [
-        {
-          header: '', key: 'select',
-          kind: 'checkbox',
-          checkbox: {
-            selectedKeys: this.selectedAppKeys,
-            selectAll: {
-              // Filtered set size, not just the current page — matches the
-              // tri-state header's "all selectable rows" semantics.
-              selectableCount: () => this.appsConfig.view.totalFilteredResults(),
-              onToggle: () => this.toggleSelectAll(),
+    const buildConfig = (): SignalListConfig<StApp> => {
+      const withStack = this.appsConfig.stackUiVisible();
+      return {
+        pagedItems: this.appsConfig.view.pagedItems,
+        totalFilteredResults: this.appsConfig.view.totalFilteredResults,
+        totalPages: this.appsConfig.view.totalPages,
+        pageIndex: this.appsConfig.pageIndex,
+        pageSize: this.appsConfig.pageSize,
+        isAnyLoading: this.appsConfig.orchestrator.isAnyLoading,
+        errorsByCnsi: this.appsConfig.orchestrator.errorsByCnsi,
+        columns: [
+          {
+            header: '', key: 'select',
+            kind: 'checkbox',
+            checkbox: {
+              selectedKeys: this.selectedAppKeys,
+              selectAll: {
+                // Filtered set size, not just the current page — matches the
+                // tri-state header's "all selectable rows" semantics.
+                selectableCount: () => this.appsConfig.view.totalFilteredResults(),
+                onToggle: () => this.toggleSelectAll(),
+              },
             },
+            render: () => '',
+            widthHint: '3rem',
           },
-          render: () => '',
-          widthHint: '3rem',
-        },
-        {
-          header: 'Name', key: 'name', sortField: 'name',
-          kind: 'link',
-          link: (app: StApp) => ['/applications', app.cnsiGuid, app.guid],
-          render: (app: StApp) => app.name,
-          widthHint: '16rem',
-        },
-        {
-          header: 'Status', key: 'state', sortField: 'state',
-          kind: 'dot',
-          pillColor: stateColor,
-          render: stateLabel,
-          widthHint: '12rem',
-        },
-        {
-          header: 'Instances', key: 'instances', sortField: 'instances',
-          render: (app: StApp) => {
-            const desired = app.instances ?? 0;
-            const rowKey = `${app.cnsiGuid}:${app.guid}`;
-            const s = this.appsConfig.appStats().get(rowKey);
-            if (!s) return `— / ${desired}`;
-            return `${s.running} / ${desired}`;
+          {
+            header: 'Name', key: 'name', sortField: 'name',
+            kind: 'link',
+            link: (app: StApp) => ['/applications', app.cnsiGuid, app.guid],
+            render: (app: StApp) => app.name,
+            widthHint: '16rem',
           },
-          widthHint: '6rem',
-        },
-        {
-          header: 'Memory', key: 'memory', sortField: 'memory',
-          render: (app: StApp) => CloudFoundrySpaceAppsSignalComponent.formatMb(app.memory),
-          widthHint: '7rem',
-        },
-        {
-          header: 'Disk', key: 'diskQuota', sortField: 'diskQuota',
-          render: (app: StApp) => CloudFoundrySpaceAppsSignalComponent.formatMb(app.diskQuota),
-          widthHint: '7rem',
-        },
-        {
-          header: 'Created', key: 'createdAt', sortField: 'createdAt',
-          render: (app: StApp) => CloudFoundrySpaceAppsSignalComponent.formatDate(app.createdAt),
-          widthHint: '12rem',
-        },
-        {
-          header: '', key: 'favorite',
-          kind: 'favorite',
-          favorite: {
-            keys: this.favoriteAppRowKeys,
-            toggle: (app: StApp) => this.toggleAppFavorite(app),
+          {
+            header: 'Status', key: 'state', sortField: 'state',
+            kind: 'dot',
+            pillColor: stateColor,
+            render: stateLabel,
+            widthHint: '12rem',
           },
-          render: () => '',
-          widthHint: '3rem',
+          {
+            header: 'Instances', key: 'instances', sortField: 'instances',
+            render: (app: StApp) => {
+              const desired = app.instances ?? 0;
+              const rowKey = `${app.cnsiGuid}:${app.guid}`;
+              const s = this.appsConfig.appStats().get(rowKey);
+              if (!s) return `— / ${desired}`;
+              return `${s.running} / ${desired}`;
+            },
+            widthHint: '6rem',
+          },
+          {
+            header: 'Memory', key: 'memory', sortField: 'memory',
+            render: (app: StApp) => CloudFoundrySpaceAppsSignalComponent.formatMb(app.memory),
+            widthHint: '7rem',
+          },
+          {
+            header: 'Disk', key: 'diskQuota', sortField: 'diskQuota',
+            render: (app: StApp) => CloudFoundrySpaceAppsSignalComponent.formatMb(app.diskQuota),
+            widthHint: '7rem',
+          },
+          ...(withStack ? [stackColumn] : []),
+          {
+            header: 'Created', key: 'createdAt', sortField: 'createdAt',
+            render: (app: StApp) => CloudFoundrySpaceAppsSignalComponent.formatDate(app.createdAt),
+            widthHint: '12rem',
+          },
+          lastRefreshedColumn,
+          {
+            header: '', key: 'favorite',
+            kind: 'favorite',
+            favorite: {
+              keys: this.favoriteAppRowKeys,
+              toggle: (app: StApp) => this.toggleAppFavorite(app),
+            },
+            render: () => '',
+            widthHint: '3rem',
+          },
+          {
+            header: '', key: 'actions',
+            kind: 'actions',
+            actions: this.buildAppActions,
+            render: () => '',
+            widthHint: '3rem',
+          },
+        ],
+        getRowKey: (app: StApp) => `${app.cnsiGuid}:${app.guid}`,
+        emptyMessage: 'There are no applications in this space',
+        emptyFilterMessage: 'No applications match the current filters',
+        loadingMessage: 'Loading applications…',
+        pageSizeOptions: {
+          table: [10, 25, 50, 100],
+          card: [6, 12, 24, 48, 96],
         },
-        {
-          header: '', key: 'actions',
-          kind: 'actions',
-          actions: this.buildAppActions,
-          render: () => '',
-          widthHint: '3rem',
-        },
-      ],
-      getRowKey: (app: StApp) => `${app.cnsiGuid}:${app.guid}`,
-      emptyMessage: 'There are no applications in this space',
-      emptyFilterMessage: 'No applications match the current filters',
-      loadingMessage: 'Loading applications…',
-      pageSizeOptions: {
-        table: [10, 25, 50, 100],
-        card: [6, 12, 24, 48, 96],
-      },
-      nameFilter: this.appsConfig.nameFilter,
-      onRefresh: () => this.appsConfig.refresh(),
-      onClear: () => this.appsConfig.clearFilters(),
-      cardAccentColor: stateColor,
-      viewMode: this.appsConfig.viewMode,
-      sort: this.appsConfig.sort,
-      bulkActions: this.buildBulkActions(),
-    });
+        nameFilter: this.appsConfig.nameFilter,
+        // Single-CNSI single-space tab: there's exactly one CF and one
+        // space in scope, so no Org/Space/CF dropdowns — matches the
+        // page's existing "no dropdowns" contract. Name and Status ride
+        // the field selector like the wall and CF tab (Status has no
+        // visibility gate); Stack joins the selector's option list too
+        // once this CF has 2+ installed stacks, and picking any of them
+        // swaps in the corresponding checklist popup.
+        filterColumns: withStack
+          ? ['name', 'state', 'stackName', 'lastRefreshedAt']
+          : ['name', 'state', 'lastRefreshedAt'],
+        // Status is unconditional (no visibility gate); Stack's entry is
+        // only wired while its column is actually in filterColumns —
+        // otherwise a filterField left over at 'stackName' from a
+        // previous, stack-visible page (the service's filter state is a
+        // shared singleton) would pop the checklist for a column this
+        // page isn't even showing.
+        filterMultis: withStack ? [statusFilterMulti, stackFilterMulti] : [statusFilterMulti],
+        filterRanges: [{
+          field: 'lastRefreshedAt',
+          valueType: 'date' as const,
+          selected: this.appsConfig.lastRefreshedRange,
+        }],
+        filterField: this.appsConfig.filterField,
+        onRefresh: () => this.appsConfig.refresh(),
+        onClear: () => this.appsConfig.clearFilters(),
+        cardAccentColor: stateColor,
+        viewMode: this.appsConfig.viewMode,
+        sort: this.appsConfig.sort,
+        bulkActions: this.buildBulkActions(),
+      };
+    };
+    // Set once synchronously so the config is available immediately (in
+    // the same tick as ngOnInit) rather than leaving listConfig undefined
+    // until the first effect flush.
+    this.listConfig.set(buildConfig());
+    // Rebuild when the stacks catalog flips visibility (it lands async
+    // after initializeForSpace()). effect() needs an injection context;
+    // ngOnInit isn't one, hence the explicit injector.
+    effect(() => { this.listConfig.set(buildConfig()); }, { injector: this.injector });
+    // Text-filter extractors for the two always-present fields, and the
+    // 'state' one doubles as the Status checklist's label source — see
+    // CfAppsSignalConfigService's predicate, which reuses this exact
+    // registered function instead of a second state→label mapping.
+    this.appsConfig.registerFilterExtractor('name', (app: StApp) => app.name ?? '');
+    this.appsConfig.registerFilterExtractor('state', stateLabel);
 
     // Default per-space tab presentation: card view at 6 per page. The
     // service's writable signals carry user toggles within a session; we

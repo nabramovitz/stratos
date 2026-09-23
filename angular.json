@@ -80,7 +80,8 @@
               "dagre",
               "webcola",
               "intersect",
-              "expect-type"
+              "expect-type",
+              "path-browserify"
             ],
             "tsConfig": "src/frontend/packages/core/tsconfig.app.json",
             "loader": {
@@ -119,7 +120,12 @@
               "src/frontend/packages/theme/styles/main.scss",
               "src/frontend/packages/theme/theme-transitions.scss",
               "src/frontend/packages/core/src/styles.scss",
-              "node_modules/xterm/css/xterm.css"
+              "node_modules/xterm/css/xterm.css",
+              {
+                "input": "src/frontend/packages/core/src/monaco-styles.css",
+                "inject": false,
+                "bundleName": "monaco"
+              }
             ],
             "stylePreprocessorOptions": {
               "includePaths": [
@@ -144,6 +150,13 @@
               "outputHashing": "all",
               "sourceMap": false,
               "extractLicenses": true,
+              "budgets": [
+                {
+                  "type": "anyScript",
+                  "maximumWarning": "2.75mb",
+                  "maximumError": "3mb"
+                }
+              ],
               "fileReplacements": [
                 {
                   "replace": "src/frontend/packages/core/src/environments/environment.ts",

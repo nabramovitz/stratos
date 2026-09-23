@@ -3,6 +3,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import type { EndpointModel } from '@stratosui/store';
+import { endpointDropdownOptions } from '../endpoint-dropdown-options';
 import { EndpointErrorEventsService } from '@stratosui/store';
 import { CnsiServiceInstancesSource } from '../../../services/data-sources/cnsi-service-instances-source';
 import { MergeOrchestrator } from '../../../services/data-sources/merge-orchestrator';
@@ -130,6 +131,9 @@ export class CfServiceInstancesSignalConfigService {
   // stale-selection clearer that keeps the toolbar display in sync with the
   // filter when an endpoint disconnects mid-session.
   private readonly _hasLoadedOnce: WritableSignal<boolean> = signal(false);
+  /** True once the first load has completed for the current scope. Pages
+   *  use `!hasLoadedOnce()` to show a pending count in the sub-nav (#5766). */
+  readonly hasLoadedOnce: Signal<boolean> = this._hasLoadedOnce.asReadonly();
   private readonly injector = inject(Injector);
   private readonly http = inject(HttpClient);
   private readonly deleteController = inject(EntityDeleteController);
@@ -165,13 +169,7 @@ export class CfServiceInstancesSignalConfigService {
       ? toSignal(cfService.connectedCFEndpoints$, { initialValue: [] as EndpointModel[] })
       : signal<EndpointModel[]>([]).asReadonly();
 
-    this.cnsiOptions = computed(() => {
-      const opts: SignalListDropdownOption[] = [{ label: 'All', value: null }];
-      for (const ep of this.connectedEndpoints() ?? []) {
-        opts.push({ label: ep.name ?? ep.guid, value: ep.guid ?? null });
-      }
-      return opts;
-    });
+    this.cnsiOptions = computed(() => endpointDropdownOptions(this.connectedEndpoints()));
 
     this.endpointNames = computed(() => {
       const m = new Map<string, string>();

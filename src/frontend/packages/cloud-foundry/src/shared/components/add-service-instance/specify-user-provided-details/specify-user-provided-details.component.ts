@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { AppErrorComponent, AppInputDirective, CustomFormFieldComponent, MatLabelComponent } from '@stratosui/core';
 import { HttpParams, HttpRequest } from '@angular/common/http';
-import { Component, Input, OnDestroy, signal, ChangeDetectionStrategy, inject } from '@angular/core';
+import { Component, Input, OnDestroy, signal, computed, ChangeDetectionStrategy, inject } from '@angular/core';
 import { ReactiveFormsModule, FormsModule, Validators, FormControl, FormGroup } from '@angular/forms';
 import { CustomSelectComponent, CustomOptionComponent } from '@stratosui/core';
 import { ActivatedRoute } from '@angular/router';
@@ -29,6 +29,7 @@ import { IUserProvidedServiceInstanceData } from '../../../../cf-api-svc.types';
 import { AppDetailDataService } from '../../../../features/applications/app-detail-data.service';
 import { AppNameUniqueChecking } from '../../../directives/app-name-unique.directive/app-name-unique.directive';
 import { CloudFoundryUserProvidedServicesService } from '../../../services/cloud-foundry-user-provided-services.service';
+import { ServiceCatalogDataService, SignalSource } from '../../../../services/endpoint-data/service-catalog-data.service';
 import { CreateServiceFormMode, CsiModeService } from './../csi-mode.service';
 import { CsiState, CsiStateService } from './../csi-state.service';
 
@@ -42,6 +43,19 @@ export interface UpsPickerRow {
 }
 
 const { proxyAPIVersion } = environment;
+
+// Replace every leaf value with the '<redacted>' marker, keeping the key
+// structure (nested objects and array shapes included) browsable. Angle
+// brackets match the masked-credentials URL redaction convention and keep
+// the marker distinguishable from a credential whose real value happens to
+// be the word "redacted".
+function redactValues(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactValues);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redactValues(v)]));
+  }
+  return '<redacted>';
+}
 @Component({
   selector: 'app-specify-user-provided-details',
   templateUrl: './specify-user-provided-details.component.html',
@@ -72,6 +86,7 @@ export class SpecifyUserProvidedDetailsComponent implements OnDestroy {
   // because there's no in-context bindings view to update.
   private appDetailData = inject(AppDetailDataService, { optional: true });
   private csiState = inject(CsiStateService);
+  private serviceCatalog = inject(ServiceCatalogDataService);
   // toObservable() must run inside an injection context — lift to a class field.
   private csiState$ = toObservable(this.csiState.state);
 
@@ -93,13 +108,94 @@ export class SpecifyUserProvidedDetailsComponent implements OnDestroy {
       serviceInstances: new FormControl('', { validators: [Validators.required], nonNullable: true }) });
     this.initUpdate(serviceInstanceId, endpointId);
     this.setupValidate();
+    // Fetch on load so the redacted structure preview renders without a
+    // click; real values stay off-screen until explicitly shown.
+    this.fetchCredentials();
+  }
+
+  /** What the readonly credential view displays: the structure with
+   *  '<redacted>' leaves by default, the real JSON while revealed.
+   *  Null until the sub-resource lands. */
+  public displayedCredentialsJson = computed<string | null>(() => {
+    const creds = this.credsSource()?.value();
+    if (!creds) return null;
+    return this.credsMode() === 'revealed'
+      ? JSON.stringify(creds, null, 2)
+      : JSON.stringify(redactValues(creds), null, 2);
+  });
+
+  /** The preview split on the '"<redacted>"' tokens so the template can
+   *  re-insert each token as a highlighted span — colorized without
+   *  innerHTML. In real-values mode the split yields one segment and no
+   *  markers render. */
+  public displayedCredentialSegments = computed<string[] | null>(() => {
+    const json = this.displayedCredentialsJson();
+    return json ? json.split('"<redacted>"') : null;
+  });
+
+  /** Explicit step from viewing to editing: put the full JSON in the
+   *  textarea. Separate from the reveal so the plaintext values only render
+   *  where the user asked to edit them. originalFormValue is recomputed so
+   *  loading on its own does not register as an edit — the wizard's finish
+   *  button gates on the form having actually changed; emitEvent: false
+   *  keeps statusChanges from firing against the pre-load snapshot.
+   *  Validation still runs; only the notification is skipped. */
+  public loadCredentialsIntoEditor(): void {
+    const creds = this.credsSource()?.value();
+    if (!creds) return;
+    this.createEditServiceInstance.controls.credentials.setValue(
+      JSON.stringify(creds, null, 2), { emitEvent: false },
+    );
+    this.originalFormValue = this.getServiceData();
+  }
+
+  /** Credentials sub-resource, fetched on load in update mode so the
+   *  structure preview can render immediately. Fetching pulls the values
+   *  into memory only — the screen shows '<redacted>' markers until the
+   *  user explicitly asks for the real values (the threat model is a
+   *  passer-by reading the screen, not the browser session itself). */
+  public credsSource = signal<SignalSource<Record<string, unknown> | null> | null>(null);
+
+  /** The single credentials control's state in update mode:
+   *  'redacted' — readonly view, structure with '<redacted>' markers;
+   *  'revealed' — readonly view, real values;
+   *  'edit'     — the real textarea, holding the JSON that will be saved. */
+  public credsMode = signal<'redacted' | 'revealed' | 'edit'>('redacted');
+
+  public fetchCredentials(): void {
+    if (!this.isUpdate) return;
+    const { endpointId, serviceInstanceId } = this.route.snapshot.params;
+    this.credsMode.set('redacted');
+    this.credsSource.set(this.serviceCatalog.userProvidedCredentials(endpointId, serviceInstanceId));
+  }
+
+  public toggleReveal(): void {
+    this.credsMode.update(m => m === 'revealed' ? 'redacted' : 'revealed');
+  }
+
+  /** Swap the readonly view for the editable field, pre-loaded with the
+   *  real JSON. From here the field's content is what gets saved. */
+  public enterEdit(): void {
+    this.loadCredentialsIntoEditor();
+    this.credsMode.set('edit');
+  }
+
+  /** Leave edit mode without saving anything: blank the field (blank =
+   *  leave stored credentials untouched on save) and fall back to the
+   *  readonly redacted view. originalFormValue is recomputed so the
+   *  round-trip doesn't register as an edit. */
+  public cancelEdit(): void {
+    this.createEditServiceInstance.controls.credentials.setValue('', { emitEvent: false });
+    this.originalFormValue = this.getServiceData();
+    this.credsMode.set('redacted');
   }
   public createEditServiceInstance: FormGroup<CreateEditServiceInstanceForm>;
   public bindExistingInstance: FormGroup<BindExistingInstanceForm>;
   public allServiceInstanceNames!: string[];
   public subs: Subscription[] = [];
   public isUpdate: boolean;
-  public tags: { label: string }[] = [];
+  // Signal: written after the first render; an OnPush view under zoneless CD only repaints for signal writes.
+  readonly tags = signal<{ label: string }[]>([]);
   public validate = signal(false);
   private subscriptions: Subscription[] = [];
 
@@ -192,7 +288,7 @@ export class SpecifyUserProvidedDetailsComponent implements OnDestroy {
     this.createEditServiceInstance.reset();
     this.bindExistingInstance.reset();
     if (mode === CreateServiceFormMode.CreateServiceInstance) {
-      this.tags = [];
+      this.tags.set([]);
     }
   };
 
@@ -254,23 +350,23 @@ export class SpecifyUserProvidedDetailsComponent implements OnDestroy {
       ).subscribe(si => {
         this.createEditServiceInstance.enable();
         // StServiceInstance summary tier exposes name/syslogDrainUrl/
-        // routeServiceUrl/tags directly. credentials are intentionally
-        // NOT carried on the wire (sensitive — the v3 details/credentials
-        // sub-resource needs a separate call); the form starts the
-        // credentials textarea empty for edit, matching legacy behaviour
-        // where a missing credentials field meant "leave existing
-        // credentials untouched".
-        const credentialsJson = (si as unknown as { credentials?: unknown }).credentials !== undefined
-          ? JSON.stringify((si as unknown as { credentials?: unknown }).credentials)
-          : '';
+        // routeServiceUrl/tags directly. credentials are never on a read
+        // response (jetstream native_types.go) — reading them off this
+        // payload always yielded '', which is what left the textarea
+        // permanently blank on edit (#5755). They come from the separate
+        // credentials sub-resource via revealCredentials() instead.
+        //
+        // Blank still means "leave existing credentials untouched":
+        // getServiceData() maps '' to undefined and toV3RequestBody() omits
+        // the key, so saving without revealing preserves what CF holds.
         this.createEditServiceInstance.setValue({
           name: si.name,
           syslog_drain_url: si.syslogDrainUrl ?? '',
-          credentials: credentialsJson,
+          credentials: '',
           route_service_url: si.routeServiceUrl ?? '',
           tags: []
         });
-        this.tags = this.tagsArrayToChips(si.tags);
+        this.tags.set(this.tagsArrayToChips(si.tags));
         this.originalFormValue = this.getServiceData();
       });
     }
@@ -389,7 +485,7 @@ export class SpecifyUserProvidedDetailsComponent implements OnDestroy {
 
 
   private getTagsArray() {
-    return this.tags && Array.isArray(this.tags) ? this.tags.map(tag => tag.label) : [];
+    return this.tags().map(tag => tag.label);
   }
 
   private tagsArrayToChips(tagsArray: string[]) {
@@ -404,23 +500,23 @@ export class SpecifyUserProvidedDetailsComponent implements OnDestroy {
     const label = (input.value || '').trim();
 
     if (label) {
-      this.tags.push({ label });
+      this.tags.update(tags => [...tags, { label }]);
       this.updateTagsFormControl();
       input.value = '';
     }
   }
 
   public removeTag(tag: any): void {
-    const index = this.tags.indexOf(tag);
+    const index = this.tags().indexOf(tag);
 
     if (index >= 0) {
-      this.tags.splice(index, 1);
+      this.tags.update(tags => tags.filter((_, i) => i !== index));
       this.updateTagsFormControl();
     }
   }
 
   private updateTagsFormControl(): void {
-    const tagsArray = this.tags.map(t => t.label);
+    const tagsArray = this.tags().map(t => t.label);
     this.createEditServiceInstance.controls.tags.setValue(tagsArray);
     this.createEditServiceInstance.controls.tags.markAsTouched();
     // Mark the form as dirty to trigger change detection

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
@@ -13,9 +14,8 @@ import (
 
 	"github.com/cloudfoundry/stratos/src/jetstream/plugins/analysis/store"
 
-	"github.com/labstack/echo/v4"
-	uuid "github.com/satori/go.uuid"
-	log "github.com/sirupsen/logrus"
+	"github.com/google/uuid"
+	"github.com/labstack/echo/v5"
 )
 
 // Referenced only by the parked sonobuoy analyzer (container/sonobuoy.go_);
@@ -31,8 +31,8 @@ type KubeConfigExporter interface {
 
 const idHeaderName = "X-Stratos-Analaysis-ID"
 
-func (c *Analysis) runReport(ec echo.Context) error {
-	log.Debug("runReport")
+func (c *Analysis) runReport(ec *echo.Context) error {
+	slog.Debug("runReport")
 
 	analyzer := ec.Param("analyzer")
 	endpointID := ec.Param("endpoint")
@@ -46,7 +46,7 @@ func (c *Analysis) runReport(ec echo.Context) error {
 	}
 
 	report := store.AnalysisRecord{
-		ID:           uuid.NewV4().String(),
+		ID:           uuid.New().String(),
 		EndpointID:   endpointID,
 		EndpointType: endpoint.CNSIType,
 		UserID:       userID,
@@ -74,7 +74,7 @@ func (c *Analysis) runReport(ec echo.Context) error {
 		report.Status = "error"
 		report.Result = err.Error()
 		if updateErr := dbStore.UpdateReport(userID, &report); updateErr != nil {
-			log.Warnf("Could not update analysis report %s: %v", report.ID, updateErr)
+			slog.Warn("could not update the analysis report", "report", report.ID, "user", userID, "error", updateErr)
 		}
 	}
 
@@ -82,7 +82,7 @@ func (c *Analysis) runReport(ec echo.Context) error {
 
 }
 
-func (c *Analysis) doRunReport(ec echo.Context, analyzer, endpointID, userID string, dbStore store.AnalysisStore, report *store.AnalysisRecord) error {
+func (c *Analysis) doRunReport(ec *echo.Context, analyzer, endpointID, userID string, dbStore store.AnalysisStore, report *store.AnalysisRecord) error {
 
 	// Get Kube Config
 	k8s := c.portalProxy.GetPlugin("kubernetes")
@@ -155,7 +155,7 @@ func (c *Analysis) doRunReport(ec echo.Context, analyzer, endpointID, userID str
 	}
 
 	if rsp.StatusCode != http.StatusOK {
-		log.Debugf("Request failed with response code: %d", rsp.StatusCode)
+		slog.Debug("Analysis job request failed", "status", rsp.StatusCode)
 		return fmt.Errorf("Analysis job failed with response code: %d", rsp.StatusCode)
 	}
 
@@ -180,17 +180,14 @@ func (c *Analysis) doRunReport(ec echo.Context, analyzer, endpointID, userID str
 	report.Type = updatedJob.Type
 	report.Path = updatedJob.Path
 
-	log.Debug("OK => Job submitted okay")
-	log.Debug("=======================================================")
-	log.Debugf("%+v", report)
-	log.Debug("=======================================================")
+	slog.Debug("OK => Job submitted okay", "report", report)
 
 	err = dbStore.UpdateReport(userID, report)
 	if err != nil {
 		return fmt.Errorf("Could not save report %s", err)
 	}
 
-	log.Debug("All done - job saved")
+	slog.Debug("All done - job saved", "report", report.ID)
 
 	return ec.JSON(200, report)
 }

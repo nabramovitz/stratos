@@ -94,4 +94,53 @@ describe('ShapeMeasureService', () => {
       expect(service.inFlight().has('cf-1:ecosystem')).toBe(false);
     });
   });
+
+  describe('measureRoles', () => {
+    const pageUrl = (page: number) => `/pp/v1/cf/users/cf-1?per_page=500&page=${page}`;
+
+    it('takes the whole users-and-roles join in one drained request', () => {
+      expect(service.rolesCost()).toBe('1 request per 500 users');
+      service.measureRoles('cf-1');
+      expect(service.inFlight().has('cf-1:roles')).toBe(true);
+
+      httpMock.expectOne(pageUrl(1)).flush({
+        resources: [{ guid: 'u1', username: 'alice', cnsiGuid: 'cf-1', orgRoles: [{ orgGuid: 'o1', roles: ['org_manager'] }], spaceRoles: [] }],
+        pagination: { totalResults: 1, totalPages: 1 },
+      });
+      httpMock.verify();
+
+      const measured = service.roles().get('cf-1');
+      expect(measured?.users.map(u => u.username)).toEqual(['alice']);
+      expect(measured?.fetchedAt).toBeInstanceOf(Date);
+      expect(service.inFlight().has('cf-1:roles')).toBe(false);
+    });
+
+    it('drains every page — a >500-user foundation keeps its later-page users', () => {
+      service.measureRoles('cf-1');
+      httpMock.expectOne(pageUrl(1)).flush({
+        resources: [{ guid: 'u1', username: 'alice', cnsiGuid: 'cf-1', orgRoles: [], spaceRoles: [] }],
+        pagination: { totalResults: 501, totalPages: 2 },
+      });
+      httpMock.expectOne(pageUrl(2)).flush({
+        resources: [{ guid: 'u2', username: 'fw-lab-norm-07', cnsiGuid: 'cf-1', orgRoles: [], spaceRoles: [{ orgGuid: 'o1', spaceGuid: 's1', roles: ['developer'] }] }],
+        pagination: { totalResults: 501, totalPages: 2 },
+      });
+      httpMock.verify();
+
+      expect(service.roles().get('cf-1')?.users.map(u => u.username)).toEqual(['alice', 'fw-lab-norm-07']);
+    });
+
+    it('records nothing when the fetch fails, so failure never reads as "no grants"', () => {
+      service.measureRoles('cf-1');
+      httpMock.expectOne(pageUrl(1)).flush('nope', { status: 403, statusText: 'Forbidden' });
+      expect(service.roles().get('cf-1')).toBeUndefined();
+      expect(service.inFlight().has('cf-1:roles')).toBe(false);
+    });
+
+    it('distinguishes a foundation with no users from a failure', () => {
+      service.measureRoles('cf-1');
+      httpMock.expectOne(pageUrl(1)).flush({ resources: [], pagination: { totalResults: 0, totalPages: 1 } });
+      expect(service.roles().get('cf-1')?.users).toEqual([]);
+    });
+  });
 });

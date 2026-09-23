@@ -6,24 +6,27 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/fivetwenty-io/capi/v3/pkg/capi"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
-// derivedSortFields are StApp fields sourced from /v3/processes that CAPI
-// doesn't sort natively — requests on these trigger the fetch-all-sort-in-
-// memory-paginate fallback path in getNativeAppsSummary.
+// derivedSortFields are StApp fields sourced from /v3/processes (memory,
+// diskQuota, instances) or /v3/droplets (lastRefreshedAt) that CAPI doesn't
+// sort natively — requests on these trigger the fetch-all-sort-in-memory-
+// paginate fallback path in getNativeAppsSummary.
 var derivedSortFields = map[string]bool{
-	"memory":    true,
-	"diskQuota": true,
-	"instances": true,
+	"memory":          true,
+	"diskQuota":       true,
+	"instances":       true,
+	"lastRefreshedAt": true,
 }
 
 // isDerivedSortField returns true when the Stratos-shape order_by value
-// refers to a process-derived field (memory / diskQuota / instances).
-// Accepts both "field" and "-field" forms; returns the bare field name and
-// the descending flag.
+// refers to a process-derived field (memory / diskQuota / instances) or
+// droplet-derived field (lastRefreshedAt). Accepts both "field" and "-field"
+// forms; returns the bare field name and the descending flag.
 func isDerivedSortField(orderBy string) (bool, string, bool) {
 	if orderBy == "" {
 		return false, "", false
@@ -58,7 +61,7 @@ var stratosReservedSummaryParams = map[string]bool{
 // needs for pagination meta and in-memory slicing — resolved because the
 // params only carry paging when the caller supplied per_page (absent
 // paging stays off the upstream call so V3 applies its own defaults).
-func parseSummaryQueryParams(ctx echo.Context) (*capi.QueryParams, int, int) {
+func parseSummaryQueryParams(ctx *echo.Context) (*capi.QueryParams, int, int) {
 	perPage, page, present := parsePerPageAndPage(ctx)
 	params := applyPagingParams(capi.NewQueryParams(), perPage, page, present)
 
@@ -108,7 +111,7 @@ var routesDerivedFields = []string{"routes"}
 // a map keyed by app GUID so per-app composition is a cheap lookup. Returns
 // an error on any CAPI failure; the caller converts this into an envelope-
 // level _meta.errors entry rather than failing the whole response.
-func fetchWebProcessesForApps(ctx echo.Context, cfClient capi.Client, appGUIDs []string) (map[string]capi.Process, error) {
+func fetchWebProcessesForApps(ctx *echo.Context, cfClient capi.Client, appGUIDs []string) (map[string]capi.Process, error) {
 	if len(appGUIDs) == 0 {
 		return map[string]capi.Process{}, nil
 	}
@@ -147,7 +150,7 @@ func fetchWebProcessesForApps(ctx echo.Context, cfClient capi.Client, appGUIDs [
 // resolve each app's space GUID to an org GUID via the space's relationship
 // envelope. Returns an error on any CAPI failure; caller converts into an
 // envelope-level _meta.errors entry rather than failing the whole response.
-func fetchSpacesByGUIDs(ctx echo.Context, cfClient capi.Client, spaceGUIDs []string) (map[string]capi.Space, error) {
+func fetchSpacesByGUIDs(ctx *echo.Context, cfClient capi.Client, spaceGUIDs []string) (map[string]capi.Space, error) {
 	if len(spaceGUIDs) == 0 {
 		return map[string]capi.Space{}, nil
 	}
@@ -182,7 +185,7 @@ func fetchSpacesByGUIDs(ctx echo.Context, cfClient capi.Client, spaceGUIDs []str
 // fanout that resolves SpaceName. Eliminates a frontend orgs-catalog
 // fetch + per-row resolver previously needed just to render the
 // "CF / Org / Space" cell on the app wall.
-func fetchOrgsByGUIDs(ctx echo.Context, cfClient capi.Client, orgGUIDs []string) (map[string]capi.Organization, error) {
+func fetchOrgsByGUIDs(ctx *echo.Context, cfClient capi.Client, orgGUIDs []string) (map[string]capi.Organization, error) {
 	if len(orgGUIDs) == 0 {
 		return map[string]capi.Organization{}, nil
 	}
@@ -220,7 +223,7 @@ func fetchOrgsByGUIDs(ctx echo.Context, cfClient capi.Client, orgGUIDs []string)
 // envelope-level _meta.errors entry rather than failing the whole
 // response. Each app's bucket is allocated lazily — apps with no routes
 // stay absent from the map (callers default to []).
-func fetchRoutesForApps(ctx echo.Context, cfClient capi.Client, appGUIDs []string) (map[string][]StAppRoute, error) {
+func fetchRoutesForApps(ctx *echo.Context, cfClient capi.Client, appGUIDs []string) (map[string][]StAppRoute, error) {
 	if len(appGUIDs) == 0 {
 		return map[string][]StAppRoute{}, nil
 	}
@@ -269,6 +272,56 @@ func fetchRoutesForApps(ctx echo.Context, cfClient capi.Client, appGUIDs []strin
 	return out, nil
 }
 
+var dropletDerivedFields = []string{"lastRefreshedAt"}
+
+// fetchDropletsForApps returns, per app guid, the created_at of that app's
+// newest STAGED droplet, RFC3339-formatted. Newest-by-created_at rather
+// than "current droplet": rollbacks and droplet copies can repoint the
+// current droplet at an old row, but can't change which row is newest.
+// Apps that never staged have no entry — legit absence, not a failure.
+func fetchDropletsForApps(ctx *echo.Context, cfClient capi.Client, appGUIDs []string) (map[string]string, error) {
+	if len(appGUIDs) == 0 {
+		return map[string]string{}, nil
+	}
+	newest := make(map[string]time.Time, len(appGUIDs))
+	// Chunked — see native_guid_chunks.go / #5579.
+	cerr := forEachGuidChunk("app_guids", appGUIDs, func(chunk []string) error {
+		for page := 1; ; page++ {
+			params := capi.NewQueryParams().WithPerPage(fullPagePerRequest)
+			params.Page = page
+			params.Filters["app_guids"] = chunk
+			params.Filters["states"] = []string{"STAGED"}
+			raw, err := cfClient.Droplets().List(ctx.Request().Context(), params)
+			if err != nil {
+				return err
+			}
+			for _, d := range raw.Resources {
+				if d.Relationships == nil || d.Relationships.App == nil {
+					continue
+				}
+				appGUID := relationshipGUID(*d.Relationships.App)
+				if appGUID == "" {
+					continue
+				}
+				if cur, ok := newest[appGUID]; !ok || d.CreatedAt.After(cur) {
+					newest[appGUID] = d.CreatedAt
+				}
+			}
+			if raw.Pagination.Next == nil || page >= raw.Pagination.TotalPages {
+				return nil
+			}
+		}
+	})
+	if cerr != nil {
+		return nil, cerr
+	}
+	out := make(map[string]string, len(newest))
+	for g, ts := range newest {
+		out[g] = ts.Format(time.RFC3339)
+	}
+	return out, nil
+}
+
 // composeStAppSummary builds a summary-tier StApp from its source app, its
 // web Process (may be nil), its Space (may be nil for unresolved), and its
 // route bucket (nil signals routes-fetch failure; an empty slice signals a
@@ -279,7 +332,11 @@ func fetchRoutesForApps(ctx echo.Context, cfClient capi.Client, appGUIDs []strin
 // the orgs-by-guid fetch failed or the org wasn't returned. Stitched at
 // the caller from a batched fetchOrgsByGUIDs so the per-app composition
 // remains pure (no per-row CAPI fanout).
-func composeStAppSummary(app capi.App, cnsiGUID string, process *capi.Process, space *capi.Space, orgName string, routes []StAppRoute) StApp {
+// droplets maps app guid → newest-STAGED-droplet created_at (RFC3339); nil
+// signals the droplets fetch failed (surfaces "lastRefreshedAt" in
+// _meta.unavailable), a non-nil map with a missing key means the app
+// simply never staged (field stays absent, not a failure).
+func composeStAppSummary(app capi.App, cnsiGUID string, process *capi.Process, space *capi.Space, orgName string, routes []StAppRoute, droplets map[string]string) StApp {
 	s := toStApp(app, cnsiGUID)
 
 	var unavailable []string
@@ -321,6 +378,15 @@ func composeStAppSummary(app capi.App, cnsiGUID string, process *capi.Process, s
 		unavailable = append(unavailable, routesDerivedFields...)
 	}
 
+	if droplets != nil {
+		if ts, ok := droplets[app.GUID]; ok {
+			s.LastRefreshedAt = ts
+		}
+		// missing key = never staged: field stays absent, NOT unavailable.
+	} else {
+		unavailable = append(unavailable, dropletDerivedFields...)
+	}
+
 	if len(unavailable) > 0 {
 		s.Meta = &StratosMeta{Unavailable: unavailable}
 	}
@@ -332,7 +398,7 @@ func composeStAppSummary(app capi.App, cnsiGUID string, process *capi.Process, s
 // envelope's _meta stays absent) when no errors occurred. Supports
 // additively stacking errors — each failed sub-fetch gets its own envelope
 // error with its own Affected + AffectedGuids lists.
-func envelopeMetaForCompositionErrors(procErr, spaceErr, routesErr error, affectedGUIDs []string) *StratosMeta {
+func envelopeMetaForCompositionErrors(procErr, spaceErr, routesErr, dropletsErr error, affectedGUIDs []string) *StratosMeta {
 	var errors []StratosError
 	if procErr != nil {
 		errors = append(errors, StratosError{
@@ -364,6 +430,16 @@ func envelopeMetaForCompositionErrors(procErr, spaceErr, routesErr error, affect
 			AffectedGuids: append([]string(nil), affectedGUIDs...),
 		})
 	}
+	if dropletsErr != nil {
+		errors = append(errors, StratosError{
+			Scope:         "envelope",
+			Code:          "DROPLETS_FETCH_FAILED",
+			Title:         "Droplets fetch failed",
+			Detail:        dropletsErr.Error(),
+			Affected:      append([]string(nil), dropletDerivedFields...),
+			AffectedGuids: append([]string(nil), affectedGUIDs...),
+		})
+	}
 	if len(errors) == 0 {
 		return nil
 	}
@@ -381,7 +457,7 @@ func envelopeMetaForCompositionErrors(procErr, spaceErr, routesErr error, affect
 // returns HTTP 200 with app-level fields intact — per-row
 // _meta.unavailable lists affected fields, envelope _meta.errors explains
 // root causes.
-func (c *CloudFoundrySpecification) getNativeAppsSummary(ctx echo.Context, cfClient capi.Client) error {
+func (c *CloudFoundrySpecification) getNativeAppsSummary(ctx *echo.Context, cfClient capi.Client) error {
 	cnsiGUID := ctx.Param("cnsiGuid")
 	params, perPage, page := parseSummaryQueryParams(ctx)
 
@@ -410,6 +486,7 @@ func (c *CloudFoundrySpecification) getNativeAppsSummary(ctx echo.Context, cfCli
 	processes, procErr := fetchWebProcessesForApps(ctx, cfClient, appGUIDs)
 	spaces, spaceErr := fetchSpacesByGUIDs(ctx, cfClient, spaceGUIDs)
 	routesByApp, routesErr := fetchRoutesForApps(ctx, cfClient, appGUIDs)
+	dropletsByApp, dropletsErr := fetchDropletsForApps(ctx, cfClient, appGUIDs)
 
 	// Orgs-by-guid for the OrgName stitch. Derive the unique org guids
 	// from the spaces we just fetched — every app's org is reachable
@@ -461,13 +538,17 @@ func (c *CloudFoundrySpecification) getNativeAppsSummary(ctx echo.Context, cfCli
 				rts = []StAppRoute{}
 			}
 		}
-		resources = append(resources, composeStAppSummary(r, cnsiGUID, p, s, orgName, rts))
+		var drops map[string]string
+		if dropletsErr == nil {
+			drops = dropletsByApp
+		}
+		resources = append(resources, composeStAppSummary(r, cnsiGUID, p, s, orgName, rts, drops))
 	}
 
 	response := StratosPagedResponse[StApp]{
 		Resources:  resources,
 		Pagination: BuildPaginationMeta(ctx, page, perPage, raw.Pagination.TotalResults),
-		Meta:       envelopeMetaForCompositionErrors(procErr, spaceErr, routesErr, appGUIDs),
+		Meta:       envelopeMetaForCompositionErrors(procErr, spaceErr, routesErr, dropletsErr, appGUIDs),
 	}
 
 	return ctx.JSON(http.StatusOK, response)
@@ -482,7 +563,7 @@ func (c *CloudFoundrySpecification) getNativeAppsSummary(ctx echo.Context, cfCli
 // app set — no cross-CF buffer (cross-CF merge is the frontend primitive's
 // concern in WU 4).
 func (c *CloudFoundrySpecification) getNativeAppsSummaryDerivedSort(
-	ctx echo.Context,
+	ctx *echo.Context,
 	cfClient capi.Client,
 	params *capi.QueryParams,
 	sortField string,
@@ -513,6 +594,7 @@ func (c *CloudFoundrySpecification) getNativeAppsSummaryDerivedSort(
 	processes, procErr := fetchWebProcessesForApps(ctx, cfClient, appGUIDs)
 	spaces, spaceErr := fetchSpacesByGUIDs(ctx, cfClient, spaceGUIDs)
 	routesByApp, routesErr := fetchRoutesForApps(ctx, cfClient, appGUIDs)
+	dropletsByApp, dropletsErr := fetchDropletsForApps(ctx, cfClient, appGUIDs)
 
 	// Orgs-by-guid stitch (mirrors getNativeAppsSummary above).
 	orgs := map[string]capi.Organization{}
@@ -558,7 +640,11 @@ func (c *CloudFoundrySpecification) getNativeAppsSummaryDerivedSort(
 				rts = []StAppRoute{}
 			}
 		}
-		composed = append(composed, composeStAppSummary(r, cnsiGUID, p, s, orgName, rts))
+		var drops map[string]string
+		if dropletsErr == nil {
+			drops = dropletsByApp
+		}
+		composed = append(composed, composeStAppSummary(r, cnsiGUID, p, s, orgName, rts, drops))
 	}
 
 	sortStAppsByDerivedField(composed, sortField, desc)
@@ -577,7 +663,7 @@ func (c *CloudFoundrySpecification) getNativeAppsSummaryDerivedSort(
 	response := StratosPagedResponse[StApp]{
 		Resources:  pageSlice,
 		Pagination: BuildPaginationMeta(ctx, requestedPage, requestedPerPage, totalResults),
-		Meta:       envelopeMetaForCompositionErrors(procErr, spaceErr, routesErr, appGUIDs),
+		Meta:       envelopeMetaForCompositionErrors(procErr, spaceErr, routesErr, dropletsErr, appGUIDs),
 	}
 
 	return ctx.JSON(http.StatusOK, response)
@@ -610,10 +696,19 @@ func fetchAllAppsWithFilters(ctx context.Context, cfClient capi.Client, filters 
 }
 
 // sortStAppsByDerivedField sorts composed StApps in place on a process-
-// derived field. Rows with a nil value for the field (composition failure
-// on that row) sort to the end regardless of direction — unavailable data
-// isn't ranked ahead of known data, either as largest or smallest.
+// derived field. Rows with a nil/absent value for the field (composition
+// failure on that row, or an app that's never been staged) sort to the end
+// regardless of direction — unavailable data isn't ranked ahead of known
+// data, either as largest/latest or smallest/earliest.
+//
+// lastRefreshedAt is string-valued (RFC3339, sorts lexicographically =
+// chronologically) so it gets its own comparator rather than being boxed
+// into the numeric one below.
 func sortStAppsByDerivedField(apps []StApp, field string, desc bool) {
+	if field == "lastRefreshedAt" {
+		sortStAppsByDerivedStringField(apps, field, desc)
+		return
+	}
 	sort.SliceStable(apps, func(i, j int) bool {
 		vi, iPresent := derivedSortValue(apps[i], field)
 		vj, jPresent := derivedSortValue(apps[j], field)
@@ -655,4 +750,44 @@ func derivedSortValue(app StApp, field string) (int, bool) {
 		return app.Instances, true
 	}
 	return 0, false
+}
+
+// sortStAppsByDerivedStringField sorts composed StApps in place on a
+// string-valued derived field, applying the same nils-sort-last posture as
+// sortStAppsByDerivedField's numeric path.
+func sortStAppsByDerivedStringField(apps []StApp, field string, desc bool) {
+	sort.SliceStable(apps, func(i, j int) bool {
+		vi, iPresent := derivedSortStringValue(apps[i], field)
+		vj, jPresent := derivedSortStringValue(apps[j], field)
+
+		// Absent values always sort last
+		if !iPresent && jPresent {
+			return false
+		}
+		if iPresent && !jPresent {
+			return true
+		}
+		if !iPresent && !jPresent {
+			return false
+		}
+		if desc {
+			return vi > vj
+		}
+		return vi < vj
+	})
+}
+
+// derivedSortStringValue returns the string value of a string-valued
+// derived sort field on a StApp, plus a present flag. LastRefreshedAt is
+// empty for apps that have never had a droplet staged, which is treated as
+// absent (not a valid, empty-string sort key).
+func derivedSortStringValue(app StApp, field string) (string, bool) {
+	switch field {
+	case "lastRefreshedAt":
+		if app.LastRefreshedAt == "" {
+			return "", false
+		}
+		return app.LastRefreshedAt, true
+	}
+	return "", false
 }

@@ -40,7 +40,9 @@ export class ConnectEndpointComponent implements OnInit, OnDestroy {
 
   private pDisabled = false;
   private pConnectService!: ConnectEndpointService;
-  @Input() set connectService(service: ConnectEndpointService) {
+  // A host may bind this before its own service exists (create-endpoint's
+  // connect step); the setter ignores the unset value and waits for the real one.
+  @Input() set connectService(service: ConnectEndpointService | undefined) {
     if (!service || this.pConnectService) {
       return;
     }
@@ -106,7 +108,7 @@ export class ConnectEndpointComponent implements OnInit, OnDestroy {
     }
 
     // Not all endpoint types might allow token sharing - typically types like metrics do
-    this.canShareEndpointToken = endpoint.definition.tokenSharing ?? false;
+    this.canShareEndpointToken = endpoint?.definition?.tokenSharing ?? false;
 
     // Create the endpoint form
     this.autoSelected = (this.authTypesForEndpoint.length > 0) ? this.authTypesForEndpoint[0] : { form: null } as EndpointAuthTypeConfig;
@@ -197,7 +199,10 @@ export class ConnectEndpointComponent implements OnInit, OnDestroy {
 
     this.authFormComponentRef = this.container.createComponent<IAuthForm>(authType.component);
     this.authFormComponentRef.instance.formGroup = this.endpointForm;
-    this.authFormComponentRef.instance.config = authType.config;
+    // Auth types without a config (e.g. the generic Bearer/Token entries)
+    // must not overwrite the form component's `config = {}` default with
+    // undefined — templates read fields like config.helpText unguarded.
+    this.authFormComponentRef.instance.config = authType.config ?? {};
     if (this.pDisabled) { this.endpointForm.disable(); } else { this.endpointForm.enable(); }
   }
 

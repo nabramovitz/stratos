@@ -2,12 +2,11 @@
 package cloudfoundry
 
 import (
+	"log/slog"
 	"net/http"
 
-	log "github.com/sirupsen/logrus"
-
 	"github.com/fivetwenty-io/capi/v3/pkg/capi"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // getAppServiceBindings handles
@@ -39,7 +38,7 @@ import (
 // Soft-fail on the include join: a malformed entry is skipped and the
 // row falls back to the binding's own name; the response still ships
 // rather than 502'ing the whole tab.
-func (c *CloudFoundrySpecification) getAppServiceBindings(ctx echo.Context) error {
+func (c *CloudFoundrySpecification) getAppServiceBindings(ctx *echo.Context) error {
 	cnsiGUID := ctx.Param("cnsiGuid")
 	appGUID := ctx.Param("appGuid")
 	if cnsiGUID == "" || appGUID == "" {
@@ -133,7 +132,7 @@ func (c *CloudFoundrySpecification) getAppServiceBindings(ctx echo.Context) erro
 //   - summary  — base + app.name + serviceInstance.{name,type} via
 //     ?include=app,service_instance.
 //   - details  — degrades to summary today (no consumer asks for details).
-func (c *CloudFoundrySpecification) getServiceInstanceServiceBindings(ctx echo.Context) error {
+func (c *CloudFoundrySpecification) getServiceInstanceServiceBindings(ctx *echo.Context) error {
 	cnsiGUID := ctx.Param("cnsiGuid")
 	instanceGUID := ctx.Param("instanceGuid")
 	if cnsiGUID == "" || instanceGUID == "" {
@@ -215,7 +214,7 @@ func (c *CloudFoundrySpecification) getServiceInstanceServiceBindings(ctx echo.C
 func bindingJoinsFromIncluded(list *capi.ListResponse[capi.ServiceCredentialBinding]) (map[string]capi.ServiceInstance, map[string]capi.App) {
 	inc, err := capi.ServiceCredentialBindingIncludedFrom(list)
 	if err != nil {
-		log.Warnf("service_credential_bindings: could not decode included block: %v", err)
+		slog.Warn("service_credential_bindings: could not decode the included block", "err", err)
 		return map[string]capi.ServiceInstance{}, map[string]capi.App{}
 	}
 	return keyByGUID(inc.ServiceInstances, func(si capi.ServiceInstance) string { return si.GUID }),

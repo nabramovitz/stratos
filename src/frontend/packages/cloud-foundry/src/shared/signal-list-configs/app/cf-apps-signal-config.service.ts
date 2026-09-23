@@ -3,8 +3,10 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import type { EndpointModel } from '@stratosui/store';
+import { endpointDropdownOptions } from '../endpoint-dropdown-options';
 import { EndpointErrorEventsService } from '@stratosui/store';
 import { CnsiAppsSource } from '../../../services/data-sources/cnsi-apps-source';
+import { CnsiStacksSource } from '../../../services/data-sources/cnsi-stacks-source';
 import { MergeOrchestrator } from '../../../services/data-sources/merge-orchestrator';
 import { wireEndpointErrorReporting } from '../endpoint-error-reporting';
 import { EndpointDataRegistry } from '../../../services/endpoint-data/endpoint-data.registry';
@@ -13,12 +15,12 @@ import { runCfDelete } from '../../../services/deletes/run-cf-delete';
 import { applicationEntityType, routeEntityType } from '../../../cf-entity-types';
 import { serviceCredentialBindingEntityType } from '../../../entity-relations/signal/cf-relation-registrations';
 import { ViewPipeline, SortSpec } from '../../../services/data-sources/view-pipeline';
-import type { StApp, StAppRoutesResponse, StOrg, StOrgsResponse, StRoute, StServiceCredentialBinding, StServiceCredentialBindingsResponse, StSpace, StSpacesResponse } from '../../../services/endpoint-data/stratos-types';
+import type { StApp, StAppRoutesResponse, StOrg, StOrgsResponse, StRoute, StServiceCredentialBinding, StServiceCredentialBindingsResponse, StSpace, StSpacesResponse, StStack } from '../../../services/endpoint-data/stratos-types';
 import { CloudFoundryService } from '../../data-services/cloud-foundry.service';
 import { writeWithJob } from '../../../services/async-jobs/write-with-job';
 import type { StratosJob } from '../../../services/async-jobs/async-job.types';
-import type { SignalListDropdownOption } from '@stratosui/core';
-import { ListStateStore, naturalCompare } from '@stratosui/core';
+import type { SignalListDropdownOption, SignalListRangeValue } from '@stratosui/core';
+import { ListStateStore, naturalCompare, rangeMatches } from '@stratosui/core';
 
 // Re-export the bulk-endpoint response shapes so per-space app consumers
 // import a single BulkResult type without reaching across into the routes
@@ -118,6 +120,83 @@ export class CfAppsSignalConfigService {
   // is the expected visual cue.
   private readonly _orgsByCnsi = signal<Map<string, StOrg[]>>(new Map());
   private readonly _spacesByCnsi = signal<Map<string, StSpace[]>>(new Map());
+
+  // Installed-stacks catalog, per scoped CNSI, fetched EAGERLY on
+  // initialize() — unlike the lazy org/space catalogs, because the stack
+  // column/filter's own visibility depends on it. Options and visibility
+  // read the catalog (what the foundation has installed), never the loaded
+  // apps: a stack with zero apps must stay selectable so an operator can
+  // filter to it, see 0 results, and conclude the stack is removable.
+  private readonly _stacksByCnsi = signal<Map<string, StStack[]>>(new Map());
+  // The cnsi guids the current mount was initialized with; scopes both
+  // visibility and the option union (wall = all connected CFs, per-CF and
+  // per-space tabs = one).
+  private readonly _scopeCnsiGuids = signal<readonly string[]>([]);
+  // Bumped per initialize() so a slow stacks fetch from a previous mount
+  // can't overwrite the new scope's catalog.
+  private _stacksGen = 0;
+
+  // Stack filter: multi-select, driven by the field-selectable filter's
+  // checklist-popup input (SignalListMultiFilter). null = all stacks (no
+  // constraint); an explicitly empty array is ALSO treated as all — the
+  // popup shows a note rather than silently emptying the app list.
+  readonly selectedStacks: WritableSignal<string[] | null> = signal(null);
+
+  // Range constraint on lastRefreshedAt, shared by all three list
+  // variants (root singleton, same as selectedStacks). null = no
+  // constraint. Unlike stack there is no visibility gate to go stale
+  // against — the column and control are always shown.
+  readonly lastRefreshedRange: WritableSignal<SignalListRangeValue | null> = signal(null);
+
+  // Stack UI (column + dropdown) shows when ANY scoped endpoint has 2+
+  // installed stacks; a single-stack foundation would render a constant
+  // column. Endpoint-scoped pages pass one guid, so "any" degenerates to
+  // "that endpoint" there.
+  readonly stackUiVisible: Signal<boolean> = computed(() => {
+    const byCnsi = this._stacksByCnsi();
+    for (const guid of this._scopeCnsiGuids()) {
+      if ((byCnsi.get(guid)?.length ?? 0) >= 2) return true;
+    }
+    return false;
+  });
+
+  // Dropdown options: installed stack NAMES (the predicate matches
+  // app.stackName, a name — stack guids never appear on app rows).
+  // Cascades to the selected CF like orgOptions does.
+  readonly stackOptions: Signal<SignalListDropdownOption[]> = computed(() => {
+    const cnsi = this.selectedCnsi();
+    const byCnsi = this._stacksByCnsi();
+    const scope = cnsi ? [cnsi] : this._scopeCnsiGuids();
+    const names = new Set<string>();
+    for (const guid of scope) {
+      for (const s of byCnsi.get(guid) ?? []) names.add(s.name);
+    }
+    const opts: SignalListDropdownOption[] = [{ label: 'All', value: null }];
+    for (const name of Array.from(names).sort((a, b) => naturalCompare(a, b))) {
+      opts.push({ label: name, value: name });
+    }
+    return opts;
+  });
+
+  // Status filter: multi-select, same checklist-popup model as the stack
+  // filter above — null/[] both mean "all". Unlike stack, Status has no
+  // installed-catalog to fetch and no visibility gate: CF only reports a
+  // handful of lifecycle states, so the option set is a fixed vocabulary
+  // rather than something to discover per-endpoint.
+  readonly selectedStates: WritableSignal<string[] | null> = signal(null);
+
+  // The four user-facing labels every app-list's Status column already
+  // renders (see each consumer's local `stateLabel` mapping, also
+  // registered as the 'state' filter extractor). Kept here as the single
+  // list of checkbox options so the checklist can't drift from what the
+  // column actually shows; the LABEL → app match itself is done via the
+  // registered extractor in the filter predicate below, not a second
+  // mapping, so the two can't disagree either.
+  private static readonly STATUS_LABELS: readonly string[] =
+    ['Deployed - Online', 'Stopped', 'Crashed', 'Failed'];
+  readonly statusOptions: Signal<string[]> =
+    signal([...CfAppsSignalConfigService.STATUS_LABELS]).asReadonly();
+
   // Loading flags for the Org / Space toolbar dropdowns — set true while
   // loadNames() is fetching and cleared once the relevant map is populated.
   // Drives the SignalListDropdown spinner so users see "loading" rather
@@ -193,13 +272,7 @@ export class CfAppsSignalConfigService {
       : signal<EndpointModel[]>([]).asReadonly();
 
     // CF options come from the connected endpoints list directly.
-    this.cnsiOptions = computed(() => {
-      const opts: SignalListDropdownOption[] = [{ label: 'All', value: null }];
-      for (const ep of this.connectedEndpoints() ?? []) {
-        opts.push({ label: ep.name ?? ep.guid, value: ep.guid ?? null });
-      }
-      return opts;
-    });
+    this.cnsiOptions = computed(() => endpointDropdownOptions(this.connectedEndpoints()));
 
     // Endpoint guid → name, for rendering cnsi references as names
     // (e.g., in the app-wall CF/Org/Space column).
@@ -347,6 +420,20 @@ export class CfAppsSignalConfigService {
       if (!selectedCfFailed) {
         if (orgCatalogReady && org != null && !orgValues.has(org)) this.selectedOrg.set(null);
         if (spaceCatalogReady && space != null && !spaceValues.has(space)) this.selectedSpace.set(null);
+        // Multi-select stack: drop just the vanished name(s) rather than
+        // clearing the whole selection — an operator who picked 3 stacks
+        // and lost 1 (e.g. it was uninstalled) keeps filtering on the
+        // other 2. An empty result after dropping collapses to null
+        // (== all), matching toggleMultiOption's canonical-null contract.
+        const stackCatalogReady = this.stackOptions().length > 1;
+        const stacks = this.selectedStacks();
+        if (stackCatalogReady && stacks != null && stacks.length > 0) {
+          const validNames = new Set(this.stackOptions().map(o => o.value));
+          const kept = stacks.filter(name => validNames.has(name));
+          if (kept.length !== stacks.length) {
+            this.selectedStacks.set(kept.length > 0 ? kept : null);
+          }
+        }
       }
     });
 
@@ -359,14 +446,44 @@ export class CfAppsSignalConfigService {
       const cnsi = this.selectedCnsi();
       const org = this.selectedOrg();
       const space = this.selectedSpace();
+      const stacks = this.selectedStacks();
+      const stackUiVisible = this.stackUiVisible();
+      const states = this.selectedStates();
+      const refreshed = this.lastRefreshedRange();
       const q = this.nameFilter().trim().toLowerCase();
       const field = this.filterField();
       const extractors = this._filterExtractors();
       const extractor = extractors.get(field);
+      // Reuse the SAME 'state' extractor the consumer registers for the
+      // text-filter (registerFilterExtractor('state', stateLabel)) rather
+      // than a second label mapping here — the checklist options and the
+      // predicate then can't disagree about what a state maps to.
+      const stateExtractor = extractors.get('state');
       this.filter.set((app: StApp) => {
         if (cnsi && app.cnsiGuid !== cnsi) return false;
         if (org && app.orgGuid !== org) return false;
         if (space && app.spaceGuid !== space) return false;
+        // null or [] both mean "all" — see selectedStacks doc comment.
+        // Gated on stackUiVisible: the checklist only renders (and the
+        // consumer only wires filterMultis) while the stack UI is
+        // visible, but selectedStacks is a root-singleton signal that
+        // can carry a stale selection in from a page where it WAS
+        // visible. Without this gate, a single-stack scope with no
+        // stack control on screen and no way to clear it would still
+        // silently drop every docker app — a filter with no visible
+        // control and a disabled Clear button. Status has no such gate:
+        // it has no visibility condition to go stale against, since it's
+        // always shown.
+        if (stackUiVisible && stacks && stacks.length > 0 && (!app.stackName || !stacks.includes(app.stackName))) return false;
+        if (!rangeMatches(app.lastRefreshedAt, refreshed, 'date')) return false;
+        // Same posture: an app whose label isn't one of the four known
+        // options (raw/unknown CF state, extractor unregistered) only
+        // fails to match while the filter is actually narrowed — it
+        // stays findable whenever the filter is inert.
+        if (states && states.length > 0) {
+          const label = stateExtractor ? stateExtractor(app) : (app.state ?? '');
+          if (!states.includes(label)) return false;
+        }
         if (q) {
           const hay = (extractor ? extractor(app) : (app.name ?? '')).toLowerCase();
           if (!hay.includes(q)) return false;
@@ -396,6 +513,8 @@ export class CfAppsSignalConfigService {
     // alongside the dedup sets so previously-resolved names don't bleed
     // across initialize() calls.
     this.clearResolverState();
+    this._scopeCnsiGuids.set([...cnsiGuids]);
+    void this.loadStacksCatalog(cnsiGuids);
     const sources = cnsiGuids.map(guid => {
       const eds = this.endpointRegistry.acquire(guid);
       const source = new CnsiAppsSource(guid, this.http, eds);
@@ -507,6 +626,24 @@ export class CfAppsSignalConfigService {
     if (!guids.length) return Promise.resolve();
     this._namesLoadingPromise = this.loadNames(guids);
     return this._namesLoadingPromise;
+  }
+
+  // Fetch the installed-stacks catalog for every scoped endpoint. Stacks
+  // are tiny (<10 per CF) so the eager fanout is one small request per
+  // endpoint. CnsiEntitySource.load() never throws — a failed endpoint
+  // contributes an empty list, which reads as "single stack": the UI
+  // stays hidden rather than erroring.
+  private async loadStacksCatalog(cnsiGuids: readonly string[]): Promise<void> {
+    const gen = ++this._stacksGen;
+    const results = await Promise.all(cnsiGuids.map(async guid => {
+      const source = new CnsiStacksSource(guid, this.http);
+      await source.load();
+      return { guid, stacks: [...source.items()] };
+    }));
+    if (gen !== this._stacksGen) return;
+    const m = new Map<string, StStack[]>();
+    for (const { guid, stacks } of results) m.set(guid, stacks);
+    this._stacksByCnsi.set(m);
   }
 
   private async loadNames(cnsiGuids: readonly string[]): Promise<void> {
@@ -833,6 +970,9 @@ export class CfAppsSignalConfigService {
     this.selectedCnsi.set(null);
     this.selectedOrg.set(null);
     this.selectedSpace.set(null);
+    this.selectedStacks.set(null);
+    this.lastRefreshedRange.set(null);
+    this.selectedStates.set(null);
     this.nameFilter.set('');
     this.filterField.set('name');
     this.sort.set({ field: 'name', direction: 'asc' });

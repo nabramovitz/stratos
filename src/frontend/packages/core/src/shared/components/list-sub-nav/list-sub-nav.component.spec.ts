@@ -60,6 +60,24 @@ describe('ListSubNavComponent — original behaviour', () => {
     expect(title.textContent).toContain('1');
   });
 
+  it('renders blinking pending dots instead of the count while loading() is true', () => {
+    component.title = 'Total Users';
+    component.count = signal(0).asReadonly();
+    const loading = signal(true);
+    component.loading = loading.asReadonly();
+    fixture.detectChanges();
+
+    let title = html().querySelector('[data-test="list-sub-nav-title"]')!;
+    expect(title.querySelector('[data-test="count-pending"]')).toBeTruthy();
+    expect(title.textContent).not.toContain('0');
+
+    loading.set(false);
+    fixture.detectChanges();
+    title = html().querySelector('[data-test="list-sub-nav-title"]')!;
+    expect(title.textContent).toContain('0');
+    expect(title.querySelector('[data-test="count-pending"]')).toBeNull();
+  });
+
   it('renders the add button when addAction is provided', () => {
     component.title = 'Total Routes';
     component.count = signal(0).asReadonly();

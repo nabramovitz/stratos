@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { importProvidersFrom, provideZonelessChangeDetection, signal } from '@angular/core';
 import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -146,11 +147,17 @@ function makeStubAppsConfig() {
     selectedCnsi: signal<string | null>(null),
     selectedOrg: signal<string | null>(null),
     selectedSpace: signal<string | null>(null),
+    selectedStacks: signal<string[] | null>(null),
+    selectedStates: signal<string[] | null>(null),
+    lastRefreshedRange: signal<any>(null),
     nameFilter: signal(''),
     filterField: signal('name'),
     viewMode: signal<'card' | 'table'>('card'),
     orgOptions: signal([allOption]).asReadonly(),
     spaceOptions: signal([allOption]).asReadonly(),
+    stackUiVisible: signal(false).asReadonly(),
+    stackOptions: signal([allOption]).asReadonly(),
+    statusOptions: signal(['Deployed - Online', 'Stopped', 'Crashed', 'Failed']).asReadonly(),
     isLoadingOrgs: signal(false).asReadonly(),
     isLoadingSpaces: signal(false).asReadonly(),
     orgNames: signal(new Map<string, string>()).asReadonly(),
@@ -174,6 +181,7 @@ describe('CloudFoundryApplicationsSignalComponent (component)', () => {
         provideZonelessChangeDetection(),
         provideRouter([]),
         provideHttpClient(),
+        provideHttpClientTesting(),
         ...STORE_TEST_PROVIDERS,
         importProvidersFrom(generateCfBaseTestModulesNoShared()),
         TabNavService,
@@ -200,6 +208,36 @@ describe('CloudFoundryApplicationsSignalComponent (component)', () => {
     expect(cfg!.filterDropdowns!.map(d => d.label)).toEqual(['Organization', 'Space']);
     expect(cfg!.filterDropdowns![0].selected).toBe(stubAppsConfig.selectedOrg);
     expect(cfg!.filterDropdowns![1].selected).toBe(stubAppsConfig.selectedSpace);
+  });
+
+  it('adds a Last Refreshed column directly after Created', async () => {
+    await component.ngOnInit();
+    const cfg = component.listConfig();
+    expect(cfg).toBeDefined();
+    const headers = cfg!.columns.map(c => c.header);
+    const createdIdx = headers.indexOf('Created');
+    expect(createdIdx).toBeGreaterThanOrEqual(0);
+    expect(headers[createdIdx + 1]).toBe('Last Refreshed');
+
+    const lastRefreshedCol = cfg!.columns.find(c => c.header === 'Last Refreshed');
+    expect(lastRefreshedCol).toBeDefined();
+    expect(lastRefreshedCol!.key).toBe('lastRefreshedAt');
+    expect(lastRefreshedCol!.sortField).toBe('lastRefreshedAt');
+    expect(lastRefreshedCol!.render(app({ lastRefreshedAt: '2026-07-15T12:00:00Z' })))
+      .toBe(Cmp.formatDate('2026-07-15T12:00:00Z'));
+    expect(lastRefreshedCol!.render(app({ lastRefreshedAt: undefined }))).toBe('—');
+  });
+
+  it('includes lastRefreshedAt in filterColumns and wires filterRanges to appsConfig.lastRefreshedRange', async () => {
+    await component.ngOnInit();
+    const cfg = component.listConfig();
+    expect(cfg).toBeDefined();
+    expect(cfg!.filterColumns).toContain('lastRefreshedAt');
+    expect(cfg!.filterRanges).toBeDefined();
+    const range = cfg!.filterRanges!.find(r => r.field === 'lastRefreshedAt');
+    expect(range).toBeDefined();
+    expect(range!.valueType).toBe('date');
+    expect(range!.selected).toBe(stubAppsConfig.lastRefreshedRange);
   });
 
   it('lazily loads this CF’s org/space catalog when a dropdown is first opened', async () => {

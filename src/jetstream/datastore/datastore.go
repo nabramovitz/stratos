@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path"
 	"regexp"
@@ -15,17 +16,21 @@ import (
 
 	goosedbversion "github.com/cloudfoundry/stratos/src/jetstream/repository/goose-db-version"
 	"github.com/govau/cf-common/env"
-	log "github.com/sirupsen/logrus"
 
 	// Mysql driver
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/kat-co/vala"
 
+	// Postgres driver. Registered here explicitly: it used to arrive via
+	// pgstore's own lib/pq import, which left with the per-provider session
+	// stores (GH #5733).
+	_ "github.com/lib/pq"
+
 	// Sqlite driver — pure-Go (sqlite compiled to wasm, run on wazero), so
 	// the driver works under CGO_ENABLED=0. mattn/go-sqlite3 is cgo-only and
 	// silently became a runtime stub in the CGO_ENABLED=0 release binaries.
-	// Registers under the name "sqlite3", so datastore, goose, and the
-	// nwmac/sqlitestore session store all keep working unchanged.
+	// Registers under the name "sqlite3", so datastore and goose keep
+	// working unchanged.
 	_ "github.com/ncruces/go-sqlite3/driver"
 
 	"github.com/pressly/goose"
@@ -171,7 +176,7 @@ func NewDatabaseConnectionParametersFromConfig(dc DatabaseConfig) (DatabaseConfi
 }
 
 func validateRequiredDatabaseParams(username, password, database, host string, port int) (err error) {
-	log.Debug("validateRequiredDatabaseParams")
+	slog.Debug("validateRequiredDatabaseParams")
 
 	err = vala.BeginValidation().Validate(
 		vala.IsNotNil(username, "username"),
@@ -190,7 +195,7 @@ func validateRequiredDatabaseParams(username, password, database, host string, p
 
 // GetConnection returns a database connection to either MySQL, PostgreSQL or SQLite
 func GetConnection(dc DatabaseConfig, env *env.VarSet) (*sql.DB, error) {
-	log.Debug("GetConnection")
+	slog.Debug("GetConnection")
 	db, err := NewGooseDBConf(dc, env)
 
 	return db, err
@@ -200,7 +205,7 @@ func GetConnection(dc DatabaseConfig, env *env.VarSet) (*sql.DB, error) {
 func GetInMemorySQLLiteConnection() (*sql.DB, error) {
 
 	databaseFile := "file::memory:?cache=shared"
-	log.Info("Using In Memory Database file")
+	slog.Info("Using In Memory Database file")
 	db, err := sql.Open("sqlite3", databaseFile)
 	if err != nil {
 		return nil, err
@@ -235,11 +240,11 @@ func NewGooseDBConf(dc DatabaseConfig, env *env.VarSet) (*sql.DB, error) {
 		sqlDbDir := env.String("SQLITE_DB_DIR", ".")
 		openStr = path.Join(sqlDbDir, SQLiteDatabaseFile)
 		sqliteKeepDB := env.MustBool("SQLITE_KEEP_DB")
-		log.Infof("SQLite Database file: %s", openStr)
+		slog.Info("SQLite database file", "file", openStr)
 
 		if !sqliteKeepDB {
 			if err := os.Remove(openStr); err != nil && !os.IsNotExist(err) {
-				log.Warnf("Unable to remove SQLite database file %s: %v", openStr, err)
+				slog.Warn("unable to remove the SQLite database file", "file", openStr, "error", err)
 			}
 		}
 	}
@@ -253,7 +258,7 @@ func NewGooseDBConf(dc DatabaseConfig, env *env.VarSet) (*sql.DB, error) {
 }
 
 func buildConnectionString(dc DatabaseConfig) string {
-	log.Debug("buildConnectionString")
+	slog.Debug("buildConnectionString")
 	escapeStr := func(in string) string {
 		return strings.ReplaceAll(in, `'`, `\'`)
 	}
@@ -282,17 +287,17 @@ func buildConnectionString(dc DatabaseConfig) string {
 		connStr = connStr + fmt.Sprintf(" sslrootcert='%s'", escapeStr(dc.SSLRootCertificate))
 	}
 
-	log.Printf("DB Connection string: dbname='%s' host='%s' port=%d connect_timeout=%d",
-		escapeStr(dc.Database),
-		dc.Host,
-		dc.Port,
-		dc.ConnectionTimeoutInSecs)
+	slog.Info("DB connection string",
+		"dbname", escapeStr(dc.Database),
+		"host", dc.Host,
+		"port", dc.Port,
+		"connect_timeout", dc.ConnectionTimeoutInSecs)
 
 	return connStr
 }
 
 func buildConnectionStringForMysql(dc DatabaseConfig) string {
-	log.Debug("buildConnectionStringForMysql")
+	slog.Debug("buildConnectionStringForMysql")
 	escapeStr := func(in string) string {
 		return strings.ReplaceAll(in, `'`, `\'`)
 	}
@@ -304,16 +309,16 @@ func buildConnectionStringForMysql(dc DatabaseConfig) string {
 		escapeStr(dc.Database))
 
 	if len(dc.SSLMode) > 0 {
-		log.Infof("Setting SSL Mode for mysql: %s", dc.SSLMode)
+		slog.Info("Setting SSL mode for mysql", "sslMode", dc.SSLMode)
 		connStr = fmt.Sprintf("%s&tls=%s", connStr, dc.SSLMode)
 	}
-	log.Infof(connStr, "*********")
+	slog.Info("MySQL connection string", "connection", fmt.Sprintf(connStr, "*********"))
 	return fmt.Sprintf(connStr, escapeStr(dc.Password))
 }
 
 // Ping - ping the database to ensure the connection/pool works.
 func Ping(db *sql.DB) error {
-	log.Debug("Ping database")
+	slog.Debug("Ping database")
 	err := db.Ping()
 	if err != nil {
 		return fmt.Errorf("unable to ping the database: %+v", err)
@@ -322,30 +327,10 @@ func Ping(db *sql.DB) error {
 	return nil
 }
 
-// SessionsTablePlaceholder is the token a statement carries where the Gorilla
-// session table belongs. ModifySQLStatement swaps in the name that provider's
-// session store actually creates.
-const SessionsTablePlaceholder = "{{sessions_table}}"
-
-// SessionsTableName returns the table the session store creates for the given
-// provider. The name is not ours to choose on Postgres: pgstore hardcodes
-// "http_sessions" in its own DDL and its constructors take no table argument,
-// while the MySQL and SQLite stores are handed the name we pass them. Any
-// statement joining against the session table must therefore resolve the name
-// per provider rather than hardcode either spelling.
-func SessionsTableName(databaseProvider string) string {
-	if databaseProvider == PGSQL {
-		return "http_sessions"
-	}
-	return "sessions"
-}
-
 // ModifySQLStatement - Modify the given DB statement for the specified provider, as appropraite
 // e.g Postgres uses $1, $2 etc
 // SQLite uses ?
 func ModifySQLStatement(sql string, databaseProvider string) string {
-	sql = strings.ReplaceAll(sql, SessionsTablePlaceholder, SessionsTableName(databaseProvider))
-
 	if databaseProvider == SQLITE || databaseProvider == MYSQL {
 		// Replace positional parameters ($1, $2, etc.) with ?
 		sqlParamReplace := regexp.MustCompile(`\$[0-9]+`)
@@ -388,19 +373,19 @@ func WaitForMigrations(db *sql.DB) error {
 			} else if errors.Is(err, custom_errors.ErrNoDatabaseVersionsFound) {
 				errorMsg = "Versions table is empty - waiting for migrations"
 			}
-			log.Infof("Database schema check: %s", errorMsg)
+			slog.Info("Database schema check", "status", errorMsg)
 		} else if databaseVersionRec.VersionID == targetVersion.Version {
-			log.Infof("Database schema is up to date (%d)", databaseVersionRec.VersionID)
+			slog.Info("Database schema is up to date", "version", databaseVersionRec.VersionID)
 			break
 		} else {
-			log.Info("Waiting for database schema to be initialized")
+			slog.Info("Waiting for database schema to be initialized")
 		}
 
 		// If our timeout boundary has been exceeded, bail out
 		if time.Until(timeout) < 0 {
 			// If we timed out and the last request was a db error, show the error
 			if err != nil {
-				log.Error(err)
+				slog.Error("timed out waiting for the database schema", "error", err)
 			}
 			return fmt.Errorf("timed out waiting for database schema to be initialized")
 		}

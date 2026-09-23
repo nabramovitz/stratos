@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/fivetwenty-io/capi/v3/pkg/capi"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -324,7 +324,7 @@ func fetchSSHEnabledForApp(ctx context.Context, client capi.Client, appGUID stri
 // returns 200 with partial data, and the frontend tristate pattern
 // renders "Not Available" cells. A missing app itself remains a 4xx
 // for the whole request — that's a route-level error, not tristate.
-func (c *CloudFoundrySpecification) getNativeAppDetail(ctx echo.Context) error {
+func (c *CloudFoundrySpecification) getNativeAppDetail(ctx *echo.Context) error {
 	cnsiGUID := ctx.Param("cnsiGuid")
 	appGUID := ctx.Param("appGuid")
 	if cnsiGUID == "" || appGUID == "" {
@@ -398,8 +398,12 @@ func (c *CloudFoundrySpecification) composeAppSummaryEntry(reqCtx context.Contex
 	// Single-app path: OrgName is not stitched here (the org join is a
 	// batch optimisation that pays off on list responses). Detail-page
 	// consumers resolve org via the dedicated /pp/v1/cf/org/{cnsi}/{org}
-	// fetch anyway, so the empty value is the right default.
-	return composeStAppSummary(app, cnsiGUID, process, nil, "", []StAppRoute{})
+	// fetch anyway, so the empty value is the right default. Droplets
+	// mirror the same call-cheap tradeoff as routes: pass an empty (non-
+	// nil) map so a never-staged app reads as legitimately absent rather
+	// than a spurious fetch failure — this single-app path doesn't fan
+	// out to /v3/droplets.
+	return composeStAppSummary(app, cnsiGUID, process, nil, "", []StAppRoute{}, map[string]string{})
 }
 
 // composeAppDetails returns the full StAppDetail envelope for the
@@ -502,7 +506,7 @@ func (c *CloudFoundrySpecification) composeAppDetails(reqCtx context.Context, cf
 
 // fetchAppRoutesForDetail returns the routes mapped to a single app as
 // flat StAppRoute records (GUID + URL). Mirrors the apps-list helper
-// fetchRoutesForApps but takes a context.Context (not echo.Context) and
+// fetchRoutesForApps but takes a context.Context (not *echo.Context) and
 // scopes to one app — the detail handler's hot path. Server-rendered
 // URL is what the Visit button needs; no port/host parsing required.
 func fetchAppRoutesForDetail(ctx context.Context, cfClient capi.Client, appGUID string) ([]StAppRoute, error) {
@@ -532,7 +536,7 @@ func fetchAppRoutesForDetail(ctx context.Context, cfClient capi.Client, appGUID 
 // returns environment_variables (user-set), system_env_json (VCAP_*),
 // application_env_json, running_env_json, staging_env_json all in one
 // response — no fan-out needed.
-func (c *CloudFoundrySpecification) getNativeAppEnv(ctx echo.Context) error {
+func (c *CloudFoundrySpecification) getNativeAppEnv(ctx *echo.Context) error {
 	cnsiGUID := ctx.Param("cnsiGuid")
 	appGUID := ctx.Param("appGuid")
 	if cnsiGUID == "" || appGUID == "" {

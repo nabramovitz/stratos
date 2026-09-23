@@ -1,5 +1,7 @@
 import { CommonModule, DatePipe } from '@angular/common';
-import { Component, OnInit, ChangeDetectionStrategy, Signal, inject, signal, WritableSignal } from '@angular/core';
+import {
+  Component, OnInit, ChangeDetectionStrategy, Signal, computed, inject, signal, WritableSignal, Injector, effect,
+} from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { Observable, firstValueFrom } from 'rxjs';
@@ -14,6 +16,7 @@ import {
   ListSubNavAddAction,
   ListSubNavComponent,
   PageHeaderComponent,
+  SignalListColumn,
   SignalListComponent,
   SignalListCompoundSegment,
   SignalListConfig,
@@ -33,6 +36,7 @@ import { CloudFoundryService } from '../../../shared/data-services/cloud-foundry
 import { CfCurrentUserPermissions } from '../../../user-permissions/cf-user-permissions-checkers';
 import { goToAppWall } from '../../cf/cf.helpers';
 import type { StApp } from '../../../services/endpoint-data/stratos-types';
+import { AppAreaLoaderComponent } from '@stratosui/core';
 
 @Component({
   selector: 'app-application-wall',
@@ -41,6 +45,7 @@ import type { StApp } from '../../../services/endpoint-data/stratos-types';
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    AppAreaLoaderComponent,
     CommonModule,
     RouterModule,
     PageHeaderComponent,
@@ -59,6 +64,7 @@ export class ApplicationWallComponent implements OnInit {
   private userFavoriteManager = inject(UserFavoriteManager);
   private confirmDialog = inject(ConfirmationDialogService);
   private snackBar = inject(TailwindSnackBarService);
+  private readonly injector = inject(Injector);
 
   // Row keys ({cnsiGuid}:{appGuid}) for apps the user has favorited.
   // Derived from UserFavoriteManager's combined (groups, entities) stream
@@ -276,6 +282,33 @@ export class ApplicationWallComponent implements OnInit {
         loading: this.appsConfig.isLoadingSpaces,
       },
     ];
+    // Stack filtering rides the field-selectable filter rather than its
+    // own dropdown: "Stack" is a filter-field whose input is a checklist
+    // popup (multi-select, default all) — see SignalListMultiFilter. The
+    // stacks catalog is still fetched eagerly (visibility depends on it).
+    const stackFilterMulti = {
+      field: 'stackName',
+      options: computed(() => this.appsConfig.stackOptions().filter(o => o.value !== null).map(o => o.label)),
+      selected: this.appsConfig.selectedStacks,
+    };
+    // Status rides the same field-selectable filter, no visibility gate
+    // (CF always reports 2+ possible states): picking "Status" swaps the
+    // text input for the checklist populated from the fixed label set.
+    const statusFilterMulti = {
+      field: 'state',
+      options: this.appsConfig.statusOptions,
+      selected: this.appsConfig.selectedStates,
+    };
+    const stackColumn: SignalListColumn<StApp> = {
+      header: 'Stack', key: 'stackName', sortField: 'stackName',
+      render: (app: StApp) => app.stackName || '—',
+      widthHint: '9rem',
+    };
+    const lastRefreshedColumn: SignalListColumn<StApp> = {
+      header: 'Last Refreshed', key: 'lastRefreshedAt', sortField: 'lastRefreshedAt',
+      render: (app: StApp) => app.lastRefreshedAt ? ApplicationWallComponent.formatDate(app.lastRefreshedAt) : '—',
+      widthHint: '12rem',
+    };
     const stateColor = (app: StApp): SignalListPillColor => {
       const s = (app.state ?? '').toUpperCase();
       if (s === 'STARTED') return 'success';
@@ -336,105 +369,135 @@ export class ApplicationWallComponent implements OnInit {
         { text: spaceName, link: spaceLink },
       ];
     };
-    this.listConfig.set({
-      pagedItems: this.appsConfig.view.pagedItems,
-      totalFilteredResults: this.appsConfig.view.totalFilteredResults,
-      totalPages: this.appsConfig.view.totalPages,
-      pageIndex: this.appsConfig.pageIndex,
-      pageSize: this.appsConfig.pageSize,
-      isAnyLoading: this.appsConfig.orchestrator.isAnyLoading,
-      errorsByCnsi: this.appsConfig.orchestrator.errorsByCnsi,
-      columns: [
-        {
-          header: 'Name', key: 'name', sortField: 'name',
-          kind: 'link',
-          link: (app: StApp) => ['/applications', app.cnsiGuid, app.guid],
-          render: (app: StApp) => app.name,
-          widthHint: '16rem',
-        },
-        {
-          header: 'Status', key: 'state', sortField: 'state',
-          kind: 'dot',
-          pillColor: stateColor,
-          render: stateLabel,
-          widthHint: '12rem',
-        },
-        {
-          header: 'Instances', key: 'instances', sortField: 'instances',
-          render: (app: StApp) => {
-            const desired = app.instances ?? 0;
-            const rowKey = `${app.cnsiGuid}:${app.guid}`;
-            const s = this.appsConfig.appStats().get(rowKey);
-            if (!s) return `— / ${desired}`;
-            return `${s.running} / ${desired}`;
+    const buildConfig = (): SignalListConfig<StApp> => {
+      const withStack = this.appsConfig.stackUiVisible();
+      return {
+        pagedItems: this.appsConfig.view.pagedItems,
+        totalFilteredResults: this.appsConfig.view.totalFilteredResults,
+        totalPages: this.appsConfig.view.totalPages,
+        pageIndex: this.appsConfig.pageIndex,
+        pageSize: this.appsConfig.pageSize,
+        isAnyLoading: this.appsConfig.orchestrator.isAnyLoading,
+        errorsByCnsi: this.appsConfig.orchestrator.errorsByCnsi,
+        columns: [
+          {
+            header: 'Name', key: 'name', sortField: 'name',
+            kind: 'link',
+            link: (app: StApp) => ['/applications', app.cnsiGuid, app.guid],
+            render: (app: StApp) => app.name,
+            widthHint: '16rem',
           },
-          widthHint: '6rem',
-        },
-        {
-          header: 'Memory', key: 'memory', sortField: 'memory',
-          render: (app: StApp) => ApplicationWallComponent.formatMb(app.memory),
-          widthHint: '7rem',
-        },
-        {
-          header: 'Disk', key: 'diskQuota', sortField: 'diskQuota',
-          render: (app: StApp) => ApplicationWallComponent.formatMb(app.diskQuota),
-          widthHint: '7rem',
-        },
-        {
-          header: 'CF/Org/Space', key: 'cfOrgSpace', sortField: renderCfOrgSpace,
-          kind: 'compound',
-          compound: compoundCfOrgSpace,
-          render: renderCfOrgSpace,
-          widthHint: '18rem',
-        },
-        {
-          header: 'Created', key: 'createdAt', sortField: 'createdAt',
-          render: (app: StApp) => ApplicationWallComponent.formatDate(app.createdAt),
-          widthHint: '12rem',
-        },
-        {
-          header: '', key: 'favorite',
-          kind: 'favorite',
-          favorite: {
-            keys: this.favoriteAppRowKeys,
-            toggle: (app: StApp) => this.toggleAppFavorite(app),
+          {
+            header: 'Status', key: 'state', sortField: 'state',
+            kind: 'dot',
+            pillColor: stateColor,
+            render: stateLabel,
+            widthHint: '12rem',
           },
-          render: () => '',
-          widthHint: '3rem',
+          {
+            header: 'Instances', key: 'instances', sortField: 'instances',
+            render: (app: StApp) => {
+              const desired = app.instances ?? 0;
+              const rowKey = `${app.cnsiGuid}:${app.guid}`;
+              const s = this.appsConfig.appStats().get(rowKey);
+              if (!s) return `— / ${desired}`;
+              return `${s.running} / ${desired}`;
+            },
+            widthHint: '6rem',
+          },
+          {
+            header: 'Memory', key: 'memory', sortField: 'memory',
+            render: (app: StApp) => ApplicationWallComponent.formatMb(app.memory),
+            widthHint: '7rem',
+          },
+          {
+            header: 'Disk', key: 'diskQuota', sortField: 'diskQuota',
+            render: (app: StApp) => ApplicationWallComponent.formatMb(app.diskQuota),
+            widthHint: '7rem',
+          },
+          {
+            header: 'CF/Org/Space', key: 'cfOrgSpace', sortField: renderCfOrgSpace,
+            kind: 'compound',
+            compound: compoundCfOrgSpace,
+            render: renderCfOrgSpace,
+            widthHint: '18rem',
+          },
+          ...(withStack ? [stackColumn] : []),
+          {
+            header: 'Created', key: 'createdAt', sortField: 'createdAt',
+            render: (app: StApp) => ApplicationWallComponent.formatDate(app.createdAt),
+            widthHint: '12rem',
+          },
+          lastRefreshedColumn,
+          {
+            header: '', key: 'favorite',
+            kind: 'favorite',
+            favorite: {
+              keys: this.favoriteAppRowKeys,
+              toggle: (app: StApp) => this.toggleAppFavorite(app),
+            },
+            render: () => '',
+            widthHint: '3rem',
+          },
+          {
+            header: '', key: 'actions',
+            kind: 'actions',
+            actions: this.buildAppActions,
+            render: () => '',
+            widthHint: '3rem',
+          },
+        ],
+        getRowKey: (app: StApp) => `${app.cnsiGuid}:${app.guid}`,
+        emptyMessage: 'There are no applications',
+        emptyFilterMessage: 'No applications match the current filters',
+        loadingMessage: 'Loading applications…',
+        pageSizeOptions: {
+          table: [10, 25, 50, 100],
+          card: [6, 12, 24, 48, 96],
         },
-        {
-          header: '', key: 'actions',
-          kind: 'actions',
-          actions: this.buildAppActions,
-          render: () => '',
-          widthHint: '3rem',
-        },
-      ],
-      getRowKey: (app: StApp) => `${app.cnsiGuid}:${app.guid}`,
-      emptyMessage: 'There are no applications',
-      emptyFilterMessage: 'No applications match the current filters',
-      loadingMessage: 'Loading applications…',
-      pageSizeOptions: {
-        table: [10, 25, 50, 100],
-        card: [6, 12, 24, 48, 96],
-      },
-      nameFilter: this.appsConfig.nameFilter,
-      filterColumns: ['name', 'state', 'cfOrgSpace'],
-      filterField: this.appsConfig.filterField,
-      filterDropdowns: dropdowns,
-      onRefresh: () => this.appsConfig.refresh(),
-      onClear: () => this.appsConfig.clearFilters(),
-      cardAccentColor: stateColor,
-      viewMode: this.appsConfig.viewMode,
-      sort: this.appsConfig.sort,
-    });
+        nameFilter: this.appsConfig.nameFilter,
+        filterColumns: withStack
+          ? ['name', 'state', 'cfOrgSpace', 'stackName', 'lastRefreshedAt']
+          : ['name', 'state', 'cfOrgSpace', 'lastRefreshedAt'],
+        // Status has no visibility gate (always ≥2 possible states) so its
+        // entry is unconditional; Stack's is only wired while its column
+        // is actually in filterColumns — otherwise a filterField left
+        // over at 'stackName' from another stack-visible page (the
+        // service's filter state is a shared singleton) would pop the
+        // checklist for a column not shown here.
+        filterMultis: withStack ? [statusFilterMulti, stackFilterMulti] : [statusFilterMulti],
+        filterRanges: [{
+          field: 'lastRefreshedAt',
+          valueType: 'date' as const,
+          selected: this.appsConfig.lastRefreshedRange,
+        }],
+        filterField: this.appsConfig.filterField,
+        filterDropdowns: dropdowns,
+        onRefresh: () => this.appsConfig.refresh(),
+        onClear: () => this.appsConfig.clearFilters(),
+        cardAccentColor: stateColor,
+        viewMode: this.appsConfig.viewMode,
+        sort: this.appsConfig.sort,
+      };
+    };
+    // Set once synchronously so the config is available immediately (in
+    // the same tick as ngOnInit) rather than leaving listConfig undefined
+    // until the first effect flush.
+    this.listConfig.set(buildConfig());
+    // Rebuild when the stacks catalog flips visibility (it lands async
+    // after initialize()). effect() needs an injection context; ngOnInit
+    // isn't one, hence the explicit injector.
+    effect(() => { this.listConfig.set(buildConfig()); }, { injector: this.injector });
     // Register sort extractors for columns whose sort key is composed from
     // multiple entity fields (rather than a direct property on StApp).
     this.appsConfig.registerSortExtractor('cfOrgSpace', renderCfOrgSpace);
     // Register text-filter extractors for each column eligible for the
     // filter-field dropdown. 'name' uses the raw field; 'state' uses the
-    // user-facing label (so typing "crashed" matches STATE=CRASHED); and
-    // 'cfOrgSpace' flattens the composite column to its rendered string.
+    // user-facing label (so typing "crashed" matches STATE=CRASHED) —
+    // this same function is what the Status checklist's predicate reuses
+    // to match a selected label back to an app, so the two can't drift
+    // apart; 'cfOrgSpace' flattens the composite column to its rendered
+    // string.
     this.appsConfig.registerFilterExtractor('name', (app: StApp) => app.name ?? '');
     this.appsConfig.registerFilterExtractor('state', stateLabel);
     this.appsConfig.registerFilterExtractor('cfOrgSpace', renderCfOrgSpace);

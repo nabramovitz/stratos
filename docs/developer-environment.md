@@ -138,6 +138,9 @@ Stratos connects to external SQL databases. It does not bundle a database server
 | PostgreSQL | `pgsql` | Via container | Recommended |
 | MySQL / MariaDB | `mysql` | Via container | Supported |
 
+PostgreSQL 14 and later is supported — the versions the upstream
+[`lib/pq`](https://github.com/lib/pq) driver tests against.
+
 Any PostgreSQL-compatible (CockroachDB, Aurora, AlloyDB) or MySQL-compatible
 (MariaDB, Aurora MySQL, PlanetScale) service works with existing drivers.
 
@@ -262,7 +265,7 @@ GitHub Actions workflows:
 |----------|------|---------|
 | Frontend tests | `.github/workflows/frontend_tests.yml` | Push/PR to develop/main |
 | Backend tests | `.github/workflows/backend_tests.yml` | Push/PR to develop/main |
-| Docker builds | `.github/workflows/docker.yml` | Release + manual dispatch |
+| Release + all-in-one image | `.github/workflows/release.yml` | Version tag |
 
 ### Known CI Drift
 

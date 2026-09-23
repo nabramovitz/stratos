@@ -15,7 +15,7 @@ In this case, the front-end web application static resources are served by the A
 
 By default, a non-persistent SQLite database is used - by automatically registering the cloud foundry endpoint and connecting to it on login, all data stored in the database can be treated as ephemeral, since it will be re-created next time a user logs in. Cloud Foundry Session Affinity is used to ensure that when scaling up the Console Application to multiple instances, the user is also directed to the instance which will know about them and their endpoints (since each Application instance will have its own local SQLite store).
 
-Alternatively, Stratos can be configured [with a persistent Cloud Foundry database service](db-migration.md), which enables features requiring persistence such as user favorites.
+Alternatively, Stratos can be configured [with a persistent Cloud Foundry database service](db-migration.md), which enables features requiring persistence such as user favorites. Deployments that deliberately stay on SQLite can still make its data recoverable across pushes — see [Persisting the SQLite database](sqlite-persistence.md).
 
 ## Deployment Steps
 
@@ -103,7 +103,7 @@ Each Stratos [GitHub release](https://github.com/cloudfoundry/stratos/releases) 
     ```yaml
     applications:
       - name: console
-        memory: 256M
+        memory: 512M
         disk_quota: 1024M
         buildpack: binary_buildpack
         command: ./jetstream
@@ -126,7 +126,7 @@ Each Stratos [GitHub release](https://github.com/cloudfoundry/stratos/releases) 
     `cf push` with no arguments uses the bundled `manifest.yml` and the current folder as the application bits. As with the other methods, the console auto-detects the host Cloud Foundry API from `VCAP_APPLICATION`; if your platform does not provide `cf_api_url`, set it manually as described in the [troubleshooting note](cf-troubleshooting.md#console-fails-to-start).
 
 > [!NOTE]
-> The package is Linux/amd64. There is no build step in this path, so the source-push memory guidance below does not apply - the default `256M` is sufficient.
+> The package is Linux/amd64. There is no build step in this path, so the historic source-push memory figures do not apply - the bundled manifest's `512M` is what production deployments run.
 
 ### Deploy Stratos from source
 
@@ -165,10 +165,13 @@ The `prebuild-ui` npm script performs a build of the front-end UI and then zips 
 
 #### Memory Usage
 
-The Stratos Cloud Foundry `manifest.yml` states that the application requires
-`1512MB` of memory. This is required during the build process of the
-application since building an angular2 app is a memory intensive process. The
-memory limit can be scaled down after the app has been pushed, using the cf CLI.
+`512M` is the figure to use, and it is what the bundled manifest ships with.
+
+Older guidance said `1512MB`. That number was never a runtime requirement - it
+was staging headroom for the custom buildpack compiling the Angular application
+during `cf push`, raised step by step through 2018 as the build grew, and the
+advice was always to scale it back down afterwards. Nothing is built during
+staging on the current path, so it no longer applies.
 
 ### Deploy Stratos from docker image
 

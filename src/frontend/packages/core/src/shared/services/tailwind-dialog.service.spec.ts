@@ -152,6 +152,89 @@ describe('TailwindDialogService', () => {
       vi.useRealTimers();
     });
 
+    // A dialog holding unsaved edits sets closeGuard. Both dismissal paths —
+    // backdrop click and Escape — have to consult it, or the near-miss on a
+    // resize grip (the press lands on the backdrop a few pixels outside the
+    // panel, indistinguishable from a deliberate click-away) silently discards
+    // whatever the user typed.
+    it('should NOT close on backdrop click while closeGuard holds', async () => {
+      vi.useFakeTimers();
+      const dialogRef = service.open(TestDialogComponent, { disableClose: false });
+      await vi.advanceTimersByTimeAsync(0);
+
+      let closed = false;
+      dialogRef.afterClosed().subscribe(() => {
+        closed = true;
+      });
+      dialogRef.closeGuard = () => true;
+
+      const backdrop = document.querySelector('.fixed.inset-0') as HTMLElement;
+      const downEvent = new MouseEvent('mousedown', { bubbles: true });
+      Object.defineProperty(downEvent, 'target', { value: backdrop, enumerable: true });
+      backdrop.dispatchEvent(downEvent);
+
+      const clickEvent = new MouseEvent('click', { bubbles: true });
+      Object.defineProperty(clickEvent, 'target', { value: backdrop, enumerable: true });
+      backdrop.dispatchEvent(clickEvent);
+
+      await vi.advanceTimersByTimeAsync(300);
+      expect(closed).toBe(false);
+      vi.useRealTimers();
+    });
+
+    it('should NOT close on ESC while closeGuard holds', async () => {
+      vi.useFakeTimers();
+      const dialogRef = service.open(TestDialogComponent, { disableClose: false });
+      await vi.advanceTimersByTimeAsync(0);
+
+      let closed = false;
+      dialogRef.afterClosed().subscribe(() => {
+        closed = true;
+      });
+      dialogRef.closeGuard = () => true;
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+      await vi.advanceTimersByTimeAsync(300);
+      expect(closed).toBe(false);
+      vi.useRealTimers();
+    });
+
+    // The guard is consulted per dismissal, not latched at open: clearing the
+    // edits has to restore click-away.
+    it('should close on backdrop click once closeGuard releases', async () => {
+      vi.useFakeTimers();
+      const dialogRef = service.open(TestDialogComponent, { disableClose: false });
+      await vi.advanceTimersByTimeAsync(0);
+
+      let closed = false;
+      dialogRef.afterClosed().subscribe(() => {
+        closed = true;
+      });
+      let dirty = true;
+      dialogRef.closeGuard = () => dirty;
+
+      const backdrop = document.querySelector('.fixed.inset-0') as HTMLElement;
+      const press = () => {
+        const downEvent = new MouseEvent('mousedown', { bubbles: true });
+        Object.defineProperty(downEvent, 'target', { value: backdrop, enumerable: true });
+        backdrop.dispatchEvent(downEvent);
+        const clickEvent = new MouseEvent('click', { bubbles: true });
+        Object.defineProperty(clickEvent, 'target', { value: backdrop, enumerable: true });
+        backdrop.dispatchEvent(clickEvent);
+      };
+
+      press();
+      await vi.advanceTimersByTimeAsync(300);
+      expect(closed).toBe(false);
+
+      dirty = false;
+      press();
+      await vi.advanceTimersByTimeAsync(300);
+      expect(closed).toBe(true);
+      vi.useRealTimers();
+    });
+
     it('should NOT close when a drag starts inside the dialog and releases on the backdrop', async () => {
       // Dragging a resize grip / selecting text inside the dialog and releasing
       // on the backdrop makes the browser synthesize a click whose target is the
@@ -470,6 +553,41 @@ describe('TailwindDialogService', () => {
       expect(parseInt(panel.style.top)).toBe(0);
 
       document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+      dialogRef.close();
+      await vi.advanceTimersByTimeAsync(300);
+      vi.useRealTimers();
+    });
+
+    it('should cap a pinned panel at the viewport bottom even when not resizable', async () => {
+      // A drag handle pins the panel where it was centred at open; content that
+      // arrives later grows it from there, so the cap must follow the position.
+      const rect = { top: 490, left: 380, width: 640, height: 600, right: 1020, bottom: 1090, x: 380, y: 490, toJSON: () => ({}) } as DOMRect;
+      const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(rect);
+      vi.useFakeTimers();
+      try {
+        const dialogRef = service.open(TestDraggableDialogComponent);
+        await vi.advanceTimersByTimeAsync(0);
+
+        const panel = document.querySelector('.rounded-lg') as HTMLElement;
+        expect(panel.style.resize).toBe('');
+        expect(panel.style.maxHeight).toBe(`${window.innerHeight - 490}px`);
+
+        dialogRef.close();
+        await vi.advanceTimersByTimeAsync(300);
+      } finally {
+        vi.useRealTimers();
+        spy.mockRestore();
+      }
+    });
+
+    it('should keep a configured pixel maxHeight that is smaller than the viewport cap', async () => {
+      vi.useFakeTimers();
+      const dialogRef = service.open(TestDraggableDialogComponent, { maxHeight: '300px' });
+      await vi.advanceTimersByTimeAsync(0);
+
+      const panel = document.querySelector('.rounded-lg') as HTMLElement;
+      expect(panel.style.maxHeight).toBe('300px');
+
       dialogRef.close();
       await vi.advanceTimersByTimeAsync(300);
       vi.useRealTimers();

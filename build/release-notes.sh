@@ -11,12 +11,17 @@
 #                                 Always exits 0 — this reports, never gates
 #   release-notes.sh assemble     Print fragments merged into the release
 #                                 layout on stdout (empty if no fragments)
+#   release-notes.sh preview      Render the assembled notes to HTML through
+#                                 GitHub's own markdown API and print the
+#                                 file path — what the release page will
+#                                 show, before a tag exists
 #   release-notes.sh sweep        git rm all fragments (post-publish; the
 #                                 removal commit rides the next PR)
 #
 # Fragments are consumed by build/create-git-tag.sh, which embeds the
 # assembled notes in the annotated release tag body; `make publish` then
-# uses the tag body as the GitHub release notes (--notes-from-tag).
+# uses the tag BODY as the notes (%(contents:body) — the subject line
+# is the tag's display name and never enters the release body).
 
 set -euo pipefail
 
@@ -25,7 +30,13 @@ FRAG_DIR="${FRAG_DIR:-${ROOT_DIR}/changelog.d}"
 
 # Section order is the release-notes layout: Breaking Changes lead when
 # present; Security Updates (CVE table) close.
-SECTION_ORDER='Breaking Changes|Features|BugFixes|Chores|Security Updates'
+#
+# Maintainability sits between the user-facing sections and Chores: work
+# that keeps the codebase current rather than changing what the console
+# does — retiring an unmaintained dependency, consolidating forked or
+# vendored code, clearing a scanner finding. A reader upgrading wants it
+# above routine bumps, but it is not a feature or a fix.
+SECTION_ORDER='Breaking Changes|Features|BugFixes|Maintainability|Chores|Security Updates'
 
 fragments() {
   find "${FRAG_DIR}" -maxdepth 1 -name '[0-9]*.md' 2>/dev/null | LC_ALL=C sort
@@ -234,11 +245,72 @@ cmd_assemble() {
         sub(/\n+$/, "\n", b)
         if (b !~ /[^[:space:]]/) continue
         if (out) printf "\n"
-        printf "[%s]\n%s", s, b
+        # [Section] is the authoring syntax, not the output. Emitted as a
+        # bracketed literal it renders as plain text wherever these notes
+        # land — a GitHub release body is markdown — so the published notes
+        # had no headings at all. BugFixes is an identifier and gets a
+        # display name; the rest already read as titles.
+        label = (s == "BugFixes") ? "Bug Fixes" : s
+        printf "## %s\n\n%s", label, b
         out = 1
       }
     }
   ' ${files}
+}
+
+# Rendered by GitHub's own markdown endpoint rather than a local library:
+# the question this answers is "what will the release page show", and only
+# GitHub can answer it. Two heading defects reached a published tag because
+# the only available check was assemble's plain text, where markdown that
+# renders as nothing still looks correct.
+cmd_preview() {
+  local notes out
+  notes=$(cmd_assemble)
+  if [ -z "${notes}" ]; then
+    echo "changelog.d: no fragments — nothing to preview"
+    return 0
+  fi
+  command -v gh >/dev/null 2>&1 || { echo "ERROR: preview needs the gh CLI" >&2; exit 1; }
+
+  out="${PREVIEW_OUT:-${TMPDIR:-/tmp}/stratos-release-preview.html}"
+  local title="${PREVIEW_TITLE:-Stratos release notes}"
+  local body
+  # -F, not -f, for the notes: only --field interprets a leading '@', which
+  # is what reads them from stdin. --raw-field would post the literal "@-"
+  # and GitHub would faithfully render that as a one-word document.
+  body=$(printf '%s' "${notes}" \
+    | gh api -X POST /markdown -f mode=gfm \
+        -f context=cloudfoundry/stratos -F text=@-) \
+    || { echo "ERROR: gh could not render the notes (is it authenticated?)" >&2; exit 1; }
+  case "${body}" in
+    ''|'<p>@-</p>'*) echo "ERROR: preview rendered empty — refusing to write a misleading page" >&2; exit 1 ;;
+  esac
+
+  {
+    printf '<!doctype html><html><head><meta charset="utf-8"><title>%s</title>\n' "${title}"
+    cat <<'CSS'
+<style>
+:root{color-scheme:light dark}
+body{margin:0;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;background:#f6f8fa;color:#1f2328}
+.wrap{max-width:860px;margin:0 auto;padding:32px 24px 80px}
+.card{background:#fff;border:1px solid #d1d9e0;border-radius:6px;padding:8px 24px 24px}
+h1{font-size:24px;margin:16px 0 4px}
+h2{font-size:20px;border-bottom:1px solid #d1d9e0;padding-bottom:.3em;margin-top:28px}
+ul{padding-left:24px}li{margin:.4em 0}
+code{background:#eff2f5;padding:.2em .4em;border-radius:6px;font-size:85%}
+a{color:#0969da;text-decoration:none}a:hover{text-decoration:underline}
+@media(prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}
+ .card{background:#151b23;border-color:#3d444d}code{background:#262c36}
+ h2{border-color:#3d444d}a{color:#4493f8}}
+</style></head><body><div class="wrap"><div class="card">
+CSS
+    printf '<h1>%s</h1>\n' "${title}"
+    printf '%s\n' "${body}"
+    printf '</div></div></body></html>\n'
+  } > "${out}"
+
+  echo "${out}"
+  echo "$(printf '%s' "${notes}" | grep -c '^## ') section(s), $(printf '%s' "${notes}" | grep -c '^- ') bullet(s)" >&2
 }
 
 cmd_sweep() {
@@ -257,9 +329,10 @@ case "${1:-}" in
   deps)     shift; cmd_deps "$@" ;;
   check)    shift; cmd_check "$@" ;;
   assemble) cmd_assemble ;;
+  preview)  cmd_preview ;;
   sweep)    cmd_sweep ;;
   *)
-    echo "Usage: release-notes.sh new [slug] | deps [since] | check [since] | assemble | sweep" >&2
+    echo "Usage: release-notes.sh new [slug] | deps [since] | check [since] | assemble | preview | sweep" >&2
     exit 1
     ;;
 esac

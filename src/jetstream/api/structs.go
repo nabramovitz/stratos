@@ -8,7 +8,7 @@ import (
 
 	api "github.com/cloudfoundry/stratos/src/jetstream/api/config"
 	"github.com/gorilla/sessions"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 type AuthHandlerFunc func(tokenRec TokenRecord, cnsi CNSIRecord) (*http.Response, error)
@@ -220,7 +220,7 @@ type LocalLoginRes struct {
 	User *ConnectedUser `json:"user"`
 }
 
-type LoginHookFunc func(c echo.Context) error
+type LoginHookFunc func(c *echo.Context) error
 type LoginHook struct {
 	Priority int
 	Function LoginHookFunc
@@ -299,6 +299,7 @@ type Info struct {
 		ListAllowLoadMaxed         bool   `json:"listAllowLoadMaxed,omitempty"`
 		APIKeysEnabled             string `json:"APIKeysEnabled"`
 		HomeViewShowFavoritesOnly  bool   `json:"homeViewShowFavoritesOnly"`
+		HideNavLogout              bool   `json:"hideNavLogout"`
 		UserEndpointsEnabled       string `json:"userEndpointsEnabled"`
 		EndpointCardConcurrency    int    `json:"endpointCardConcurrency"`
 		EndpointRequestConcurrency int    `json:"endpointRequestConcurrency"`
@@ -441,6 +442,8 @@ type PortalConfig struct {
 	CFClientSecret                     string   `configName:"CF_CLIENT_SECRET"`
 	AllowedOrigins                     []string `configName:"ALLOWED_ORIGINS"`
 	CSPPolicy                          string   `configName:"CONSOLE_CSP"`
+	CSPReportOnlyPolicy                string   `configName:"CONSOLE_CSP_REPORT_ONLY"`
+	CSPReportCollector                 string   `configName:"CONSOLE_CSP_REPORT_COLLECTOR"`
 	HSTSPolicy                         string   `configName:"CONSOLE_HSTS"`
 	SessionStoreSecret                 string   `configName:"SESSION_STORE_SECRET"`
 	EncryptionKeyVolume                string   `configName:"ENCRYPTION_KEY_VOLUME"`
@@ -448,6 +451,8 @@ type PortalConfig struct {
 	EncryptionKey                      string   `configName:"ENCRYPTION_KEY"`
 	AutoRegisterCFUrl                  string   `configName:"AUTO_REG_CF_URL"`
 	AutoRegisterCFName                 string   `configName:"AUTO_REG_CF_NAME"`
+	AutoRegisterCFCACert               string   `configName:"AUTO_REG_CF_CA_CERT"`
+	AutoRegisterCFCACertPath           string   `configName:"AUTO_REG_CF_CA_CERT_PATH"`
 	SSOLogin                           bool     `configName:"SSO_LOGIN"`
 	SSOOptions                         string   `configName:"SSO_OPTIONS"`
 	SSOAllowList                       string   `configName:"SSO_ALLOWLIST,SSO_WHITELIST"`
@@ -472,6 +477,7 @@ type PortalConfig struct {
 	CanMigrateDatabaseSchema           bool
 	APIKeysEnabled                     api.APIKeysConfigValue       `configName:"API_KEYS_ENABLED"`
 	HomeViewShowFavoritesOnly          bool                         `configName:"HOME_VIEW_SHOW_FAVORITES_ONLY"`
+	HideNavLogout                      bool                         `configName:"HIDE_NAV_LOGOUT"`
 	EndpointCardConcurrency            int                          `configName:"ENDPOINT_CARD_CONCURRENCY"`
 	EndpointRequestConcurrency         int                          `configName:"ENDPOINT_REQUEST_CONCURRENCY"`
 	UserEndpointsEnabled               api.UserEndpointsConfigValue `configName:"USER_ENDPOINTS_ENABLED"`
@@ -527,11 +533,11 @@ type UpdateEndpointParams struct {
 	CACert        string `json:"ca_cert" form:"ca_cert" query:"ca_cert"`
 }
 
-// BindOnce -- allows to call echo.Context.Bind() multiple times on the same request
+// BindOnce -- allows to call *echo.Context.Bind() multiple times on the same request
 // After calling Bind(), request body stream is closed and the context can't be bound again.
 // Bound struct is stored in the context store after the first call and retrieved from store
 // on subsequent calls.
-func BindOnce(params interface{}, c echo.Context) error {
+func BindOnce(params interface{}, c *echo.Context) error {
 	typeStr := reflect.TypeOf(params).String()
 	ctxType := c.Get("magicBindType")
 	if ctxType != nil && ctxType != typeStr {

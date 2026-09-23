@@ -49,8 +49,8 @@ export * from './shared/services/tailwind-error-state-matcher';
 export { SchemaWidgetRendererComponent } from './shared/components/schema-widget-renderer/schema-widget-renderer.component';
 
 // Tailwind Progress Components
-export { ProgressSpinnerComponent, MatSpinnerComponent } from './shared/components/progress-spinner/progress-spinner.component';
-export { AppSpinnerComponent } from './shared/components/progress-spinner/app-spinner.component';
+export { AppBusyComponent, BusyVariant, pickBusyVariant } from './shared/components/busy-indicator/busy-indicator.component';
+export { AppAreaLoaderComponent, AreaLoaderVariant, pickAreaVariant } from './shared/components/area-loader/area-loader.component';
 export { ProgressBarComponent } from './shared/components/progress-bar/progress-bar.component';
 export { AppProgressBarComponent } from './shared/components/progress-bar/app-progress-bar.component';
 
@@ -162,6 +162,7 @@ export { RowState, RowsState, getDefaultRowState } from './shared/components/sig
 export { TableCellStatusDirective } from './shared/components/signal-list/table-cell-status.directive';
 export { extractActualListEntity } from './shared/components/signal-list/list-entity.helpers';
 export type { ISimpleListConfig } from './shared/components/signal-list/simple-list-config.types';
+export * from './shared/components/signal-list/range-filter';
 
 // Utility Components
 export { MultilineTitleComponent } from './shared/components/multiline-title/multiline-title.component';

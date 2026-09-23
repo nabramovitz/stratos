@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -12,10 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/context"
 	"github.com/govau/cf-common/env"
-	"github.com/labstack/echo/v4"
-	log "github.com/sirupsen/logrus"
+	"github.com/labstack/echo/v5"
 
 	"github.com/cloudfoundry/stratos/src/jetstream/api"
 	"github.com/cloudfoundry/stratos/src/jetstream/api/config"
@@ -36,8 +35,8 @@ const APIKeyHeader = "Authentication"
 // APIKeyAuthScheme - API key authentication scheme
 const APIKeyAuthScheme = "Bearer"
 
-func handleSessionError(config api.PortalConfig, c echo.Context, err error, doNotLog bool, msg string) error {
-	log.Debug("handleSessionError")
+func handleSessionError(config api.PortalConfig, c *echo.Context, err error, doNotLog bool, msg string) error {
+	slog.Debug("handleSessionError")
 
 	var netOpErr *net.OpError
 	if errors.As(err, &netOpErr) {
@@ -67,7 +66,7 @@ func handleSessionError(config api.PortalConfig, c echo.Context, err error, doNo
 
 type (
 	// Skipper - skipper function for middlewares
-	Skipper func(echo.Context) bool
+	Skipper func(*echo.Context) bool
 
 	// MiddlewareConfig defines the config for the middleware.
 	MiddlewareConfig struct {
@@ -81,7 +80,7 @@ func (p *portalProxy) sessionMiddleware() echo.MiddlewareFunc {
 	return p.sessionMiddlewareWithConfig(MiddlewareConfig{})
 }
 
-func (p *portalProxy) clearSessionCookie(c echo.Context, setCookieDomain bool) {
+func (p *portalProxy) clearSessionCookie(c *echo.Context, setCookieDomain bool) {
 	if setCookieDomain {
 		// Tell the frontend what the Cookie Domain is so it can check if sessions will work
 		// (used in verifySession)
@@ -104,15 +103,15 @@ func (p *portalProxy) clearSessionCookie(c echo.Context, setCookieDomain bool) {
 func (p *portalProxy) sessionMiddlewareWithConfig(config MiddlewareConfig) echo.MiddlewareFunc {
 	// Default skipper function always returns false
 	if config.Skipper == nil {
-		config.Skipper = func(c echo.Context) bool { return false }
+		config.Skipper = func(c *echo.Context) bool { return false }
 	}
 
 	return func(h echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			log.Debug("sessionMiddleware")
+		return func(c *echo.Context) error {
+			slog.Debug("sessionMiddleware")
 
 			if config.Skipper(c) {
-				log.Debug("Skipping sessionMiddleware")
+				slog.Debug("Skipping sessionMiddleware")
 				return h(c)
 			}
 
@@ -137,15 +136,15 @@ func (p *portalProxy) xsrfMiddleware() echo.MiddlewareFunc {
 func (p *portalProxy) xsrfMiddlewareWithConfig(config MiddlewareConfig) echo.MiddlewareFunc {
 	// Default skipper function always returns false
 	if config.Skipper == nil {
-		config.Skipper = func(c echo.Context) bool { return false }
+		config.Skipper = func(c *echo.Context) bool { return false }
 	}
 
 	return func(h echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			log.Debug("xsrfMiddleware")
+		return func(c *echo.Context) error {
+			slog.Debug("xsrfMiddleware")
 
 			if config.Skipper(c) {
-				log.Debug("Skipping xsrfMiddleware")
+				slog.Debug("Skipping xsrfMiddleware")
 				return h(c)
 			}
 
@@ -189,21 +188,10 @@ func compareTokens(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
-func sessionCleanupMiddleware(h echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		log.Debug("sessionCleanupMiddleware")
-		err := h(c)
-		req := c.Request()
-		context.Clear(req)
-
-		return err
-	}
-}
-
 // This middleware is not required if Echo is upgraded to v3
 func (p *portalProxy) urlCheckMiddleware(h echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		log.Debug("urlCheckMiddleware")
+	return func(c *echo.Context) error {
+		slog.Debug("urlCheckMiddleware")
 		requestPath := c.Request().URL.Path
 		if strings.Contains(requestPath, "../") {
 			err := "Invalid path"
@@ -229,7 +217,7 @@ func (p *portalProxy) urlCheckMiddleware(h echo.HandlerFunc) echo.HandlerFunc {
 var immutableAssetPath = regexp.MustCompile(`(?:^|/)(?:(?:main|styles|polyfills|chunk|worker)-[A-Za-z0-9_-]{8}\.(?:js|css)|media/[A-Za-z0-9._-]+-[A-Z0-9]{8}\.[a-z0-9]+)$`)
 
 func (p *portalProxy) setStaticCacheContentMiddleware(h echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
+	return func(c *echo.Context) error {
 		if immutableAssetPath.MatchString(c.Request().URL.Path) {
 			c.Response().Header().Set("cache-control", "public, max-age=31536000, immutable")
 		} else {
@@ -241,7 +229,7 @@ func (p *portalProxy) setStaticCacheContentMiddleware(h echo.HandlerFunc) echo.H
 }
 
 func (p *portalProxy) setSecureCacheContentMiddleware(h echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
+	return func(c *echo.Context) error {
 		c.Response().Header().Set("cache-control", "no-store")
 		c.Response().Header().Set("pragma", "no-cache")
 		return h(c)
@@ -249,7 +237,7 @@ func (p *portalProxy) setSecureCacheContentMiddleware(h echo.HandlerFunc) echo.H
 }
 
 func (p *portalProxy) adminMiddleware(h echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
+	return func(c *echo.Context) error {
 		// if user is an admin, passthrough request
 
 		// get the user guid
@@ -272,8 +260,8 @@ func (p *portalProxy) adminMiddleware(h echo.HandlerFunc) echo.HandlerFunc {
 
 // endpointAdminMiddleware - checks if user is admin or endpointadmin
 func (p *portalProxy) endpointAdminMiddleware(h echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		log.Debug("endpointAdminMiddleware")
+	return func(c *echo.Context) error {
+		slog.Debug("endpointAdminMiddleware")
 
 		userID, err := p.GetSessionValue(c, "user_id")
 		if err != nil {
@@ -297,8 +285,8 @@ func (p *portalProxy) endpointAdminMiddleware(h echo.HandlerFunc) echo.HandlerFu
 
 // endpointUpdateDeleteMiddleware - checks if user has necessary permissions to modify endpoint
 func (p *portalProxy) endpointUpdateDeleteMiddleware(h echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		log.Debug("endpointUpdateDeleteMiddleware")
+	return func(c *echo.Context) error {
+		slog.Debug("endpointUpdateDeleteMiddleware")
 		userID, err := p.GetSessionValue(c, "user_id")
 		if err != nil {
 			return c.NoContent(http.StatusUnauthorized)
@@ -332,12 +320,12 @@ func (p *portalProxy) endpointUpdateDeleteMiddleware(h echo.HandlerFunc) echo.Ha
 }
 
 func errorLoggingMiddleware(h echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		log.Debug("errorLoggingMiddleware")
+	return func(c *echo.Context) error {
+		slog.Debug("errorLoggingMiddleware")
 		err := h(c)
 		if shadowError, ok := err.(api.ErrHTTPShadow); ok {
 			if len(shadowError.LogMessage) > 0 {
-				log.Error(shadowError.LogMessage)
+				slog.Error(shadowError.LogMessage, "path", c.Request().URL.Path, "status", shadowError.HTTPError.Code)
 			}
 			return shadowError.HTTPError
 		} else if jetstreamError, ok := err.(api.JetstreamError); ok {
@@ -361,12 +349,12 @@ func retryAfterUpgradeMiddleware(h echo.HandlerFunc, env *env.VarSet) echo.Handl
 
 	// If any of those properties are not set, disable upgrade middleware
 	if !noUpgradeVolumeOK || !noUpgradeLockFileNameOK {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			return h(c)
 		}
 	}
 
-	return func(c echo.Context) error {
+	return func(c *echo.Context) error {
 		if _, err := os.Stat(fmt.Sprintf("/%s/%s", upgradeVolume, upgradeLockFile)); err == nil {
 			c.Response().Header().Add("Retry-After", "10")
 			return c.NoContent(http.StatusServiceUnavailable)
@@ -376,7 +364,7 @@ func retryAfterUpgradeMiddleware(h echo.HandlerFunc, env *env.VarSet) echo.Handl
 	}
 }
 
-func getAPIKeyFromHeader(c echo.Context) (string, error) {
+func getAPIKeyFromHeader(c *echo.Context) (string, error) {
 	header := c.Request().Header.Get(APIKeyHeader)
 
 	l := len(APIKeyAuthScheme)
@@ -388,18 +376,18 @@ func getAPIKeyFromHeader(c echo.Context) (string, error) {
 }
 
 func (p *portalProxy) apiKeyMiddleware(h echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		log.Debug("apiKeyMiddleware")
+	return func(c *echo.Context) error {
+		slog.Debug("apiKeyMiddleware")
 
 		// skipping thise middleware if API keys are disabled
 		if p.Config.APIKeysEnabled == config.APIKeysConfigEnum.Disabled {
-			log.Debugf("apiKeyMiddleware: API keys are disabled, skipping")
+			slog.Debug("apiKeyMiddleware: API keys are disabled, skipping")
 			return h(c)
 		}
 
 		apiKeySecret, err := getAPIKeyFromHeader(c)
 		if err != nil {
-			log.Debugf("apiKeyMiddleware: %v", err)
+			slog.Debug("apiKeyMiddleware: no API key on the request", "error", err)
 			return h(c)
 		}
 
@@ -407,9 +395,9 @@ func (p *portalProxy) apiKeyMiddleware(h echo.HandlerFunc) echo.HandlerFunc {
 		if err != nil {
 			switch err {
 			case sql.ErrNoRows:
-				log.Debug("apiKeyMiddleware: Invalid API key supplied")
+				slog.Debug("apiKeyMiddleware: invalid API key supplied")
 			default:
-				log.Errorf("apiKeyMiddleware: %v", err)
+				slog.Error("apiKeyMiddleware: could not look up the API key", "error", err)
 			}
 
 			return h(c)
@@ -419,12 +407,13 @@ func (p *portalProxy) apiKeyMiddleware(h echo.HandlerFunc) echo.HandlerFunc {
 		if p.Config.APIKeysEnabled == config.APIKeysConfigEnum.AdminOnly {
 			user, err := p.StratosAuthService.GetUser(apiKey.UserGUID)
 			if err != nil {
-				log.Errorf("apiKeyMiddleware: %v", err)
+				slog.Error("apiKeyMiddleware: could not load the API key's user",
+					"user", apiKey.UserGUID, "key", apiKey.GUID, "error", err)
 				return h(c)
 			}
 
 			if !user.Admin {
-				log.Debugf("apiKeyMiddleware: user isn't admin, skipping")
+				slog.Debug("apiKeyMiddleware: user is not an admin, skipping", "user", apiKey.UserGUID)
 				return h(c)
 			}
 		}
@@ -436,18 +425,20 @@ func (p *portalProxy) apiKeyMiddleware(h echo.HandlerFunc) echo.HandlerFunc {
 		sessionValues := make(map[string]interface{})
 		sessionValues["user_id"] = apiKey.UserGUID
 		if err := p.setSessionValues(c, sessionValues); err != nil {
-			log.Errorf("apiKeyMiddleware: %v", err)
+			slog.Error("apiKeyMiddleware: could not set the session values",
+				"user", apiKey.UserGUID, "key", apiKey.GUID, "error", err)
 		}
 
 		err = p.APIKeysRepository.UpdateAPIKeyLastUsed(apiKey.GUID)
 		if err != nil {
-			log.Errorf("apiKeyMiddleware: %v", err)
+			slog.Error("apiKeyMiddleware: could not update the API key's last-used time",
+				"user", apiKey.UserGUID, "key", apiKey.GUID, "error", err)
 		}
 
 		return h(c)
 	}
 }
 
-func (p *portalProxy) apiKeySkipper(c echo.Context) bool {
+func (p *portalProxy) apiKeySkipper(c *echo.Context) bool {
 	return c.Get(APIKeySkipperContextKey) != nil && c.Get(APIKeySkipperContextKey).(bool)
 }

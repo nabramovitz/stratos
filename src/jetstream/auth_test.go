@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,13 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
-	"github.com/labstack/echo/v4"
-	uuid "github.com/satori/go.uuid"
+	"github.com/google/uuid"
+	"github.com/labstack/echo/v5"
+	"go.uber.org/mock/gomock"
 
 	sqlmock "gopkg.in/DATA-DOG/go-sqlmock.v1"
-
-	log "github.com/sirupsen/logrus"
 
 	"github.com/cloudfoundry/stratos/src/jetstream/api"
 	"github.com/cloudfoundry/stratos/src/jetstream/api/config"
@@ -58,7 +57,7 @@ func TestLoginToUAA(t *testing.T) {
 		//Init the auth service
 		err := pp.InitStratosAuthService(api.AuthEndpointTypes[pp.Config.ConsoleConfig.AuthEndpointType])
 		if err != nil {
-			log.Fatalf("Could not initialise auth service: %v", err)
+			slog.Error("could not initialise the auth service", "error", err)
 		}
 
 		mock.ExpectQuery(selectAnyFromTokens).
@@ -93,7 +92,7 @@ func TestLocalLogin(t *testing.T) {
 		passwordHash, _ := crypto.HashPassword(password)
 
 		//generate a user GUID
-		userGUID := uuid.NewV4().String()
+		userGUID := uuid.New().String()
 
 		req := setupMockReq("POST", "", map[string]string{
 			"username": username,
@@ -109,7 +108,7 @@ func TestLocalLogin(t *testing.T) {
 		//Init the auth service
 		err := pp.InitStratosAuthService(api.AuthEndpointTypes[pp.Config.ConsoleConfig.AuthEndpointType])
 		if err != nil {
-			log.Fatalf("Could not initialise auth service: %v", err)
+			slog.Error("could not initialise the auth service", "error", err)
 		}
 
 		rows := sqlmock.NewRows([]string{"user_guid"}).AddRow(userGUID)
@@ -150,7 +149,7 @@ func TestLocalLoginWithBadCredentials(t *testing.T) {
 		passwordHash, _ := crypto.HashPassword(password)
 
 		//generate a user GUID
-		userGUID := uuid.NewV4().String()
+		userGUID := uuid.New().String()
 
 		req := setupMockReq("POST", "", map[string]string{
 			"username": username,
@@ -167,7 +166,7 @@ func TestLocalLoginWithBadCredentials(t *testing.T) {
 		//Init the auth service
 		err := pp.InitStratosAuthService(api.AuthEndpointTypes[pp.Config.ConsoleConfig.AuthEndpointType])
 		if err != nil {
-			log.Fatalf("Could not initialise auth service: %v", err)
+			slog.Error("could not initialise the auth service", "error", err)
 		}
 
 		rows := sqlmock.NewRows([]string{"user_guid"}).AddRow(userGUID)
@@ -200,7 +199,7 @@ func TestLocalLoginWithNoAdminScope(t *testing.T) {
 		passwordHash, _ := crypto.HashPassword(password)
 
 		//generate a user GUID
-		userGUID := uuid.NewV4().String()
+		userGUID := uuid.New().String()
 
 		wrongScope := "not admin scope"
 		req := setupMockReq("POST", "", map[string]string{
@@ -225,7 +224,7 @@ func TestLocalLoginWithNoAdminScope(t *testing.T) {
 		//Init the auth service
 		err := pp.InitStratosAuthService(api.AuthEndpointTypes[pp.Config.ConsoleConfig.AuthEndpointType])
 		if err != nil {
-			log.Fatalf("Could not initialise auth service: %v", err)
+			slog.Error("could not initialise the auth service", "error", err)
 		}
 
 		//The user trying to log in has a non-admin scope
@@ -272,7 +271,7 @@ func TestLoginToUAAWithBadCreds(t *testing.T) {
 		//Init the auth service
 		err := pp.InitStratosAuthService(api.AuthEndpointTypes[pp.Config.ConsoleConfig.AuthEndpointType])
 		if err != nil {
-			log.Fatalf("Could not initialise auth service: %v", err)
+			slog.Error("could not initialise the auth service", "error", err)
 		}
 
 		err = pp.StratosAuthService.Login(ctx)
@@ -318,7 +317,7 @@ func TestLoginToUAAButCantSaveToken(t *testing.T) {
 		//Init the auth service
 		err := pp.InitStratosAuthService(api.AuthEndpointTypes[pp.Config.ConsoleConfig.AuthEndpointType])
 		if err != nil {
-			log.Fatalf("Could not initialise auth service: %v", err)
+			slog.Error("could not initialise the auth service", "error", err)
 		}
 
 		mock.ExpectQuery(selectAnyFromTokens).
@@ -396,10 +395,10 @@ func TestLoginToCNSI(t *testing.T) {
 		//Init the auth service
 		err := pp.InitStratosAuthService(api.AuthEndpointTypes[pp.Config.ConsoleConfig.AuthEndpointType])
 		if err != nil {
-			log.Warnf("%v, defaulting to auth type: remote", err)
+			slog.Warn("defaulting to auth type: remote", "error", err)
 			err = pp.InitStratosAuthService(api.Remote)
 			if err != nil {
-				log.Fatalf("Could not initialise auth service: %v", err)
+				slog.Error("could not initialise the auth service", "error", err)
 			}
 		}
 
@@ -822,10 +821,10 @@ func TestLogout(t *testing.T) {
 		//Init the auth service
 		err := pp.InitStratosAuthService(api.AuthEndpointTypes[pp.Config.ConsoleConfig.AuthEndpointType])
 		if err != nil {
-			log.Warnf("%v, defaulting to auth type: remote", err)
+			slog.Warn("defaulting to auth type: remote", "error", err)
 			err = pp.InitStratosAuthService(api.Remote)
 			if err != nil {
-				log.Fatalf("Could not initialise auth service: %v", err)
+				slog.Error("could not initialise the auth service", "error", err)
 			}
 		}
 
@@ -871,8 +870,8 @@ func TestSaveCNSITokenWithInvalidInput(t *testing.T) {
 		tr := pp.InitEndpointTokenRecord(badUserInfo.TokenExpiry, badAuthToken, badRefreshToken, false)
 		err := pp.setCNSITokenRecord(badCNSIID, badUserInfo.UserGUID, tr)
 
-		log.Printf("tr is: %T %+v", tr, tr)
-		log.Printf("emptyTokenRecord is: %T %+v", emptyTokenRecord, emptyTokenRecord)
+		slog.Debug("token record", "type", fmt.Sprintf("%T", tr), "value", tr)
+		slog.Debug("empty token record", "type", fmt.Sprintf("%T", emptyTokenRecord), "value", emptyTokenRecord)
 
 		Convey("Should fail to login", func() {
 			So(err, ShouldNotBeNil)
@@ -991,7 +990,7 @@ func TestVerifySession(t *testing.T) {
 		defer db.Close()
 
 		if e := pp.InitStratosAuthService(api.Remote); e != nil {
-			log.Fatalf("Could not initialise auth service: %v", e)
+			slog.Error("could not initialise the auth service", "error", e)
 		}
 
 		// Set a dummy userid in session - normally the login to UAA would do this.
@@ -1035,7 +1034,7 @@ func TestVerifySession(t *testing.T) {
 
 		var expectedScopes = `"scopes":["openid","scim.read","cloud_controller.admin","uaa.user","cloud_controller.read","password.write","routing.router_groups.read","cloud_controller.write","doppler.firehose","scim.write"]`
 
-		var expectedBody = `{"status":"ok","error":"","data":{"version":{"proxy_version":"dev","database_version":20161117141922,"build_date":"","git_commit":"","git_branch":""},"user":{"guid":"asd-gjfg-bob","name":"admin","admin":false,` + expectedScopes + `},"endpoints":{"cf":{}},"plugins":null,"config":{"enableTechPreview":false,"APIKeysEnabled":"admin_only","homeViewShowFavoritesOnly":false,"userEndpointsEnabled":"disabled","endpointCardConcurrency":2,"endpointRequestConcurrency":3}}}`
+		var expectedBody = `{"status":"ok","error":"","data":{"version":{"proxy_version":"dev","database_version":20161117141922,"build_date":"","git_commit":"","git_branch":""},"user":{"guid":"asd-gjfg-bob","name":"admin","admin":false,` + expectedScopes + `},"endpoints":{"cf":{}},"plugins":null,"config":{"enableTechPreview":false,"APIKeysEnabled":"admin_only","homeViewShowFavoritesOnly":false,"hideNavLogout":false,"userEndpointsEnabled":"disabled","endpointCardConcurrency":2,"endpointRequestConcurrency":3}}}`
 
 		Convey("Should contain expected body", func() {
 			So(res, ShouldNotBeNil)
@@ -1064,7 +1063,7 @@ func TestVerifySessionNoDate(t *testing.T) {
 		//Init the auth service
 		err := pp.InitStratosAuthService(api.Local)
 		if err != nil {
-			log.Fatalf("Could not initialise auth service: %v", err)
+			slog.Error("could not initialise the auth service", "error", err)
 		}
 
 		// Set a dummy userid in session - normally the login to UAA would do this.
@@ -1106,7 +1105,7 @@ func TestVerifySessionExpired(t *testing.T) {
 		defer db.Close()
 
 		if e := pp.InitStratosAuthService(api.Remote); e != nil {
-			log.Fatalf("Could not initialise auth service: %v", e)
+			slog.Error("could not initialise the auth service", "error", e)
 		}
 
 		// Set a dummy userid in session - normally the login to UAA would do this.
@@ -1154,7 +1153,7 @@ func TestRetrieveToken(t *testing.T) {
 		defer db.Close()
 
 		if e := pp.InitStratosAuthService(api.Remote); e != nil {
-			log.Fatalf("Could not initialise auth service: %v", e)
+			slog.Error("could not initialise the auth service", "error", e)
 		}
 
 		// Mirror TestVerifySession: stub a signed-session user_id and
@@ -1220,7 +1219,7 @@ func TestRetrieveTokenNoSessionDate(t *testing.T) {
 		defer db.Close()
 
 		if e := pp.InitStratosAuthService(api.Local); e != nil {
-			log.Fatalf("Could not initialise auth service: %v", e)
+			slog.Error("could not initialise the auth service", "error", e)
 		}
 
 		// Intentionally omit "exp" so the first session read fails.

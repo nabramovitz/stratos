@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/govau/cf-common/env"
-	log "github.com/sirupsen/logrus"
 )
 
 // APIKeysConfigValue - special type for configuring whether API keys feature is enabled
@@ -105,7 +105,7 @@ var urlType *url.URL
 func Load(intf interface{}, envLookup env.Lookup) error {
 	value := reflect.ValueOf(intf)
 
-	if value.Kind() != reflect.Ptr {
+	if value.Kind() != reflect.Pointer {
 		return errors.New("config: must provide pointer to struct value")
 	}
 
@@ -222,7 +222,7 @@ func NewSecretsDirLookup(secretsDir string) env.Lookup {
 		if _, err := os.Stat(filename); err == nil {
 			contents, err := os.ReadFile(filename)
 			if err != nil {
-				log.Warnf("Error reading secrets file: %s, %s", filename, err)
+				slog.Warn("error reading secrets file", "file", filename, "error", err)
 				return "", false
 			}
 			return strings.TrimSpace(string(contents)), true
@@ -242,7 +242,7 @@ func NewConfigFileLookup(path string) env.Lookup {
 
 	file, err := os.Open(path)
 	if err != nil {
-		log.Warn("Error reading configuration file, ignoring this file: ", err)
+		slog.Warn("error reading configuration file, ignoring it", "path", path, "error", err)
 		return env.NoopLookup
 	}
 	defer func() {
@@ -268,7 +268,7 @@ func NewConfigFileLookup(path string) env.Lookup {
 		return env.NoopLookup
 	}
 
-	log.Debugf("Loaded configuration from file: %s", path)
+	slog.Debug("loaded configuration from file", "path", path)
 
 	return func(k string) (string, bool) {
 		v, ok := loadedConfig[k]

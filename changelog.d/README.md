@@ -2,9 +2,17 @@
 
 Each PR carries its own release-notes fragment here. When a release is
 cut, the fragments are assembled into the annotated release tag body
-(`make stamp tag`), published as the GitHub release notes
-(`make publish`), and then removed (`make sweep`) — this directory is
-empty right after every release. Only this README is permanent.
+(`make stamp tag`) and published as the GitHub release notes
+(`make publish`).
+
+Fragments are **not** cleared after a prerelease. They accumulate until
+the official release, so each prerelease republishes everything the
+directory holds — including entries an earlier prerelease already
+announced. That repetition is deliberate: a prerelease's notes are meant
+to stand on their own, and nobody reading them should have to chain
+several intermediate releases together to work out what changed.
+`make sweep` empties the directory, and it runs only when the official
+release ships. Only this README is permanent.
 
 ## Adding a fragment to your PR
 
@@ -43,7 +51,8 @@ Valid sections, in the order they appear in the published notes:
 | `[Breaking Changes]` | Anything an operator must act on before upgrading |
 | `[Features]` | New functionality |
 | `[BugFixes]` | Fixes |
-| `[Chores]` | Dependency bumps, refactors, CI/build changes |
+| `[Maintainability]` | Keeping the codebase current: retiring an unmaintained or archived dependency, consolidating forked or vendored code, clearing scanner findings |
+| `[Chores]` | Routine dependency bumps, CI/build changes, docs |
 | `[Security Updates]` | CVE fixes (table of release/version/CVE links) |
 
 A section appears in the published notes only when at least one fragment

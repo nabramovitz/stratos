@@ -3,11 +3,11 @@ package userinvite
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/cloudfoundry/stratos/src/jetstream/api"
-	"github.com/labstack/echo/v4"
-	log "github.com/sirupsen/logrus"
+	"github.com/labstack/echo/v5"
 )
 
 // Module init will register plugin
@@ -111,7 +111,7 @@ func (userinvite *UserInvite) Init() error {
 	return nil
 }
 
-func (userinvite *UserInvite) initClientToken(context echo.Context) error {
+func (userinvite *UserInvite) initClientToken(context *echo.Context) error {
 	// Do we have a valid cf guid?
 	if userinvite.portalProxy.GetConfig().CloudFoundryInfo == nil ||
 		len(userinvite.portalProxy.GetConfig().CloudFoundryInfo.EndpointGUID) == 0 {
@@ -142,6 +142,6 @@ func (userinvite *UserInvite) initClientToken(context echo.Context) error {
 		return fmt.Errorf("Failed to verify invite client id and secret: %v", err)
 	}
 
-	log.Info("Invite User UAA client initialized")
+	slog.Info("Invite User UAA client initialized")
 	return nil
 }

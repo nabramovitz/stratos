@@ -35,15 +35,15 @@
         [appApplicationNameUniqueRequest]="getUniqueRequest"
         required
       />
-      @if (createEditServiceInstance.controls.name?.hasError("appNameTaken")) {
+      @if (createEditServiceInstance.controls.name.hasError("appNameTaken")) {
         <app-error> A service instance with this name already exists. Please enter a different one. </app-error>
       }
-      @if (createEditServiceInstance.controls.name?.hasError("maxlength")) {
+      @if (createEditServiceInstance.controls.name.hasError("maxlength")) {
         <app-error> A service instance name cannot exceed 50 characters. </app-error>
       }
-      @if (!createEditServiceInstance.controls.name?.hasError("maxlength")) {
+      @if (!createEditServiceInstance.controls.name.hasError("maxlength")) {
         <div class="inline-icon inline-icon__form">
-          <app-stateful-icon [state]="$safeNavigationMigration(appNameChecking?.status)"></app-stateful-icon>
+          <app-stateful-icon [state]="appNameChecking.status"></app-stateful-icon>
         </div>
       }
     </app-form-field>
@@ -55,7 +55,7 @@
         type="url"
         placeholder="Route Service URL"
       />
-      @if (createEditServiceInstance.controls.route_service_url?.hasError("pattern")) {
+      @if (createEditServiceInstance.controls.route_service_url.hasError("pattern")) {
         <app-error>Invalid URL</app-error>
       }
     </app-form-field>
@@ -66,14 +66,14 @@
         formControlName="syslog_drain_url"
         placeholder="Syslog Drain URL"
       />
-      @if (createEditServiceInstance.controls.syslog_drain_url?.hasError("pattern")) {
+      @if (createEditServiceInstance.controls.syslog_drain_url.hasError("pattern")) {
         <app-error>Invalid URL</app-error>
       }
     </app-form-field>
     <app-form-field class="stepper-form__tags">
       <app-label>Tags</app-label>
       <div class="flex flex-wrap gap-2 p-2 border border-content-border rounded-md min-h-[42px] bg-content-bg">
-        @for (tag of tags; track tag) {
+        @for (tag of tags(); track tag) {
           <span
             class="inline-flex items-center px-3 py-1 text-sm font-medium text-content-text bg-content-secondary rounded-full hover:bg-content-border"
           >
@@ -97,18 +97,61 @@
         />
       </div>
     </app-form-field>
-    <app-form-field class="">
-      <textarea
-        appInput
-        placeholder="Credentials (JSON)"
-        rows="10"
-        class="w-full placeholder:!text-transparent focus:outline-none min-h-[240px] resize-y font-mono text-sm border border-content-border rounded-md p-3 bg-content-bg focus:border-primary focus:ring-1 focus:ring-primary"
-        formControlName="credentials"
-      ></textarea>
-      @if (createEditServiceInstance.controls.credentials.hasError("notValidJson")) {
-        <app-error> Not valid JSON. </app-error>
-      }
-    </app-form-field>
+    <!-- Credentials: one visual control (#5768). In update mode it opens as
+         a readonly view — structure with highlighted '<redacted>' markers,
+         real values after Show credentials — and Edit swaps in the real
+         textarea holding the JSON that will be saved. The readonly view is
+         a styled block rather than a readonly textarea so the markers can
+         be colorized. Create mode is just the editable field. -->
+    <!-- Header row: label + the state controls, ABOVE the (scrollable) box
+         so they are on screen before the box can swallow the scroll — a
+         tall credential set otherwise hides below-the-box buttons. -->
+    @if (isUpdate) {
+      <div class="flex items-center justify-between w-full gap-2">
+        <span class="text-xs font-medium text-primary">Credentials (JSON)</span>
+        @if (!credsSource()?.isLoading()) {
+          <div class="flex gap-2">
+            @if (credsMode() === 'edit') {
+              <button type="button" class="btn btn-ghost" (click)="cancelEdit()">
+                Cancel edit
+              </button>
+            } @else if (displayedCredentialSegments()) {
+              <button type="button" class="btn btn-ghost" (click)="toggleReveal()">
+                {{ credsMode() === 'revealed' ? 'Hide credentials' : 'Show credentials' }}
+              </button>
+              <button type="button" class="btn btn-ghost" (click)="enterEdit()">
+                Edit credentials
+              </button>
+            }
+          </div>
+        }
+      </div>
+    }
+    @if (isUpdate && credsMode() !== 'edit' && displayedCredentialSegments(); as segments) {
+      <pre class="w-full min-h-[240px] max-h-[400px] font-mono text-sm border border-content-border rounded-md p-3 bg-content-bg overflow-auto">@for (segment of segments; track $index) {{{ segment }}@if (!$last) {<span class="text-warning-shade-700 font-semibold">"&lt;redacted&gt;"</span>}}</pre>
+    } @else {
+      <app-form-field class="">
+        <!-- In update mode the header row above carries the label; a
+             placeholder here would float a duplicate over the field. -->
+        <textarea
+          appInput
+          [attr.placeholder]="isUpdate ? null : 'Credentials (JSON)'"
+          aria-label="Credentials (JSON)"
+          rows="10"
+          class="w-full min-w-full placeholder:!text-transparent focus:outline-none min-h-[240px] resize font-mono text-sm border border-content-border rounded-md p-3 bg-content-bg focus:border-primary focus:ring-1 focus:ring-primary"
+          formControlName="credentials"
+        ></textarea>
+        @if (createEditServiceInstance.controls.credentials.hasError("notValidJson")) {
+          <app-error> Not valid JSON. </app-error>
+        }
+      </app-form-field>
+    }
+    @if (credsSource()?.isLoading()) {
+      <span class="self-start text-sm text-secondary-text">Loading credentials…</span>
+    }
+    @if (credsSource()?.error()) {
+      <app-error>Could not load the existing credentials.</app-error>
+    }
   </form>
 } @else {
   <form class="stepper-form" [formGroup]="bindExistingInstance">
