@@ -1,13 +1,16 @@
 @import '@knadh/oat/oat.min.css';
 
-/* oat's theme variables. Its primary is a dark brown; use the Stratos blue
-   (brand-700 in light, so white button text keeps AA contrast). Its input
-   border (#d4d4d8) is too faint for checkbox edges; darken it to 3:1. */
+/* oat follows the OS colour scheme; stb's chrome, tree and CodeMirror
+   editor are light-only, so pin light. oat's theme variables: its primary
+   is a dark brown; use the Stratos blue (brand-700, so white button text
+   keeps AA contrast). Its input border (#d4d4d8) is too faint for
+   checkbox edges; darken it to 3:1. */
 :root {
-  --primary: light-dark(#1976d2, #64b5f6);
-  --primary-foreground: light-dark(#fff, #0d1b2a);
+  color-scheme: light;
+  --primary: #1976d2;
+  --primary-foreground: #fff;
   --ring: var(--primary);
-  --input: light-dark(#8a8a93, #71717a);
+  --input: #8a8a93;
 }
 
 body {
