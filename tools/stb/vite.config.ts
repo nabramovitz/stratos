@@ -22,6 +22,16 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    // The editor stack (codemirror + lezer) is most of the bundle; in one
+    // chunk with the app it crosses Vite's 500 kB warning. A separate vendor
+    // chunk also stays cached across app-only rebuilds.
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [{ name: 'codemirror', test: /node_modules[\\/](@codemirror|@lezer|codemirror|crelt|style-mod|w3c-keyname|@marijn)[\\/]/ }],
+        },
+      },
+    },
   },
   resolve: {
     alias: {
