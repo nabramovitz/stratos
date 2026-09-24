@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .vite/
+.vitest/
 .vitest-attachments/
 tests/**/__screenshots__/
 *.log
