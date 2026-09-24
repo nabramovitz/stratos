@@ -20,16 +20,21 @@ function error(message) {
 
 function runScript(scriptName, scriptPath) {
   log(`Running ${scriptName}...`);
-  // Run the script as .cjs so Node treats it as CommonJS regardless of the
-  // workspace "type": "module", then rename back. Done with fs/execFileSync
-  // rather than a shell string so the paths are never parsed by a shell.
-  const cjsPath = scriptPath.replace('.js', '.cjs');
+  // The tracked build scripts are .cjs and run as they are. A generated .js
+  // file (dist-devkit/backend.js) is CommonJS under the workspace's
+  // "type": "module", so it runs under a temporary .cjs name and is renamed
+  // back. Only generated files take that route: an interrupted run would
+  // otherwise leave tracked files renamed. Done with fs/execFileSync rather
+  // than a shell string so the paths are never parsed by a shell.
+  const cjsPath = scriptPath.endsWith('.js') ? scriptPath.slice(0, -3) + '.cjs' : scriptPath;
   try {
-    try { fs.renameSync(scriptPath, cjsPath); } catch { /* may already be .cjs */ }
+    if (cjsPath !== scriptPath) fs.renameSync(scriptPath, cjsPath);
     try {
       execFileSync('node', [cjsPath], {cwd: ROOT_DIR, stdio: 'inherit'});
     } finally {
-      try { fs.renameSync(cjsPath, scriptPath); } catch { /* nothing to restore */ }
+      if (cjsPath !== scriptPath) {
+        try { fs.renameSync(cjsPath, scriptPath); } catch { /* nothing to restore */ }
+      }
     }
     log(`✓ ${scriptName} complete`);
     return true;
@@ -87,29 +92,24 @@ function buildCustomBuilders() {
     return true;
   }
 
+  // The builders are a workspace of the root package, so the root install
+  // has already installed their dependencies and linked
+  // node_modules/@stratos/builders to the package directory. Only the
+  // compile is left. Running `bun install` here would re-enter the root
+  // install, whose postinstall is this script: with dist still missing,
+  // that recursed without bound.
   try {
-    // Install dependencies
-    log('  Installing builder dependencies...');
-    execSync('bun install', {
-      cwd: buildersDir,
-      stdio: 'inherit'
-    });
-
-    // Build TypeScript
     log('  Compiling TypeScript...');
     execSync('bun run build', {
       cwd: buildersDir,
       stdio: 'inherit'
     });
 
-    // Copy dist to node_modules
-    const distSrc = path.join(buildersDir, 'dist');
-    if (fs.existsSync(distSrc)) {
-      fs.cpSync(distSrc, buildersDist, { recursive: true });
+    if (fs.existsSync(buildersDist)) {
       log('✓ Custom builders built successfully');
       return true;
     } else {
-      error('Build succeeded but dist directory not found');
+      error(`Build succeeded but ${path.relative(ROOT_DIR, buildersDist)} not found`);
       return false;
     }
   } catch (err) {
@@ -175,19 +175,19 @@ function main() {
   buildCustomBuilders();
 
   // Run dev-setup
-  const devSetupPath = path.join(ROOT_DIR, 'build/dev-setup.js');
+  const devSetupPath = path.join(ROOT_DIR, 'build/dev-setup.cjs');
   if (fs.existsSync(devSetupPath)) {
     runScript('dev-setup', devSetupPath);
   }
 
   // Run clean-symlinks
-  const cleanSymlinksPath = path.join(ROOT_DIR, 'build/clean-symlinks.js');
+  const cleanSymlinksPath = path.join(ROOT_DIR, 'build/clean-symlinks.cjs');
   if (fs.existsSync(cleanSymlinksPath)) {
     runScript('clean-symlinks', cleanSymlinksPath);
   }
 
   // Run store-git-metadata
-  const storeMetadataPath = path.join(ROOT_DIR, 'build/store-git-metadata.js');
+  const storeMetadataPath = path.join(ROOT_DIR, 'build/store-git-metadata.cjs');
   if (fs.existsSync(storeMetadataPath)) {
     runScript('store-git-metadata', storeMetadataPath);
   }
