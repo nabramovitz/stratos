@@ -1,5 +1,15 @@
 @import '@knadh/oat/oat.min.css';
 
+/* oat's theme variables. Its primary is a dark brown; use the Stratos blue
+   (brand-700 in light, so white button text keeps AA contrast). Its input
+   border (#d4d4d8) is too faint for checkbox edges; darken it to 3:1. */
+:root {
+  --primary: light-dark(#1976d2, #64b5f6);
+  --primary-foreground: light-dark(#fff, #0d1b2a);
+  --ring: var(--primary);
+  --input: light-dark(#8a8a93, #71717a);
+}
+
 body {
   font-family: system-ui, sans-serif;
   margin: 0;
@@ -23,6 +33,16 @@ body {
   border-bottom: 1px solid var(--border, #e5e7eb);
   flex-shrink: 0;
 }
+
+/* oat styles forms: block labels, full-width selects with a top margin, and
+   roomy buttons. The toolbar wants a compact single row, so labels sit
+   inline beside their select and controls take oat's small padding. These
+   rules are unlayered, so they win over oat's @layer rules. */
+.stb-topbar label { display: inline-flex; align-items: center; gap: var(--space-2); }
+.stb-topbar select { width: auto; margin-block-start: 0; padding-block: var(--space-1); }
+.stb-topbar button { padding: var(--space-1) var(--space-3); }
+.stb-topbar h4 { font-size: var(--text-7); margin: 0; }
+.stb-presets-host { display: flex; align-items: center; gap: 0.5rem; }
 
 /* Actions host flows its controls inline within the topbar */
 .stb-light-dark-actions {
