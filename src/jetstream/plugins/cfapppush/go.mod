@@ -1,21 +1,15 @@
 module github.com/cloudfoundry/stratos/src/jetstream/plugins/cfapppush
 
-go 1.27.0
+go 1.27.1
 
-replace (
-	github.com/cloudfoundry/cli-plugin-repo => code.cloudfoundry.org/cli-plugin-repo v0.0.0-20230525012251-b9c89116786e
-	github.com/cloudfoundry/stratos/src/jetstream/api => ../../api
-	github.com/moby/moby => github.com/moby/moby v20.10.25+incompatible
-	github.com/sabhiram/go-gitignore => github.com/sabhiram/go-gitignore v0.0.0-20180611051255-d3107576ba94
-	github.com/vito/go-interact => github.com/vito/go-interact v1.0.0
-)
+replace github.com/cloudfoundry/stratos/src/jetstream/api => ../../api
 
 require (
 	code.cloudfoundry.org/cli/v8 v8.19.0
-	code.cloudfoundry.org/clock v1.87.0
+	code.cloudfoundry.org/clock v1.89.0
 	github.com/cloudfoundry/stratos/src/jetstream/api v0.0.0-00010101000000-000000000000
 	github.com/coder/websocket v1.8.15
-	github.com/labstack/echo/v5 v5.3.1
+	github.com/labstack/echo/v5 v5.4.0
 	github.com/mholt/archives v0.1.5
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 )
@@ -40,7 +34,6 @@ require (
 	github.com/bodgit/windows v1.0.1 // indirect
 	github.com/charlievieth/fs v0.0.3 // indirect
 	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
-	github.com/cloudfoundry-community/go-cfenv v1.19.0 // indirect
 	github.com/cloudfoundry/bosh-cli v6.4.1+incompatible // indirect
 	github.com/cloudfoundry/bosh-utils v0.0.397 // indirect
 	github.com/cppforlife/go-patch v0.2.0 // indirect
@@ -50,11 +43,9 @@ require (
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
-	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/gorilla/sessions v1.4.0 // indirect
-	github.com/govau/cf-common v0.0.7 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.19.1 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/jessevdk/go-flags v1.6.1 // indirect
@@ -86,12 +77,12 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go4.org v0.0.0-20230225012048-214862532bf5 // indirect
-	golang.org/x/crypto v0.55.0 // indirect
-	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/term v0.45.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/term v0.46.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
