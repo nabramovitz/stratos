@@ -133,6 +133,10 @@ export class DeployApplicationDeployer {
 
   private isOpen = false;
 
+  // The backend can follow a specific close message with a generic one;
+  // only the first close of a deploy is reported
+  private closeReported = false;
+
   public fsFileInfo!: FileScannerInfo;
 
   private fileTransfers: any;
@@ -194,6 +198,7 @@ export class DeployApplicationDeployer {
 
       };
     this.isOpen = true;
+    this.closeReported = false;
     const deployData = this.injector.get(CfDeployAppDataService);
     const deployState$ = toObservable(deployData.state, { injector: this.injector });
     this.connectSub = deployState$.pipe(
@@ -402,7 +407,7 @@ export class DeployApplicationDeployer {
         break;
       case SocketEventTypes.CLOSE_NO_MANIFEST:
         this.onClose(log, 'Deploy Failed - No manifest present!',
-          'Failed to deploy app! Please make sure that a valid manifest.yaml is present.');
+          'Failed to deploy app! Add a manifest.yml to the source or enter an application name.');
         break;
       case SocketEventTypes.CLOSE_FAILED_CLONE:
         this.onClose(log, 'Deploy Failed - Failed to clone repository!',
@@ -482,6 +487,10 @@ export class DeployApplicationDeployer {
   }
 
   private onClose(log: any, title: string | null, error: any) {
+    if (this.closeReported) {
+      return;
+    }
+    this.closeReported = true;
     if (title) {
       this.streamTitle = title;
     }

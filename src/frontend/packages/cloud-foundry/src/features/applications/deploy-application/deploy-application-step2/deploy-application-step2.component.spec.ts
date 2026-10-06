@@ -6,7 +6,7 @@ import { ActivatedRoute } from '@angular/router';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Subject, of } from 'rxjs';
 
-import { getGitHubAPIURL, GITHUB_API_URL, GitSCMService, GitHubSCM } from '@stratosui/git';
+import { getGitHubAPIURL, GITHUB_API_URL, GitDataService, GitSCMService, GitHubSCM } from '@stratosui/git';
 import {
   EntityCatalogHelper,
   EntityCatalogHelpers,
@@ -17,6 +17,7 @@ import {
 import { createBasicStoreModule, STORE_TEST_PROVIDERS } from '@stratosui/store/testing';
 import { generateCFEntities } from '../../../../cf-entity-generator';
 import { ApplicationDeploySourceTypes, DEPLOY_TYPES_IDS } from '../deploy-application-steps.types';
+import { CfDeployAppDataService } from '../../../../services/domain-data/cf-deploy-app-data.service';
 import { DeployApplicationStep2Component } from './deploy-application-step2.component';
 
 describe('DeployApplicationStep2Component', () => {
@@ -268,7 +269,7 @@ describe('DeployApplicationStep2Component', () => {
   // through the registered endpoint's stored creds (which 404s on a private
   // repo the typed token can actually see). Only Public mode should carry the
   // endpoint guid.
-  describe('projectExistsEndpointGuid (private/enterprise must not proxy via registered endpoint)', () => {
+  describe('activeEndpointGuid (private/enterprise must not proxy via registered endpoint)', () => {
     beforeEach(() => {
       fixture = TestBed.createComponent(DeployApplicationStep2Component);
       component = fixture.componentInstance;
@@ -283,17 +284,17 @@ describe('DeployApplicationStep2Component', () => {
 
     it('uses the registered endpoint guid in Public mode', () => {
       component.gitMode = 'public';
-      expect(component.projectExistsEndpointGuid).toBe('747ed39a-endpoint-guid');
+      expect(component.activeEndpointGuid).toBe('747ed39a-endpoint-guid');
     });
 
     it('drops the endpoint guid in Private mode (use the typed token directly)', () => {
       component.gitMode = 'private';
-      expect(component.projectExistsEndpointGuid).toBe('');
+      expect(component.activeEndpointGuid).toBe('');
     });
 
     it('drops the endpoint guid in Enterprise mode (use the typed token directly)', () => {
       component.gitMode = 'enterprise';
-      expect(component.projectExistsEndpointGuid).toBe('');
+      expect(component.activeEndpointGuid).toBe('');
     });
 
     it('rebuilds the SCM with no endpoint guid when switching to Private', () => {
@@ -308,6 +309,40 @@ describe('DeployApplicationStep2Component', () => {
       const getSCM = vi.spyOn(TestBed.inject(GitSCMService), 'getSCM');
       component.setGitMode('public');
       expect(getSCM).toHaveBeenLastCalledWith('github', '747ed39a-endpoint-guid');
+    });
+  });
+
+  // The backend clones a repository with or without an endpoint; the endpoint
+  // only supplies stored creds. So a Public-tab source with no endpoint
+  // registered must deploy like a Private one without a token, not stop at
+  // Next with nothing saved.
+  describe('onNext for a GitHub source', () => {
+    beforeEach(() => {
+      fixture = TestBed.createComponent(DeployApplicationStep2Component);
+      component = fixture.componentInstance;
+      vi.spyOn(TestBed.inject(GitDataService), 'getRepository')
+        .mockReturnValue({ waitForValue$: of({ clone_url: 'https://github.com/o/r.git' }) } as any);
+      component.repository = 'o/r';
+      component.repositoryBranch = { name: 'main' } as any;
+    });
+
+    it('saves the deploy details in Public mode with no endpoint registered', () => {
+      const save = vi.spyOn(TestBed.inject(CfDeployAppDataService), 'saveAppDetails');
+      component.sourceType = { id: 'github', group: 'gitscm', name: 'GitHub' } as any;
+      component.gitMode = 'public';
+      component.onNext();
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({ projectName: 'o/r', url: 'https://github.com/o/r.git', endpointGuid: '' }),
+        null,
+      );
+    });
+
+    it('saves the registered endpoint in Public mode when one is selected', () => {
+      const save = vi.spyOn(TestBed.inject(CfDeployAppDataService), 'saveAppDetails');
+      component.sourceType = { id: 'github', group: 'gitscm', name: 'GitHub', endpointGuid: 'ep-1' } as any;
+      component.gitMode = 'public';
+      component.onNext();
+      expect(save).toHaveBeenCalledWith(expect.objectContaining({ endpointGuid: 'ep-1' }), null);
     });
   });
 
