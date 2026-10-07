@@ -102,6 +102,9 @@ export interface CreateAppParams {
   memory?: number;
   disk?: number;
   environmentVariables?: Record<string, string>;
+  // Override the app lifecycle. Defaults to buildpack (buildpacks/stack).
+  // Pass { type: 'docker', data: {} } to create a Docker-image app.
+  lifecycle?: { type: 'buildpack' | 'docker'; data?: Record<string, unknown> };
 }
 
 export interface CreateOrgParams {
@@ -233,7 +236,7 @@ export class CFApiHelper {
           }
         }
       },
-      lifecycle: {
+      lifecycle: params.lifecycle ?? {
         type: 'buildpack',
         data: {
           buildpacks: params.buildpacks || [],
@@ -347,6 +350,44 @@ export class CFApiHelper {
   }
 
   /**
+   * Read an app's user-provided environment variables. CF API v3 returns them
+   * under `var` (they are a separate sub-resource, not echoed on app create).
+   */
+  async getAppEnvironment(appGuid: string): Promise<Record<string, string>> {
+    if (!this.cfApiBase) await this.init();
+    const resp = await this.pget(`${this.cfApiBase}/apps/${appGuid}/environment_variables`);
+    return resp?.var ?? {};
+  }
+
+  /**
+   * GUIDs of the routes currently mapped to an app
+   */
+  async getAppRouteGuids(appGuid: string): Promise<string[]> {
+    if (!this.cfApiBase) await this.init();
+    const resp = await this.pget(`${this.cfApiBase}/apps/${appGuid}/routes?per_page=5000`);
+    return (resp?.resources ?? []).map((r: { guid: string }) => r.guid);
+  }
+
+  /**
+   * Read a CF feature flag (e.g. `diego_docker`). Operators toggle these per
+   * foundation, so a spec exercising a flagged feature reads the target's
+   * actual setting rather than assuming it.
+   */
+  async isFeatureFlagEnabled(name: string): Promise<boolean> {
+    if (!this.cfApiBase) await this.init();
+    const resp = await this.pget(`${this.cfApiBase}/feature_flags/${name}`);
+    return resp?.enabled === true;
+  }
+
+  /**
+   * Set a CF feature flag (admin only). Callers restore the previous value.
+   */
+  async setFeatureFlag(name: string, enabled: boolean): Promise<void> {
+    if (!this.cfApiBase) await this.init();
+    await this.ppatch(`${this.cfApiBase}/feature_flags/${name}`, { enabled });
+  }
+
+  /**
    * Wait for app to reach desired state
    */
   async waitForAppState(appGuid: string, desiredState: 'STOPPED' | 'STARTED', timeoutMs: number = 60000): Promise<void> {
@@ -387,6 +428,14 @@ export class CFApiHelper {
     };
 
     return await this.ppost(`${this.cfApiBase}/organizations`, orgData);
+  }
+
+  /**
+   * Get the console name of this CF endpoint (as shown in the UI selects).
+   */
+  async getEndpointName(): Promise<string> {
+    const endpoints = await this.request.get('/api/v1/endpoints');
+    return endpoints.find((ep: any) => ep.guid === this.cfGuid)?.name || '';
   }
 
   /**
@@ -553,15 +602,21 @@ export class CFApiHelper {
   }
 
   /**
+   * Get a route's destinations (the apps it is mapped to).
+   */
+  async getRouteDestinations(routeGuid: string): Promise<Array<{ guid: string; app?: { guid: string } }>> {
+    if (!this.cfApiBase) await this.init();
+    const res = await this.pget(`${this.cfApiBase}/routes/${routeGuid}/destinations`);
+    return res.destinations || [];
+  }
+
+  /**
    * Unmap route from app
    */
   async unmapRoute(routeGuid: string, appGuid: string): Promise<void> {
-    if (!this.cfApiBase) await this.init();
-
     // The destination guid is not the app guid — look up the destination
     // that points at this app.
-    const res = await this.pget(`${this.cfApiBase}/routes/${routeGuid}/destinations`);
-    const dest = (res.destinations || []).find((d: any) => d.app?.guid === appGuid);
+    const dest = (await this.getRouteDestinations(routeGuid)).find(d => d.app?.guid === appGuid);
     if (!dest) return; // already unmapped
     await this.pdelete(`${this.cfApiBase}/routes/${routeGuid}/destinations/${dest.guid}`);
   }
