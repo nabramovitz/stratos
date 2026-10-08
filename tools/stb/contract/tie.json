@@ -40,7 +40,6 @@
     "dialog-error": { "groups": ["dialog", "button", "status"] },
     "sidepanel-preview": { "groups": ["dialog"], "why": "Side panels are dialog surfaces that enter from an edge." },
 
-    "app-paginator": { "groups": ["table", "form", "button"] },
     "endpoint-list": { "groups": ["table", "status"] },
     "list-sub-nav": { "groups": ["table", "page"], "why": "Belongs to the list it filters, but renders as page-level sub-navigation." },
 
