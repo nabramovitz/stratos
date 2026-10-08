@@ -26,8 +26,7 @@
                 "name": "Store git metadata",
                 "script": "bun build/store-git-metadata.cjs",
                 "phase": 1,
-                "cache": true,
-                "cacheKey": [".git/HEAD", ".git/refs/heads/**"],
+                "cache": false,
                 "timeout": 30000,
                 "required": true
               },
@@ -42,10 +41,10 @@
               },
               {
                 "name": "Prepare backend",
-                "script": "bun dist-devkit/src/backend.js",
+                "script": "bun dist-devkit/backend.js",
                 "phase": 2,
                 "cache": true,
-                "cacheKey": ["dist-devkit/src/backend.js", "src/jetstream/**/*.go"],
+                "cacheKey": ["dist-devkit/backend.js", "src/jetstream/**/*.go"],
                 "timeout": 60000,
                 "required": false
               }

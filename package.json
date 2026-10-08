@@ -63,7 +63,7 @@
     "test-frontend:cf-autoscaler": "vitest run --project=cf-autoscaler",
     "test-frontend:kubernetes": "vitest run --project=kubernetes",
     "test-frontend:git": "vitest run --project=git",
-    "posttest": "echo 'Coverage reports in coverage/ directory'",
+    "posttest": "echo 'Coverage reports in coverage/frontend/ directory'",
     "lint": "eslint --report-unused-disable-directives-severity warn src/frontend/packages/{core,store,cloud-foundry,kubernetes,cf-autoscaler,git,shared,extension}/src/ e2e/ && bun test --config=scripts/tests/bunfig.toml tools/eslint-rules/tests scripts/tests && bun scripts/lint-e2e-data-test.mjs && bun scripts/lint-e2e-ratchet.mjs && bun scripts/lint-nested-pins.mjs",
     "lint:docs": "bun scripts/lint-docs.mjs",
     "e2e": "playwright test",
@@ -115,7 +115,8 @@
     "brace-expansion": "^5.0.6",
     "@sigstore/core": "^3.2.1",
     "launch-editor": "^2.14.1",
-    "@babel/core": "7.29.7"
+    "@babel/core": "7.29.7",
+    "source-map-js": "^1.2.2"
   },
   "dependencies": {
     "@angular/animations": "22.2.1",
@@ -187,7 +188,7 @@
     "@types/hammerjs": "^2.0.46",
     "@types/intersect": "^1.0.3",
     "@types/js-yaml": "4.0.9",
-    "@types/node": "26.6.3",
+    "@types/node": "26.6.4",
     "@types/pngjs": "^6.0.5",
     "@types/webpack": "^5.28.5",
     "@vitest/coverage-v8": "^5.0.3",
@@ -197,7 +198,7 @@
     "angular-eslint": "22.5.0",
     "baseline-browser-mapping": "^2.11.27",
     "copy-webpack-plugin": "14.0.0",
-    "eslint": "^10.11.0",
+    "eslint": "^10.12.0",
     "fs-extra": "11.4.1",
     "happy-dom": "^20.14.5",
     "js-yaml": "5.4.2",
