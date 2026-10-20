@@ -368,7 +368,10 @@ export class CustomFormFieldComponent
       input.setAttribute("aria-invalid", "true");
       input.setAttribute("aria-errormessage", `${this.inputId}-error`);
     } else {
-      input.removeAttribute("aria-invalid");
+      // "false", not absent: without it WebKit falls back to the native
+      // :invalid of an empty required input and VoiceOver says "invalid
+      // data" before the user has typed.
+      input.setAttribute("aria-invalid", "false");
       input.removeAttribute("aria-errormessage");
     }
   }

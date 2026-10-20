@@ -186,3 +186,58 @@ describe('CustomFormFieldComponent — projects all of its content', () => {
     expect(error?.textContent?.trim()).toBe('This name has been taken, please try another.');
   });
 });
+
+@Component({
+  standalone: true,
+  imports: [CustomFormFieldComponent, AppInputDirective, ReactiveFormsModule],
+  template: `
+    <app-form-field>
+      <input appInput required placeholder="Application Name" [formControl]="name">
+    </app-form-field>
+  `,
+})
+class RequiredInputHostComponent {
+  name = new FormControl('');
+}
+
+// VoiceOver (WebKit) read an untouched required field as "required
+// Application Name Application Name required invalid data": the star named
+// the input through the <label for>, and with no aria-invalid WebKit falls
+// back to the empty input's native :invalid.
+describe('CustomFormFieldComponent — required input for assistive tech', () => {
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [provideZonelessChangeDetection()] });
+  });
+
+  const mount = async () => {
+    const fixture = TestBed.createComponent(RequiredInputHostComponent);
+    await fixture.whenStable();
+    return fixture;
+  };
+
+  it('keeps the required star out of the input name', async () => {
+    const fixture = await mount();
+    const star = fixture.nativeElement.querySelector('label span.text-danger');
+    expect(star?.textContent).toBe('*');
+    expect(star.getAttribute('aria-label')).toBeNull();
+    expect(star.getAttribute('aria-hidden')).toBe('true');
+    expect(fixture.nativeElement.querySelector('input').getAttribute('aria-required')).toBe('true');
+  });
+
+  it('marks an untouched empty required input aria-invalid="false"', async () => {
+    const fixture = await mount();
+    expect(fixture.nativeElement.querySelector('input').getAttribute('aria-invalid')).toBe('false');
+  });
+
+  it('marks it aria-invalid="true" once it is dirty and invalid', async () => {
+    const fixture = await mount();
+    const { name } = fixture.componentInstance;
+    name.setValue('a');
+    name.markAsDirty();
+    name.setValue('');
+    await fixture.whenStable();
+    const input = fixture.nativeElement.querySelector('input');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(input.getAttribute('aria-errormessage')).toBe(`${input.id}-error`);
+  });
+});

@@ -60,7 +60,9 @@
             [class]="labelClasses"
             [attr.aria-hidden]="true">
             @if (isRequired && !hideRequiredMarker) {
-              <span class="text-danger mr-0.5 font-medium" aria-label="required">*</span>
+              <!-- aria-required says "required"; a named star made it part of
+                   the input's name through the label's for. -->
+              <span class="text-danger mr-0.5 font-medium" aria-hidden="true">*</span>
             }
             {{ placeholder }}
           </label>
