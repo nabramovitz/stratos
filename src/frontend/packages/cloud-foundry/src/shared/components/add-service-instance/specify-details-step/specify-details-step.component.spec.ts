@@ -136,9 +136,12 @@ describe('SpecifyDetailsStepComponent', () => {
     // same as the parent-template binding in the real wizard.
     fixture.componentRef.setInput('showModeSelection', true);
     await fixture.whenStable();
+    // The options render when the list first opens.
+    (fixture.nativeElement.querySelector('[role="combobox"]') as HTMLElement).click();
+    await fixture.whenStable();
 
     const texts = Array.from(
-      fixture.nativeElement.querySelectorAll('app-option') as NodeListOf<HTMLElement>,
+      fixture.nativeElement.querySelectorAll('[role="option"]') as NodeListOf<HTMLElement>,
     ).map(o => o.textContent?.trim());
     expect(texts).toContain('instance-one');
     expect(texts).toContain('instance-two');
