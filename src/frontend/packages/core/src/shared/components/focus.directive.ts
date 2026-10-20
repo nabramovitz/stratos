@@ -2,7 +2,10 @@ import { Directive, ElementRef, Input, NgZone, OnChanges, inject } from '@angula
 
 @Directive({
 selector: '[appFocus]',
-standalone: true
+standalone: true,
+// Marks the target so a container (e.g. app-steppers on a step change) can
+// find it: the input fires only on change, not when the element is shown.
+host: { '[attr.data-app-focus]': 'appFocus || null' }
 })
 export class FocusDirective implements OnChanges {
   @Input() appFocus!: boolean;

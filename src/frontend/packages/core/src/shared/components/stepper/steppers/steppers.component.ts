@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, AfterContentInit, Component, ContentChildren, Injector, Input, OnDestroy, OnInit, QueryList, TemplateRef, ViewEncapsulation, afterNextRender, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, AfterContentInit, Component, ContentChildren, ElementRef, Injector, Input, OnDestroy, OnInit, QueryList, TemplateRef, ViewEncapsulation, afterNextRender, inject, signal, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { RoutingHistoryService } from '@stratosui/store';
@@ -11,6 +11,8 @@ import { SteppersService } from '../steppers.service';
 import { StepComponent, StepOnNextResult } from './../step/step.component';
 import { DotContentComponent } from '../../../../core/dot-content/dot-content.component';
 import { AppBusyComponent } from '../../busy-indicator/busy-indicator.component';
+
+let nextSteppersId = 0;
 
 @Component({
   selector: 'app-steppers',
@@ -41,6 +43,9 @@ export class SteppersComponent implements OnInit, AfterContentInit, OnDestroy {
   private cdr = inject(ChangeDetectorRef);
   private injector = inject(Injector);
 
+  // Step title ids; the content container is labelled by the active one.
+  readonly titleIdPrefix = `app-steppers-${nextSteppersId++}-title-`;
+  private contents = viewChild<ElementRef<HTMLElement>>('contents');
 
   private nextSub!: Subscription;
   cancel$: Observable<string>;
@@ -358,11 +363,22 @@ export class SteppersComponent implements OnInit, AfterContentInit, OnDestroy {
       // only deliver if the step is still the active one.
       if (enteringStep.active) {
         enteringStep.pOnEnter(enterData);
+        this.focusEnteredStep();
       }
     }, { injector: this.injector });
 
     // Trigger change detection for OnPush strategy
     this.cdr.markForCheck();
+  }
+
+  // SC 2.4.3: after a step change focus was left on <body>. Move it into the
+  // new step: the step's own [appFocus]/autofocus target, else the container,
+  // which reads as the step title. Only step changes get here; the first
+  // step activates through the unblock poller.
+  private focusEnteredStep() {
+    const contents = this.contents()?.nativeElement;
+    const target = contents?.querySelector<HTMLElement>('[data-app-focus], [autofocus]') ?? contents;
+    target?.focus();
   }
 
   private findValidStep(index: number, isNextDirection: boolean) {

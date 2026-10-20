@@ -14,6 +14,7 @@ import { CoreModule } from '../../../../core/core.module';
 import { MDAppModule } from '../../../../core/md.module';
 import { SignalStepHandle, StepComponent } from '../step/step.component';
 import { SteppersComponent } from './steppers.component';
+import { FocusDirective } from '../../focus.directive';
 
 describe('SteppersComponent', () => {
   let component: SteppersComponent;
@@ -208,5 +209,98 @@ describe('SteppersComponent — projected step content', () => {
 
     await hostFixture.whenStable();
     expect(hostFixture.componentInstance.entered).toEqual(['two']);
+  });
+});
+
+// SC 2.4.3: after a step change focus must land in the new step, not on
+// <body>. A step can name its own target with [appFocus] (or autofocus);
+// otherwise the step container takes focus and is named by the step title.
+@Component({
+  standalone: true,
+  imports: [SteppersComponent, StepComponent, FocusDirective],
+  template: `
+    <app-steppers>
+      <app-step [title]="'One'" [signalHandle]="handle"><input id="one-input"></app-step>
+      <app-step [title]="'Two'" [signalHandle]="handle">
+        <p>Instructions</p>
+        <input id="two-input" [appFocus]="focusTwo">
+      </app-step>
+    </app-steppers>
+  `,
+})
+class FocusHostComponent {
+  focusTwo = false;
+  handle: SignalStepHandle = { valid: signal(true) };
+}
+
+describe('SteppersComponent — focus after a step change', () => {
+  let hostFixture: ComponentFixture<FocusHostComponent>;
+  let steppers: SteppersComponent;
+  const contents = () =>
+    hostFixture.nativeElement.querySelector('.steppers-contents') as HTMLElement;
+
+  async function mount(focusTwo: boolean) {
+    TestBed.configureTestingModule({
+      imports: [FocusHostComponent, RouterTestingModule],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+      ],
+    });
+    await TestBed.compileComponents();
+    hostFixture = TestBed.createComponent(FocusHostComponent);
+    hostFixture.componentInstance.focusTwo = focusTwo;
+    hostFixture.autoDetectChanges();
+    await hostFixture.whenStable();
+    steppers = hostFixture.debugElement
+      .query(By.directive(SteppersComponent))
+      .componentInstance as SteppersComponent;
+    // Wait for the first-step unblock poller to activate step One.
+    await vi.waitFor(() => expect(steppers.steps[0].active).toBe(true));
+    await hostFixture.whenStable();
+  }
+
+  afterEach(() => hostFixture?.destroy());
+
+  it('does not move focus on the first render', async () => {
+    await mount(false);
+    expect(contents().contains(document.activeElement)).toBe(false);
+  });
+
+  it('focuses the step container, named by the step title, after Next', async () => {
+    await mount(false);
+    steppers.goNext();
+    await vi.waitFor(() => expect(steppers.currentIndex()).toBe(1));
+    await hostFixture.whenStable();
+
+    const container = contents();
+    expect(document.activeElement).toBe(container);
+    expect(container.getAttribute('role')).toBe('group');
+    expect(container.getAttribute('tabindex')).toBe('-1');
+    const title = document.getElementById(container.getAttribute('aria-labelledby')!);
+    expect(title?.textContent?.trim()).toBe('Two');
+  });
+
+  it('focuses the [appFocus] element of the new step after Next', async () => {
+    await mount(true);
+    steppers.goNext();
+    await vi.waitFor(() => expect(steppers.currentIndex()).toBe(1));
+    await hostFixture.whenStable();
+
+    expect(document.activeElement?.id).toBe('two-input');
+  });
+
+  it('marks the active step header with aria-current="step"', async () => {
+    await mount(false);
+    const current = () => Array.from(
+      hostFixture.nativeElement.querySelectorAll('[aria-current="step"]') as NodeListOf<HTMLElement>
+    ).map(el => el.querySelector('.steppers-header-text')?.textContent?.trim());
+    expect(current()).toEqual(['One']);
+
+    steppers.goNext();
+    await vi.waitFor(() => expect(steppers.currentIndex()).toBe(1));
+    await hostFixture.whenStable();
+    expect(current()).toEqual(['Two']);
   });
 });

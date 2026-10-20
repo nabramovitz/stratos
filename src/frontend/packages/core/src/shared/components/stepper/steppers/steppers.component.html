@@ -16,6 +16,7 @@
             @for (step of steps; track $index; let i = $index; let isLast = $last) {
               <div
                 class="steppers-header flex items-center shrink-0 min-w-0"
+                [attr.aria-current]="step.active ? 'step' : null"
              [ngClass]="{
                'steppers-header--active': step.active,
                'steppers-header--busy': step.blocked || step.showBusy
@@ -47,7 +48,7 @@
                       <!-- Normal state -->
                     </div>
                     <!-- Step title -->
-                    <span class="steppers-header-text ml-2 sm:ml-3 text-xs sm:text-sm font-medium truncate max-w-[120px] sm:max-w-none"
+                    <span [id]="titleIdPrefix + i" class="steppers-header-text ml-2 sm:ml-3 text-xs sm:text-sm font-medium truncate max-w-[120px] sm:max-w-none"
                   [ngClass]="{
                     'steppers-header-text--active': step.active,
                     'steppers-header-text--complete': step.complete,
@@ -72,8 +73,11 @@
             }
           </div>
         }
-        <!-- Step content -->
-        <div class="steppers-contents mb-8">
+        <!-- Step content. Takes focus after a step change when the step names
+             no target of its own (see focusEnteredStep). -->
+        <div #contents class="steppers-contents mb-8 focus:outline-none" tabindex="-1"
+          [attr.role]="steps.length > 1 ? 'group' : null"
+          [attr.aria-labelledby]="steps.length > 1 ? titleIdPrefix + currentIndex() : null">
           <span *ngTemplateOutlet="steps[currentIndex()].content"></span>
         </div>
         <!-- Navigation buttons -->
