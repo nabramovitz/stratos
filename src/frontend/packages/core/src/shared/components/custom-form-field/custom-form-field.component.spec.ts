@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
-import { provideZonelessChangeDetection } from '@angular/core';
-import { CustomFormFieldComponent } from './custom-form-field.component';
+import { Component, provideZonelessChangeDetection } from '@angular/core';
+import { ReactiveFormsModule, FormControl } from '@angular/forms';
+import { AppErrorComponent, AppInputDirective, CustomFormFieldComponent } from './custom-form-field.component';
 
 describe('CustomFormFieldComponent — Tailwind state-class getters (FWT-956)', () => {
   let component: CustomFormFieldComponent;
@@ -98,5 +99,50 @@ describe('CustomFormFieldComponent — Tailwind state-class getters (FWT-956)', 
       Object.defineProperty(component, 'isValid', { get: () => true, configurable: true });
       expect(component.rippleColorClasses).toContain('bg-success');
     });
+  });
+});
+
+@Component({
+  standalone: true,
+  imports: [CustomFormFieldComponent, AppInputDirective, AppErrorComponent, ReactiveFormsModule],
+  template: `
+    <app-form-field>
+      <input appInput placeholder="Name" [formControl]="name">
+      @if (name.hasError('taken')) {
+        <app-error>This name has been taken, please try another.</app-error>
+      }
+      <div class="extra">Add tag...</div>
+      <span appSuffix class="toggle">show</span>
+    </app-form-field>
+  `,
+})
+class ProjectedContentHostComponent {
+  name = new FormControl('', (c) => (c.value === 'dup' ? { taken: true } : null));
+}
+
+describe('CustomFormFieldComponent — projects all of its content', () => {
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [provideZonelessChangeDetection()] });
+  });
+
+  it('renders content that matches no named slot', async () => {
+    const fixture = TestBed.createComponent(ProjectedContentHostComponent);
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('.extra')?.textContent).toBe('Add tag...');
+  });
+
+  it('puts an appSuffix element in the suffix slot', async () => {
+    const fixture = TestBed.createComponent(ProjectedContentHostComponent);
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('.form-field-suffix .toggle')).toBeTruthy();
+  });
+
+  it('shows the app-error text in place of the generic message', async () => {
+    const fixture = TestBed.createComponent(ProjectedContentHostComponent);
+    fixture.componentInstance.name.setValue('dup');
+    fixture.componentInstance.name.markAsDirty();
+    await fixture.whenStable();
+    const error = fixture.nativeElement.querySelector('.form-field-error');
+    expect(error?.textContent?.trim()).toBe('This name has been taken, please try another.');
   });
 });

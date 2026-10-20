@@ -15,6 +15,10 @@
   [class.float-label-always]="floatLabel === 'always'"
   [class.float-label-auto]="floatLabel === 'auto'">
 
+  <!-- Visible label. Without this slot Angular dropped <app-label>, so
+       those fields had no label on screen and no accessible name. -->
+  <ng-content select="app-label"></ng-content>
+
   <div class="form-field-wrapper relative">
 
     <!-- Main form field flex container -->
@@ -45,6 +49,9 @@
 
         <!-- Input content -->
         <ng-content select="input, textarea, select, app-select"></ng-content>
+        <!-- Everything else (custom controls such as the tag input).
+             Without a default slot Angular dropped it. -->
+        <ng-content></ng-content>
 
         <!-- Floating Label — suppressed for app-select; the select renders its own muted placeholder -->
         @if (placeholder && !selectComponent) {
@@ -63,7 +70,7 @@
       <!-- Suffix -->
       <div class="form-field-suffix flex items-center pl-2 gap-1 transition-colors duration-200"
            [class]="prefixSuffixColorClasses">
-        <ng-content select="[matSuffix], span[matSuffix]"></ng-content>
+        <ng-content select="[matSuffix], span[matSuffix], [appSuffix]"></ng-content>
 
         <!-- Error icon indicator -->
         @if (isInvalid) {
@@ -122,11 +129,15 @@
               d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
               clip-rule="evenodd"/>
           </svg>
+          <!-- A projected <app-error> replaces the generic message, inside
+               the element that aria-errormessage points at. -->
           <div class="form-field-error flex-1 text-xs leading-tight"
             [id]="inputId + '-error'">
-            {{ errorMessage }}
+            @if (!customErrors.length) {
+              {{ errorMessage }}
+            }
+            <ng-content select="mat-error, app-error"></ng-content>
           </div>
-          <ng-content select="mat-error"></ng-content>
         </div>
       }
 

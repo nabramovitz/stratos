@@ -2,6 +2,8 @@ import {
   Component,
   Input,
   ContentChild,
+  ContentChildren,
+  QueryList,
   ElementRef,
   AfterContentInit,
   Directive,
@@ -96,6 +98,8 @@ export class CustomFormFieldComponent
   inputElement!: ElementRef;
   @ContentChild(CustomSelectComponent, { static: false })
   selectComponent!: CustomSelectComponent;
+  @ContentChildren(forwardRef(() => AppErrorComponent))
+  customErrors!: QueryList<AppErrorComponent>;
   @ContentChild(NgControl, { static: false }) ngControl!: NgControl;
 
   public focused = false;
@@ -446,6 +450,7 @@ export class MatSuffixDirective {}
   styleUrls: ["./custom-form-field.component.scss"],
   changeDetection: ChangeDetectionStrategy.OnPush,
   standalone: true,
+  host: { class: "block mb-1 text-sm font-medium text-content-text" },
 })
 export class MatLabelComponent {
   @Input() labelFor = "";
