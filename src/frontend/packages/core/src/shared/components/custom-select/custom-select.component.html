@@ -13,6 +13,7 @@
     [disabled]="disabled"
     [class.border-primary]="expanded()"
     [attr.aria-label]="accessibleName"
+    [attr.aria-labelledby]="ariaLabelledby || null"
     [attr.aria-required]="required || null"
     [attr.aria-invalid]="invalid || null"
     [attr.aria-describedby]="invalid && errorMessage ? 'error-' + (id || name) : null">
@@ -80,6 +81,7 @@
         [wrap]="false"
         [activeDescendant]="activeShown() ? listbox.activeDescendant() : undefined"
         [attr.aria-label]="accessibleName"
+        [attr.aria-labelledby]="ariaLabelledby || null"
         (click)="onOptionCommit()"
         (keydown.enter)="onOptionCommit()"
         (keydown.space)="onOptionCommit()">

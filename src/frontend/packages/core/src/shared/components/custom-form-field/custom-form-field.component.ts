@@ -98,6 +98,11 @@ export class CustomFormFieldComponent
   inputElement!: ElementRef;
   @ContentChild(CustomSelectComponent, { static: false })
   selectComponent!: CustomSelectComponent;
+  @ContentChild(forwardRef(() => MatLabelComponent), {
+    read: ElementRef,
+    static: false,
+  })
+  labelElement?: ElementRef<HTMLElement>;
   @ContentChildren(forwardRef(() => AppErrorComponent))
   customErrors!: QueryList<AppErrorComponent>;
   @ContentChild(NgControl, { static: false }) ngControl!: NgControl;
@@ -127,6 +132,14 @@ export class CustomFormFieldComponent
       // Set select id if not present
       if (!this.selectComponent.id) {
         this.selectComponent.id = this.inputId;
+      }
+
+      // The select is a div combobox, so <label for> does not name it.
+      // Name it from the visible label, unless the caller set ariaLabel.
+      if (this.labelElement && !this.selectComponent.ariaLabel) {
+        const label = this.labelElement.nativeElement;
+        label.id ||= `${this.inputId}-label`;
+        this.selectComponent.ariaLabelledby = label.id;
       }
 
       // Monitor select value changes

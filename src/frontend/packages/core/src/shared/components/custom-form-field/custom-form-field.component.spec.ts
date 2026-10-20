@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { Component, provideZonelessChangeDetection } from '@angular/core';
 import { ReactiveFormsModule, FormControl } from '@angular/forms';
-import { AppErrorComponent, AppInputDirective, CustomFormFieldComponent } from './custom-form-field.component';
+import { AppErrorComponent, AppInputDirective, CustomFormFieldComponent, MatLabelComponent } from './custom-form-field.component';
+import { CustomOptionComponent, CustomSelectComponent } from '../custom-select/custom-select.component';
 
 describe('CustomFormFieldComponent — Tailwind state-class getters (FWT-956)', () => {
   let component: CustomFormFieldComponent;
@@ -99,6 +100,45 @@ describe('CustomFormFieldComponent — Tailwind state-class getters (FWT-956)', 
       Object.defineProperty(component, 'isValid', { get: () => true, configurable: true });
       expect(component.rippleColorClasses).toContain('bg-success');
     });
+  });
+});
+
+@Component({
+  standalone: true,
+  imports: [CustomFormFieldComponent, MatLabelComponent, CustomSelectComponent, CustomOptionComponent],
+  template: `
+    <app-form-field>
+      <app-label>Service</app-label>
+      <app-select><app-option value="a">alpha</app-option></app-select>
+    </app-form-field>
+    <app-form-field>
+      <app-label>Plan</app-label>
+      <app-select ariaLabel="Service plan"><app-option value="a">alpha</app-option></app-select>
+    </app-form-field>
+  `,
+})
+class LabelledSelectHostComponent {}
+
+describe('CustomFormFieldComponent — label names a projected app-select', () => {
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [provideZonelessChangeDetection()] });
+  });
+
+  it('points the combobox at the visible label', async () => {
+    const fixture = TestBed.createComponent(LabelledSelectHostComponent);
+    await fixture.whenStable();
+    const [trigger] = fixture.nativeElement.querySelectorAll('[role="combobox"]');
+    const id = trigger.getAttribute('aria-labelledby');
+    expect(id).toBeTruthy();
+    expect(document.getElementById(id)?.textContent?.trim()).toBe('Service');
+  });
+
+  it('leaves an explicit ariaLabel in charge', async () => {
+    const fixture = TestBed.createComponent(LabelledSelectHostComponent);
+    await fixture.whenStable();
+    const [, trigger] = fixture.nativeElement.querySelectorAll('[role="combobox"]');
+    expect(trigger.getAttribute('aria-labelledby')).toBeNull();
+    expect(trigger.getAttribute('aria-label')).toBe('Service plan');
   });
 });
 

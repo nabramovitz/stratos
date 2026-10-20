@@ -83,6 +83,8 @@ export class CustomSelectComponent implements ControlValueAccessor, AfterContent
   @Input() placeholder = '';
   /** Accessible name when the select has no visible label. Defaults to the placeholder. */
   @Input() ariaLabel = '';
+  /** Id of a visible label; `<app-form-field>` sets it from its `<app-label>`. */
+  @Input() ariaLabelledby = '';
   @Input({ transform: booleanAttribute }) multiple = false;
   @Input() required = false;
   @Input() name!: string;
