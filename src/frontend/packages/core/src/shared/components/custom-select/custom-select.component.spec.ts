@@ -93,6 +93,15 @@ function optionTexts(fixture: ComponentFixture<unknown>): string[] {
     .map((el: Element) => el.textContent?.trim() ?? '');
 }
 
+// The active option is exposed a moment after the list opens (VoiceOver).
+async function activeShown(fixture: ComponentFixture<unknown>) {
+  const trigger = triggerOf(fixture);
+  for (let i = 0; i < 50 && !trigger.hasAttribute('aria-activedescendant'); i++) {
+    await new Promise(r => setTimeout(r, 20));
+    await fixture.whenStable();
+  }
+}
+
 function activeText(fixture: ComponentFixture<unknown>): string | undefined {
   const id = triggerOf(fixture).getAttribute('aria-activedescendant');
   return id ? fixture.nativeElement.querySelector(`[id="${id}"]`)?.textContent?.trim() : undefined;
@@ -145,6 +154,7 @@ describe('CustomSelectComponent as a select-only combobox', () => {
     trigger.focus();
     key(trigger, 'ArrowDown');
     await fixture.whenStable();
+    await activeShown(fixture);
     return { fixture, trigger };
   }
 
@@ -231,6 +241,44 @@ describe('CustomSelectComponent as a select-only combobox', () => {
     await fixture.whenStable();
     expect(fixture.componentInstance.picked()).toBeNull();
     expect(selectOf(fixture).value).toBeUndefined();
+  });
+
+  // WebKit reads the combobox's text as its value, so the placeholder and
+  // the required star must not be text.
+  it('draws the placeholder as CSS, not as text', async () => {
+    const fixture = TestBed.createComponent(OrgHostComponent);
+    await fixture.whenStable();
+    const value = triggerOf(fixture).querySelector('[data-placeholder]') as HTMLElement;
+    expect(value.dataset['placeholder']).toBe('Org');
+    expect(value.textContent?.trim()).toBe('');
+  });
+
+  it('keeps the chosen option when Enter lands on it again', async () => {
+    const { fixture, trigger } = await open();
+    key(trigger, 'ArrowDown');
+    await fixture.whenStable();
+    key(trigger, 'Enter');
+    await fixture.whenStable();
+    expect(fixture.componentInstance.picked()).toBe('alpha');
+
+    key(trigger, 'ArrowDown');
+    await fixture.whenStable();
+    await activeShown(fixture);
+    expect(activeText(fixture)).toBe('alpha');
+    key(trigger, 'Enter');
+    await fixture.whenStable();
+    expect(selectOf(fixture).value).toBe('alpha');
+    expect(trigger.textContent).toContain('alpha');
+  });
+
+  it('stays on the last option when Down is pressed there', async () => {
+    const { fixture, trigger } = await open();
+    key(trigger, 'End');
+    await fixture.whenStable();
+    expect(activeText(fixture)).toBe('echo');
+    key(trigger, 'ArrowDown');
+    await fixture.whenStable();
+    expect(activeText(fixture)).toBe('echo');
   });
 
   it('forwards focus from the host to the trigger', async () => {

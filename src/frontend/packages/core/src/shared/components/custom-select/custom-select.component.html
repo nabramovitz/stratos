@@ -23,12 +23,17 @@
     <span class="flex-1 min-w-0 grid items-center">
       <span class="invisible whitespace-nowrap col-start-1 row-start-1 pointer-events-none pr-1"
             aria-hidden="true">{{ longestOptionText() || ' ' }}</span>
-      <span class="col-start-1 row-start-1 truncate"
+      <span class="col-start-1 row-start-1 truncate before:content-[attr(data-placeholder)_/_'']"
         [class.select-trigger-placeholder]="!displayValue()"
-        [class.select-trigger-value]="!!displayValue()">
-        {{ displayValue() || placeholder || 'Select...' }}
+        [class.select-trigger-value]="!!displayValue()"
+        [attr.data-placeholder]="displayValue() ? null : placeholder || 'Select...'">
+        <!-- The placeholder and the required star are drawn by CSS with empty
+             alternative text. WebKit reads the combobox's text as its value,
+             even under aria-hidden, so VoiceOver read "Cloud Foundry *" as if
+             it were chosen. The name already carries the placeholder. -->
+        {{ displayValue() }}
         @if (required && !displayValue()) {
-          <span class="text-danger ml-0.5 font-medium" aria-hidden="true">*</span>
+          <span class="text-danger ml-0.5 font-medium after:content-['*'_/_'']" aria-hidden="true"></span>
         }
       </span>
     </span>
@@ -68,7 +73,8 @@
         [multi]="multiple"
         [value]="selectedValues()"
         (valueChange)="onListboxValueChange($event)"
-        [activeDescendant]="listbox.activeDescendant()"
+        [wrap]="false"
+        [activeDescendant]="activeShown() ? listbox.activeDescendant() : undefined"
         [attr.aria-label]="accessibleName"
         (click)="onOptionCommit()"
         (keydown.enter)="onOptionCommit()"

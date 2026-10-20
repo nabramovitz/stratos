@@ -118,6 +118,14 @@ export class CustomSelectComponent implements ControlValueAccessor, AfterContent
   private readonly listbox = viewChild(Listbox);
 
   readonly expanded = signal(false);
+  /**
+   * VoiceOver in Safari says nothing about the list opening when
+   * aria-activedescendant is set in the same update, so the active option
+   * is exposed 300 ms after it opens. Exposing it after one render was not
+   * enough. NOTE: a measured delay, not an event; re-check it with the
+   * VoiceOver run when Safari or @angular/aria change.
+   */
+  readonly activeShown = signal(false);
   readonly selectedValues = signal<any[]>([]);
   readonly optionList = signal<CustomOptionComponent[]>([]);
   private readonly disabledState = signal(false);
@@ -198,7 +206,9 @@ export class CustomSelectComponent implements ControlValueAccessor, AfterContent
       this.dropdownTop.set(`${rect.bottom + 4}px`);
       this.dropdownLeft.set(`${rect.left}px`);
       this.dropdownWidth.set(`${rect.width}px`);
+      setTimeout(() => this.activeShown.set(this.expanded()), 300);
     }
+    this.activeShown.set(false);
     this.expanded.set(open);
     this._onTouched();
   }
@@ -207,6 +217,12 @@ export class CustomSelectComponent implements ControlValueAccessor, AfterContent
   onListboxValueChange(values: any[]) {
     if (this.multiple) {
       this.commit(values);
+      return;
+    }
+    // Enter or a click on the chosen option toggles it off in the listbox;
+    // a single select keeps it. A new array makes the listbox take it back.
+    if (values.length === 0) {
+      this.selectedValues.set([...this.selectedValues()]);
       return;
     }
     // A null/undefined option (e.g. "None") clears the selection.
