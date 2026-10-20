@@ -53,7 +53,11 @@
     </div>
   </div>
 
+  <!-- tabindex -1: Chrome puts a scrollable box in the Tab order, so Tab
+       from an open long list landed here, the popup closed, and focus fell
+       to <body>. -->
   <div class="select-options fixed z-[9999] bg-[var(--card-bg,white)] dark:bg-[var(--card-bg,#1e293b)] border border-[var(--content-border,#e5e7eb)] dark:border-[var(--content-border,#475569)] rounded-md shadow-lg max-h-80 overflow-y-auto min-w-[240px] max-w-max w-auto"
+    tabindex="-1"
     [class.hidden]="!expanded()"
     [style.top]="dropdownTop()"
     [style.left]="dropdownLeft()"

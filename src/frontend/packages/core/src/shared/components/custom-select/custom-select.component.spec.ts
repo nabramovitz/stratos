@@ -167,6 +167,14 @@ describe('CustomSelectComponent as a select-only combobox', () => {
     expect(trigger.getAttribute('aria-controls')).toBe(listbox.id);
   });
 
+  // Chrome puts a scrollable box in the Tab order. Tab from an open long
+  // list then focused the popup, which closed and dropped focus to <body>.
+  it('keeps the scrolling popup out of the Tab order', async () => {
+    const { fixture } = await open();
+    const popup = fixture.nativeElement.querySelector('.select-options');
+    expect(popup.getAttribute('tabindex')).toBe('-1');
+  });
+
   it('opens with ArrowDown and renders real options', async () => {
     const { fixture, trigger } = await open();
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
