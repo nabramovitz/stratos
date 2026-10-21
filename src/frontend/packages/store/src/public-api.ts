@@ -60,6 +60,7 @@ export {
 export { RequestTypes, APIResponse } from './actions/request.actions';
 export { LocalPaginationHelpers } from './helpers/local-list.helpers';
 export { pick } from './helpers/reducer.helper';
+export { observeSignal, combineLatestOrEmpty, createSignalWrapper } from './helpers/signal-interop';
 export type { ApiKey } from './apiKey.types';
 export type {
   PaginationPageIteratorConfig,
@@ -88,9 +89,11 @@ export {
 export { getFavoriteInfoObservable } from './helpers/store-helpers';
 export {
   JetStreamErrorResponse,
+  extractHttpErrorMessage,
   httpErrorResponseToSafeString,
   isHttpErrorResponse,
   proxyAPIVersion,
+  stripMarkup,
 } from './jetstream';
 export type { RoutingEvent } from './types/routing.type';
 export type { IFavoriteMetadata, IFavoritesInfo, UserFavoriteEndpoint, IEndpointFavMetadata, FavoriteIconData } from './types/user-favorites.types';

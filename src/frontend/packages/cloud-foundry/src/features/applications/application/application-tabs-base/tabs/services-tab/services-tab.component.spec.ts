@@ -36,6 +36,7 @@ describe('ServicesTabComponent', () => {
   let removeServiceBinding: ReturnType<typeof vi.fn>;
   let unbindService: ReturnType<typeof vi.fn>;
   let confirmOpen: ReturnType<typeof vi.fn>;
+  let snackError: ReturnType<typeof vi.fn>;
   let routerNavigate: ReturnType<typeof vi.fn>;
 
   /** Minimal AppDetailDataService stub. */
@@ -52,7 +53,7 @@ describe('ServicesTabComponent', () => {
   };
 
   const makeBindingsActionsStub = () => {
-    unbindService = vi.fn(async () => undefined);
+    unbindService = vi.fn(async () => 'deleted');
     return {
       transitioningBindingGuid: signal<string | null>(null).asReadonly(),
       inFlight: signal(false).asReadonly(),
@@ -105,7 +106,10 @@ describe('ServicesTabComponent', () => {
     return { open: confirmOpen };
   };
 
-  const makeSnackStub = () => ({ open: vi.fn() });
+  const makeSnackStub = () => {
+    snackError = vi.fn();
+    return { open: vi.fn(), error: snackError };
+  };
 
   beforeEach(async () => {
     routerNavigate = vi.fn(async () => true);
@@ -161,17 +165,17 @@ describe('ServicesTabComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  it('renders without throwing', () => {
-    expect(() => fixture.detectChanges()).not.toThrow();
+  it('renders without throwing', async () => {
+    await expect(fixture.whenStable()).resolves.toBeDefined();
   });
 
-  it('triggers an initial serviceBindings fetch on init', () => {
-    fixture.detectChanges();
+  it('triggers an initial serviceBindings fetch on init', async () => {
+    await fixture.whenStable();
     expect(refreshScope).toHaveBeenCalledWith('serviceBindings');
   });
 
-  it('builds a signal-list config from the bindings config service', () => {
-    fixture.detectChanges();
+  it('builds a signal-list config from the bindings config service', async () => {
+    await fixture.whenStable();
     expect(component.listConfig).toBeTruthy();
     expect(component.listConfig.pagedItems).toBeTruthy();
     const actionsCol = component.listConfig.columns.find(c => c.key === 'actions');
@@ -180,7 +184,7 @@ describe('ServicesTabComponent', () => {
   });
 
   it('Unbind row action opens confirm and on confirm calls unbindService + evicts row', async () => {
-    fixture.detectChanges();
+    await fixture.whenStable();
     const row = { guid: 'bind-1', serviceInstance: { name: 'redis-cache', guid: 'si-1' } };
     const actionsCol = component.listConfig.columns.find(c => c.key === 'actions') as any;
     const actions = actionsCol.actions(row);
@@ -197,8 +201,26 @@ describe('ServicesTabComponent', () => {
     expect(removeServiceBinding).toHaveBeenCalledWith('bind-1');
   });
 
-  it('Edit row action navigates to /services/:type/:cnsi/:siGuid/edit with appId + cancel-url', () => {
-    fixture.detectChanges();
+  it('keeps the row, re-reads bindings and says so when an unbind ends with an unknown result', async () => {
+    unbindService.mockResolvedValueOnce('unknown');
+    await fixture.whenStable();
+    const row = { guid: 'bind-2', serviceInstance: { name: 'redis-cache', guid: 'si-1' } };
+    const actionsCol = component.listConfig.columns.find(c => c.key === 'actions') as any;
+    actionsCol.actions(row).find((a: any) => a.label === 'Unbind').invoke();
+    const [, onConfirm] = confirmOpen.mock.calls[0];
+    refreshScope.mockClear();
+    await onConfirm();
+
+    expect(removeServiceBinding).not.toHaveBeenCalled();
+    expect(refreshScope).toHaveBeenCalledWith('serviceBindings');
+    expect(snackError).toHaveBeenCalledWith(
+      'Unbind "redis-cache": the operation ended, but its result could not be determined. '
+      + 'The Services tab shows the current state.',
+    );
+  });
+
+  it('Edit row action navigates to /services/:type/:cnsi/:siGuid/edit with appId + cancel-url', async () => {
+    await fixture.whenStable();
     const row = {
       guid: 'bind-1',
       serviceInstance: { name: 'redis-cache', guid: 'si-1', type: 'managed' },

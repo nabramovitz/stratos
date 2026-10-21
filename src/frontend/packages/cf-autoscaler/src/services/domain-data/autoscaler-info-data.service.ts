@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { environment } from '@stratosui/core';
 
 import { AutoscalerInfo } from '../../store/app-autoscaler.types';
+import { autoscalerErrorMessage } from '../../core/autoscaler-helpers/autoscaler-util';
 
 // Per-endpoint state held in one signal-of-map. Keyed by endpointGuid
 // so multiple CF endpoints can be queried independently from the same
@@ -29,7 +30,6 @@ const EMPTY: InfoState = { info: null, loading: false, error: null };
 //   error(guid)              — Signal<string|null> (null on 404 — that
 //                              just means autoscaler isn't configured)
 //   isAvailable(guid)        — Signal<boolean>  (info present, no error)
-//   canManageCredentials(g)  — Signal<boolean>  (build major >= 3)
 //   load(guid)               — Promise<void>; populates the cache
 @Injectable({ providedIn: 'root' })
 export class AutoscalerInfoDataService {
@@ -57,28 +57,6 @@ export class AutoscalerInfoDataService {
     });
   }
 
-  // Mirrors the legacy `canManageCredentials$` derivation in the
-  // autoscaler-tab-extension component — autoscaler builds >= 3.x
-  // expose the credential management endpoints.
-  canManageCredentials(endpointGuid: string): Signal<boolean> {
-    return computed(() => {
-      const s = this.stateFor(endpointGuid);
-      if (!s.info || s.error) {
-        return false;
-      }
-      const build = s.info.build;
-      if (!build || typeof build !== 'string') {
-        return false;
-      }
-      const parts = build.split('.');
-      if (parts.length === 0) {
-        return false;
-      }
-      const major = Number.parseInt(parts[0], 10);
-      return Number.isFinite(major) && major >= 3;
-    });
-  }
-
   async load(endpointGuid: string): Promise<void> {
     this.patch(endpointGuid, { loading: true, error: null });
     const headers = new HttpHeaders({
@@ -97,7 +75,7 @@ export class AutoscalerInfoDataService {
         this.patch(endpointGuid, { info: null, loading: false, error: null });
         return;
       }
-      const message = (err as HttpErrorResponse)?.message ?? String(err);
+      const message = autoscalerErrorMessage(err);
       this.patch(endpointGuid, { info: null, loading: false, error: message });
     }
   }

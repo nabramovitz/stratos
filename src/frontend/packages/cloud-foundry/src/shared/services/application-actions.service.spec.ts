@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { provideZonelessChangeDetection, signal } from '@angular/core';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { BehaviorSubject } from 'rxjs';
@@ -11,8 +11,8 @@ import { AppLifecycleStateService } from '../../features/applications/app-lifecy
 import { ApplicationService } from '../../features/applications/application.service';
 import { CloudFoundryEndpointService } from '../../features/cf/services/cloud-foundry-endpoint.service';
 import { CfAppsSignalConfigService } from '../signal-list-configs/app/cf-apps-signal-config.service';
-import { ConfirmationDialogService } from '@stratosui/core';
-import type { StratosJob, JobStage } from '../../services/async-jobs/async-job.types';
+import { ConfirmationDialogService, TailwindSnackBarService } from '@stratosui/core';
+import { StratosJobError, type StratosJob, type JobStage } from '../../services/async-jobs/async-job.types';
 
 import {
   generateCfStoreModules,
@@ -21,6 +21,10 @@ import {
 // ---------------------------------------------------------------------------
 // Minimal stubs
 // ---------------------------------------------------------------------------
+
+// What writeWithJob throws when a polled job ends FAILED.
+const failedJob = (error: { code: string; message: string; detail?: string }) =>
+  new StratosJobError({ id: 'j', kind: 'k', state: 'FAILED', startedAt: '', updatedAt: '', errors: [error] });
 
 function makeAppServiceStub(cfGuid = 'cf-1', appGuid = 'app-1') {
   return {
@@ -53,6 +57,7 @@ function makeDataServiceStub(opts: { instances?: number, runningStats?: number }
     app: signal({ entity: { name: 'test-app', instances } }),
     org: signal({ guid: 'test-org-guid', name: 'test-org' }),
     space: signal({ guid: 'test-space-guid', name: 'test-space' }),
+    errors: signal<Record<string, unknown>>({}),
     stats: signal(stats),
     summary: signal({ memory: 256, disk_quota: 512 }),
     lastPolledAt: signal(new Date()),
@@ -332,7 +337,7 @@ describe('AppApplicationActionsService', () => {
 
   it('log() captures fail entry on error', async () => {
     appsStub.restageApp.mockImplementationOnce(async () => {
-      throw { job: { errors: [{ code: 'CF-AppStaged', message: 'staging failed' }] } };
+      throw failedJob({ code: 'CF-AppStaged', message: 'staging failed' });
     });
 
     void svc.restage();
@@ -475,7 +480,7 @@ describe('AppApplicationActionsService', () => {
 
   it('delete failure path: does NOT call orchestrator.removeRow', async () => {
     appsStub.deleteApp.mockImplementationOnce(async () => {
-      throw { job: { errors: [{ code: 'CF-AppDeleteFailed', message: 'boom' }] } };
+      throw failedJob({ code: 'CF-AppDeleteFailed', message: 'boom' });
     });
 
     void svc.deleteWithCleanup([], []);
@@ -484,6 +489,62 @@ describe('AppApplicationActionsService', () => {
     const log = svc.log();
     expect(log.find(e => e.event === 'fail')).toBeDefined();
     expect(appsStub._removeRow).not.toHaveBeenCalled();
+  });
+
+  it('delete that fails in CF says why, not CF\'s error name', async () => {
+    appsStub.deleteApp.mockImplementationOnce(async () => {
+      throw failedJob({ code: 'cf.v3.10009', message: 'CF-UnableToPerform', detail: '<p>The app has active service bindings.</p>' });
+    });
+
+    void svc.deleteWithCleanup([], []);
+    await tick(8);
+
+    const failEntry = svc.log().find(e => e.event === 'fail');
+    expect(failEntry?.error).toEqual({ code: 'cf.v3.10009', message: 'The app has active service bindings.' });
+    expect(svc.outcomeError()).toBe('The app has active service bindings.');
+  });
+
+  it('delete with an unknown result: keeps the row, stays on the page and says so', async () => {
+    appsStub.deleteApp.mockImplementationOnce(async () => 'unknown');
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigateByUrl');
+    const snackBar = TestBed.inject(TailwindSnackBarService);
+    const open = vi.spyOn(snackBar, 'open');
+    const data = TestBed.inject(AppDetailDataService) as unknown as { refresh: ReturnType<typeof vi.fn> };
+
+    void svc.deleteWithCleanup([], [], { appName: 'my-app', endpointName: 'cf', orgName: 'o', spaceName: 's' });
+    await tick(8);
+
+    expect(appsStub._removeRow).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+    expect(data.refresh).toHaveBeenCalledWith('all');
+    expect(svc.outcome()).toBe('unknown');
+    expect(svc.displayLabel()).toBe('Delete result unknown');
+    expect(svc.outcomeError()).toBe(
+      'Delete "my-app": the operation ended, but its result could not be determined. '
+      + 'This page shows the current state.',
+    );
+  });
+
+  it('delete still running in CF at the tracking limit: keeps the row and says it is still running', async () => {
+    appsStub.deleteApp.mockImplementationOnce(async () => 'still-running');
+    void svc.deleteWithCleanup([], [], { appName: 'my-app', endpointName: 'cf', orgName: 'o', spaceName: 's' });
+    await tick(8);
+    expect(appsStub._removeRow).not.toHaveBeenCalled();
+    expect(svc.outcome()).toBe('unknown');
+    expect(svc.outcomeError()).toBe(
+      'Delete "my-app": still running in Cloud Foundry after 1 h, so Stratos stopped checking on it. '
+      + 'This page shows its current state.',
+    );
+  });
+
+  it('a lifecycle action with an unknown result is not reported as done', async () => {
+    appsStub.restartApp.mockImplementationOnce(async () => 'unknown');
+    void svc.restart();
+    await tick(8);
+    expect(svc.outcome()).toBe('unknown');
+    expect(svc.displayLabel()).toBe('Restart result unknown');
   });
 
   it('non-delete success paths: do NOT call orchestrator.removeRow', async () => {
@@ -519,6 +580,54 @@ describe('AppApplicationActionsService', () => {
     expect(cfg.message).toContain('org "test-org"');
     expect(cfg.message).toContain('space "test-space"');
     expect(cfg.message).not.toContain('"?"');
+  });
+
+  describe('on a direct load into the delete wizard, before the space and org have loaded', () => {
+    const later = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    let data: ReturnType<typeof makeDataServiceStub>;
+    const coldDelete = () => svc.deleteWithCleanup([], [], { appName: 'cold-app', endpointName: 'cold-cf', orgName: '', spaceName: '' });
+
+    beforeEach(() => {
+      data = TestBed.inject(AppDetailDataService) as unknown as ReturnType<typeof makeDataServiceStub>;
+      data.space.set(undefined as never);
+      data.org.set(undefined as never);
+    });
+
+    it('waits for them, then names both in the dialog and the progress overlay', async () => {
+      void coldDelete();
+      await later(150);
+      expect(confirmDialogStub.open).not.toHaveBeenCalled();
+
+      data.space.set({ guid: 's', name: 'late-space' });
+      data.org.set({ guid: 'o', name: 'late-org' });
+      await later(150);
+      const [cfg, confirm] = confirmDialogStub.open.mock.calls[0] as [{ message: string }, () => void];
+      expect(cfg.message).toContain('org "late-org" / space "late-space"');
+      confirm();
+      await tick();
+      expect(svc.currentTarget()).toMatchObject({ org: 'late-org', space: 'late-space' });
+    });
+
+    it('asks without them once the space fetch has failed', async () => {
+      void coldDelete();
+      data.errors.set({ space: { code: 'FETCH_ERROR', message: 'no space' } });
+      await later(150);
+      const cfg = confirmDialogStub.open.mock.calls[0][0] as { message: string };
+      expect(cfg.message).toContain('org "?" / space "?"');
+    });
+
+    it('asks without them after 10 s', async () => {
+      vi.useFakeTimers();
+      try {
+        void coldDelete();
+        await vi.advanceTimersByTimeAsync(9_900);
+        expect(confirmDialogStub.open).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(200);
+        expect(confirmDialogStub.open).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   it('keeps caller-supplied names when the target is fully resolved', async () => {

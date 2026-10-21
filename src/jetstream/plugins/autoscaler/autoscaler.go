@@ -1,7 +1,6 @@
 package autoscaler
 
 import (
-	"fmt"
 	"net/url"
 
 	"github.com/labstack/echo/v5"
@@ -62,12 +61,7 @@ func (a *Autoscaler) detachAutoscalerPolicy(echoContext *echo.Context) error {
 func (a *Autoscaler) getAutoscalerMetric(echoContext *echo.Context) error {
 	appID := echoContext.Param("appId")
 	metricType := echoContext.Param("metricType")
-	start := echoContext.QueryParam("start-time")
-	end := echoContext.QueryParam("end-time")
-	page := echoContext.QueryParam("page")
-	perPage := echoContext.QueryParam("results-per-page")
-	order := echoContext.QueryParam("order")
-	queryURL := fmt.Sprintf("?start-time=%s&end-time=%s&page=%s&results-per-page=%s&order=%s", start, end, page, perPage, order)
+	queryURL := historyQuery(echoContext.QueryParams())
 	metricURL, _ := url.Parse("/v1/apps/" + appID + "/aggregated_metric_histories/" + metricType + queryURL)
 	responses, err := a.portalProxy.ProxyRequest(echoContext, metricURL)
 	if err != nil {
@@ -78,12 +72,7 @@ func (a *Autoscaler) getAutoscalerMetric(echoContext *echo.Context) error {
 
 func (a *Autoscaler) getAutoscalerEvent(echoContext *echo.Context) error {
 	appID := echoContext.Param("appId")
-	start := echoContext.QueryParam("start-time")
-	end := echoContext.QueryParam("end-time")
-	page := echoContext.QueryParam("page")
-	perPage := echoContext.QueryParam("results-per-page")
-	order := echoContext.QueryParam("order")
-	queryURL := fmt.Sprintf("?start-time=%s&end-time=%s&page=%s&results-per-page=%s&order=%s", start, end, page, perPage, order)
+	queryURL := historyQuery(echoContext.QueryParams())
 	eventURL, _ := url.Parse("/v1/apps/" + appID + "/scaling_histories" + queryURL)
 	responses, err := a.portalProxy.ProxyRequest(echoContext, eventURL)
 	if err != nil {
@@ -92,22 +81,18 @@ func (a *Autoscaler) getAutoscalerEvent(echoContext *echo.Context) error {
 	return a.portalProxy.SendProxiedResponse(echoContext, responses)
 }
 
-func (a *Autoscaler) createAutoscalerCredential(echoContext *echo.Context) error {
-	appID := echoContext.Param("appId")
-	credentialURL, _ := url.Parse("/v1/apps/" + appID + "/credential")
-	responses, err := a.portalProxy.ProxyRequest(echoContext, credentialURL)
-	if err != nil {
-		return err
+// historyQuery builds the query for the autoscaler's history endpoints from
+// the request's. Only parameters the caller sent are forwarded: the
+// autoscaler rejects an empty value.
+func historyQuery(in url.Values) string {
+	out := url.Values{}
+	for _, key := range []string{"start-time", "end-time", "page", "results-per-page", "order-direction", "order"} {
+		if v := in.Get(key); v != "" {
+			out.Set(key, v)
+		}
 	}
-	return a.portalProxy.SendProxiedResponse(echoContext, responses)
-}
-
-func (a *Autoscaler) deleteAutoscalerCredential(echoContext *echo.Context) error {
-	appID := echoContext.Param("appId")
-	credentialURL, _ := url.Parse("/v1/apps/" + appID + "/credential")
-	responses, err := a.portalProxy.ProxyRequest(echoContext, credentialURL)
-	if err != nil {
-		return err
+	if len(out) == 0 {
+		return ""
 	}
-	return a.portalProxy.SendProxiedResponse(echoContext, responses)
+	return "?" + out.Encode()
 }

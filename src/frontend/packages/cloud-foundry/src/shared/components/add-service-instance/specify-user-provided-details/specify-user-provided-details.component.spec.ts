@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { importProvidersFrom, provideZonelessChangeDetection, signal } from '@angular/core';
 import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { firstValueFrom, of } from 'rxjs';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -266,5 +266,152 @@ describe('SpecifyUserProvidedDetailsComponent credentials reveal', () => {
     component.enterEdit();
 
     expect(credsSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The create form as the user meets it: what app-form-field renders for
+// each field, read from the DOM.
+describe('SpecifyUserProvidedDetailsComponent create form', () => {
+  async function setup() {
+    const upsServiceStub = {
+      getUserProvidedServices: vi.fn().mockReturnValue(of([])),
+      createUserProvidedService: vi.fn().mockReturnValue(of({ success: true, guid: 'ups-1' })),
+    };
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [SpecifyUserProvidedDetailsComponent],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        ...STORE_TEST_PROVIDERS,
+        importProvidersFrom(generateCfBaseTestModulesNoShared()),
+        CsiModeService,
+        CsiStateService,
+        { provide: CloudFoundryUserProvidedServicesService, useValue: upsServiceStub },
+      ],
+    });
+    const fixture = TestBed.createComponent(SpecifyUserProvidedDetailsComponent);
+    const component = fixture.componentInstance;
+    component.cfGuid = 'cf-1';
+    component.spaceGuid = 'space-1';
+    await fixture.whenStable();
+    const host = fixture.nativeElement as HTMLElement;
+    return { fixture, component, host, upsServiceStub };
+  }
+
+  /** The input a visible label names, as a screen reader pairs them. */
+  function labelledInput(host: HTMLElement, text: string): HTMLInputElement | null {
+    const label = [...host.querySelectorAll('label')].find(l => l.textContent?.trim() === text);
+    return label?.htmlFor ? host.querySelector<HTMLInputElement>(`#${label.htmlFor}`) : null;
+  }
+
+  /** What app-form-field shows for a field, through the input's aria-errormessage. */
+  function errorFor(host: HTMLElement, input: Element): string | undefined {
+    const id = input.getAttribute('aria-errormessage');
+    return id ? host.querySelector(`#${id}`)?.textContent?.trim() : undefined;
+  }
+
+  function type(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
+    input.value = value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  // app-form-field shows one error line per field and does not project
+  // <app-error> children, so each check must carry its own text.
+  it('names what is wrong with a URL or the credentials', async () => {
+    const { fixture, host } = await setup();
+    const route = host.querySelector<HTMLInputElement>('input[placeholder="Route Service URL"]')!;
+    const drain = host.querySelector<HTMLInputElement>('input[placeholder="Syslog Drain URL"]')!;
+    const creds = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Credentials (JSON)"]')!;
+    type(route, 'not a url');
+    type(drain, 'ftp://logs.example.com');
+    type(creds, '["e2e"]');
+    await fixture.whenStable();
+
+    expect(errorFor(host, route)).toBe('Invalid URL (route services need https)');
+    expect(errorFor(host, drain)).toBe('Invalid URL');
+    expect(errorFor(host, creds)).toBe('Not a valid JSON object.');
+  });
+
+  it('shows the name check in progress, then says the name is taken', async () => {
+    const { fixture, host } = await setup();
+    const http = TestBed.inject(HttpTestingController);
+    const name = host.querySelector<HTMLInputElement>('input[placeholder="Name"]')!;
+    const suffix = name.closest('app-form-field')!.querySelector('.form-field-suffix')!;
+    type(name, 'my-ups');
+    await fixture.whenStable();
+    expect(suffix.querySelector('app-stateful-icon app-busy'), 'busy while checking').toBeTruthy();
+
+    // The check asks CF once typing pauses for 500ms.
+    await new Promise(resolve => setTimeout(resolve, 550));
+    http.expectOne(r => r.url === '/pp/v1/cf/service_instances/cf-1' && r.params.get('names') === 'my-ups')
+      .flush({ resources: [], totalResults: 1 });
+    await fixture.whenStable();
+
+    expect(errorFor(host, name)).toBe('A service instance with this name already exists. Please enter a different one.');
+    expect(suffix.querySelector('app-busy'), 'not busy once answered').toBeNull();
+  });
+
+  it('renders a labelled Tags field; Enter adds a tag and its remove button names it', async () => {
+    const { fixture, host } = await setup();
+    const input = labelledInput(host, 'Tags');
+    expect(input, 'a Tags label tied to an input').toBeTruthy();
+
+    input!.value = 'db';
+    input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await fixture.whenStable();
+
+    const chips = [...host.querySelectorAll('.stepper-form__tags span.rounded-full')]
+      .map(e => e.textContent?.replace('cancel', '').trim());
+    expect(chips).toEqual(['db']);
+    expect(host.querySelector('button[aria-label="Remove tag db"]')).toBeTruthy();
+  });
+
+  // With no app to bind, a created instance ends the wizard.
+  it('asks the stepper to leave once CF has created the instance', async () => {
+    const { component, upsServiceStub } = await setup();
+    component.createEditServiceInstance.controls.name.setValue('my-ups');
+
+    const result = await firstValueFrom(component.onNext());
+
+    expect(upsServiceStub.createUserProvidedService).toHaveBeenCalledWith(
+      'cf-1', expect.any(String), expect.objectContaining({ name: 'my-ups', spaceGuid: 'space-1' }));
+    expect(result).toEqual({ success: true, redirect: true });
+  });
+
+  // CF takes syslog, syslog-tls and https drains; the route service URL
+  // keeps the shared http(s) check.
+  it('accepts syslog, syslog-tls, http and https drains only', async () => {
+    const { component } = await setup();
+    const drain = component.createEditServiceInstance.controls.syslog_drain_url;
+    for (const url of [
+      'syslog://logs.example.com:514',
+      'syslog-tls://logs.example.com:6514',
+      'https://logs.example.com/drain',
+      'http://logs.example.com/drain',
+    ]) {
+      drain.setValue(url);
+      expect(drain.valid, url).toBe(true);
+    }
+    for (const url of ['ftp://logs.example.com', 'syslog:/logs.example.com', 'logs.example.com:514']) {
+      drain.setValue(url);
+      expect(drain.valid, url).toBe(false);
+    }
+    const route = component.createEditServiceInstance.controls.route_service_url;
+    route.setValue('syslog://logs.example.com:514');
+    expect(route.valid).toBe(false);
+  });
+
+  // CF: the route service URL "must use the https protocol".
+  it('accepts an https route service URL only', async () => {
+    const { component } = await setup();
+    const route = component.createEditServiceInstance.controls.route_service_url;
+    route.setValue('https://route.example.com/service');
+    expect(route.valid).toBe(true);
+    route.setValue('http://route.example.com/service');
+    expect(route.valid).toBe(false);
+    expect(route.errors?.['invalidUrl']?.message).toBe('Invalid URL (route services need https)');
   });
 });

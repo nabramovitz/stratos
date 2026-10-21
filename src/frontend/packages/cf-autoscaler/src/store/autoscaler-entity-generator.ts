@@ -6,10 +6,8 @@ import {
   APIResource,
   IFavoriteMetadata
 } from '@stratosui/store';
-import { AppAutoscalerEvent, AppAutoscalerHealth, AppAutoscalerPolicy, AppScalingTrigger } from './app-autoscaler.types';
+import { AppAutoscalerEvent, AppAutoscalerPolicy, AppScalingTrigger } from './app-autoscaler.types';
 import {
-  appAutoscalerCredentialEntityType,
-  appAutoscalerHealthEntityType,
   appAutoscalerInfoEntityType,
   appAutoscalerPolicyEntityType,
   appAutoscalerPolicyTriggerEntityType,
@@ -43,9 +41,7 @@ export function generateASEntities(): StratosBaseCatalogEntity[] {
     generatePolicyEntity(endpointDefinition),
     generateInfoEntity(endpointDefinition),
     generatePolicyTriggerEntity(endpointDefinition),
-    generateHealthEntity(endpointDefinition),
     generateScalingEntity(endpointDefinition),
-    generateCredentialEntity(endpointDefinition),
   ];
 }
 
@@ -58,15 +54,6 @@ function generatePolicyEntity(endpointDefinition: StratosEndpointExtensionDefini
   const definition = {
     type: appAutoscalerPolicyEntityType,
     schema: autoscalerEntityFactory(appAutoscalerPolicyEntityType),
-    endpoint: endpointDefinition
-  };
-  return new StratosCatalogEntity<IFavoriteMetadata, APIResource<AppAutoscalerPolicy>>(definition);
-}
-
-function generateCredentialEntity(endpointDefinition: StratosEndpointExtensionDefinition) {
-  const definition = {
-    type: appAutoscalerCredentialEntityType,
-    schema: autoscalerEntityFactory(appAutoscalerCredentialEntityType),
     endpoint: endpointDefinition
   };
   return new StratosCatalogEntity<IFavoriteMetadata, APIResource<AppAutoscalerPolicy>>(definition);
@@ -88,15 +75,6 @@ function generatePolicyTriggerEntity(endpointDefinition: StratosEndpointExtensio
     endpoint: endpointDefinition
   };
   return new StratosCatalogEntity<IFavoriteMetadata, APIResource<AppScalingTrigger>>(definition);
-}
-
-function generateHealthEntity(endpointDefinition: StratosEndpointExtensionDefinition) {
-  const definition = {
-    type: appAutoscalerHealthEntityType,
-    schema: autoscalerEntityFactory(appAutoscalerHealthEntityType),
-    endpoint: endpointDefinition
-  };
-  return new StratosCatalogEntity<IFavoriteMetadata, APIResource<AppAutoscalerHealth>>(definition);
 }
 
 function generateScalingEntity(endpointDefinition: StratosEndpointExtensionDefinition) {

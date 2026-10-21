@@ -133,6 +133,7 @@ function makeStubAppsConfig() {
     refresh: vi.fn().mockResolvedValue(undefined),
     deleteApp: vi.fn().mockResolvedValue(undefined),
     bulkDeleteApps: vi.fn().mockResolvedValue({ results: [], succeeded: 0, failed: 0, pending: 0 }),
+    bulkDeleteAppsWithCleanup: vi.fn().mockResolvedValue({ results: [], succeeded: 0, failed: 0, pending: 0 }),
     startStatsPolling: vi.fn(),
     clearFilters: vi.fn(),
     registerSortExtractor: vi.fn(),
@@ -198,7 +199,17 @@ describe('CloudFoundryApplicationsSignalComponent (component)', () => {
 
     fixture = TestBed.createComponent(CloudFoundryApplicationsSignalComponent);
     component = fixture.componentInstance;
-    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('scopes stats polling to this tab: passes its own DestroyRef', async () => {
+    stubAppsConfig.startStatsPolling.mockClear();
+    await component.ngOnInit();
+    const host = stubAppsConfig.startStatsPolling.mock.calls[0]?.[0] as { destroyed: boolean } | undefined;
+    expect(host?.destroyed).toBe(false);
+
+    fixture.destroy();
+    expect(host?.destroyed).toBe(true);
   });
 
   it('builds Org/Space filter dropdowns with no locked Cloud Foundry dropdown', async () => {
@@ -312,5 +323,61 @@ describe('CloudFoundryApplicationsSignalComponent (component)', () => {
     const allCalls = [...snackBar.open.mock.calls, ...snackBar.show.mock.calls, ...snackBar.error.mock.calls]
       .map(c => c[0]);
     expect(allCalls.join(' ')).not.toContain('requested');
+  });
+
+  it('bulk delete names a failed application and gives the reason', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const targets: StApp[] = [
+      app({ cnsiGuid: 'cnsi-1', guid: 'app-1', name: 'l9-after' }),
+      app({ cnsiGuid: 'cnsi-1', guid: 'app-2', name: 'l7-after' }),
+    ];
+    stubAppsConfig.view.filteredItems = signal(targets).asReadonly();
+    stubAppsConfig.bulkDeleteApps.mockResolvedValue({
+      results: [
+        { guid: 'app-1', state: 'COMPLETE' },
+        { guid: 'app-2', state: 'FAILED', errors: [{ code: 'CF-X', message: 'A binding is in progress.' }] },
+      ],
+      succeeded: 1,
+      failed: 1,
+      pending: 0,
+    });
+
+    await component.ngOnInit();
+    const selected = component.listConfig()!.columns.find(c => c.kind === 'checkbox')!.checkbox!.selectedKeys;
+    selected.set(new Set(['cnsi-1:app-1', 'cnsi-1:app-2']));
+    const deleteAction = component.listConfig()!.bulkActions!.find(a => a.label === 'Delete');
+    deleteAction!.run(new Set(['cnsi-1:app-1', 'cnsi-1:app-2']));
+    await flush();
+
+    expect(snackBar.error).toHaveBeenCalledWith('1 application deleted; 1 failed: "l7-after" (A binding is in progress)');
+    expect(selected().size).toBe(0);
+  });
+
+  // The row menu's Delete with "Also delete routes and bindings" goes
+  // through the bulk endpoint for one app; its result must be reported like
+  // a multi-select delete's, and it must leave other rows' selection alone.
+  it('row delete with cleanup names the failure and keeps the selection', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const target = app({ cnsiGuid: 'cnsi-1', guid: 'app-2', name: 'l7-after' });
+    stubAppsConfig.bulkDeleteAppsWithCleanup.mockResolvedValue({
+      results: [{ guid: 'app-2', state: 'FAILED', errors: [{ code: 'CF-X', message: 'A binding is in progress.' }] }],
+      succeeded: 0,
+      failed: 1,
+      pending: 0,
+    });
+    vi.spyOn(TestBed.inject(ConfirmationDialogService), 'open')
+      .mockImplementation(((_cfg: unknown, doFn: (r: { checkboxChecked: boolean }) => void) => doFn({ checkboxChecked: true })) as never);
+
+    await component.ngOnInit();
+    const cfg = component.listConfig()!;
+    const selected = cfg.columns.find(c => c.kind === 'checkbox')!.checkbox!.selectedKeys;
+    selected.set(new Set(['cnsi-1:app-1']));
+    const del = cfg.columns.find(c => c.kind === 'actions')!.actions!(target).find(a => a.label === 'Delete')!;
+    del.invoke(target);
+    await flush();
+
+    expect(stubAppsConfig.bulkDeleteAppsWithCleanup).toHaveBeenCalledWith('cnsi-1', ['app-2']);
+    expect(snackBar.error).toHaveBeenCalledWith('0 applications deleted; 1 failed: "l7-after" (A binding is in progress)');
+    expect([...selected()]).toEqual(['cnsi-1:app-1']);
   });
 });

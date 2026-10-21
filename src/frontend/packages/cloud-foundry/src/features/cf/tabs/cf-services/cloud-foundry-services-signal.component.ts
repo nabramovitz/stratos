@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, ChangeDetectionStrategy, OnInit, Signal, WritableSignal, inject, signal } from '@angular/core';
+import { DestroyRef, Component, ChangeDetectionStrategy, OnInit, Signal, WritableSignal, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterModule } from '@angular/router';
 import { map } from 'rxjs/operators';
@@ -28,6 +28,7 @@ import {
 import { CfCurrentUserPermissions } from '../../../../user-permissions/cf-user-permissions-checkers';
 import { CloudFoundryEndpointService } from '../../services/cloud-foundry-endpoint.service';
 import { buildServiceInstanceRowActions } from '../../../../shared/signal-list-configs/service-instance/service-instance-row-actions';
+import { lastOperationColumn, lastOperationLabel } from '../../../../shared/signal-list-configs/service-instance/service-instance-columns';
 import { renderServiceKeyCount, serviceKeysLink, serviceKeysLinkQueryParams } from '../../../../shared/signal-list-configs/service-keys-count-cell';
 import { dashboardLink, renderDashboard } from '../../../../shared/signal-list-configs/dashboard-link-cell';
 import type { StServiceInstance } from '../../../../services/endpoint-data/stratos-types';
@@ -51,6 +52,7 @@ import type { StServiceInstance } from '../../../../services/endpoint-data/strat
 export class CloudFoundryServicesSignalComponent implements OnInit {
   cfEndpointService = inject(CloudFoundryEndpointService);
   private instancesConfig = inject(CfServiceInstancesSignalConfigService);
+  private readonly destroyRef = inject(DestroyRef);
   private userFavoriteManager = inject(UserFavoriteManager);
   private confirmDialog = inject(ConfirmationDialogService);
   private snackBar = inject(TailwindSnackBarService);
@@ -149,17 +151,6 @@ export class CloudFoundryServicesSignalComponent implements OnInit {
     const typeColor = (si: StServiceInstance): SignalListPillColor =>
       si.type === 'user-provided' ? 'warning' : 'neutral';
 
-    const renderLastOp = (si: StServiceInstance): string =>
-      si.lastOperation.state ?? '';
-
-    const lastOpColor = (si: StServiceInstance): SignalListPillColor => {
-      const state = (si.lastOperation.state ?? '').toLowerCase();
-      if (state === 'succeeded') return 'success';
-      if (state === 'in progress') return 'warning';
-      if (state === 'failed') return 'danger';
-      return 'neutral';
-    };
-
     const renderCreated = (si: StServiceInstance): string =>
       CloudFoundryServicesSignalComponent.formatDate(si.createdAt);
 
@@ -192,13 +183,7 @@ export class CloudFoundryServicesSignalComponent implements OnInit {
           render: renderService,
           widthHint: '12rem',
         },
-        {
-          header: 'Last Operation', key: 'lastOp', sortField: renderLastOp,
-          kind: 'pill',
-          pillColor: lastOpColor,
-          render: renderLastOp,
-          widthHint: '10rem',
-        },
+        lastOperationColumn(),
         {
           header: 'Dashboard', key: 'dashboard', kind: 'link',
           render: renderDashboard,
@@ -270,7 +255,7 @@ export class CloudFoundryServicesSignalComponent implements OnInit {
     });
 
     this.instancesConfig.registerSortExtractor('service', renderService);
-    this.instancesConfig.registerSortExtractor('lastOp', renderLastOp);
+    this.instancesConfig.registerSortExtractor('lastOp', lastOperationLabel);
     this.instancesConfig.registerSortExtractor('tags', renderTags);
     this.instancesConfig.registerSortExtractor('type', renderType);
     this.instancesConfig.registerFilterExtractor('name', (si: StServiceInstance) => si.name ?? '');
@@ -278,6 +263,7 @@ export class CloudFoundryServicesSignalComponent implements OnInit {
     this.instancesConfig.registerFilterExtractor('tags', renderTags);
 
     void this.instancesConfig.loadAll().then(() => this.instancesConfig.ensureServiceKeyCounts());
+    this.instancesConfig.startProgressPolling(this.destroyRef);
   }
 
   private buildInstanceActions = (si: StServiceInstance): readonly SignalListRowAction<StServiceInstance>[] =>

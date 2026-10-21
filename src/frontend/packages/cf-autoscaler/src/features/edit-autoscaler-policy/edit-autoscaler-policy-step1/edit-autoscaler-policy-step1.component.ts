@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { AbstractControl, FormBuilder, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
-import { Observable, of as observableOf } from 'rxjs';
+import { defer, Observable, of as observableOf } from 'rxjs';
 import { map, startWith } from 'rxjs/operators';
 import { TailwindErrorStateMatcher, TailwindShowOnDirtyErrorStateMatcher } from '@stratosui/core';
 import { ApplicationService } from '@stratosui/cloud-foundry';
@@ -10,6 +10,7 @@ import { autoscalerTransformArrayToMap } from '../../../core/autoscaler-helpers/
 import { PolicyAlert } from '../../../core/autoscaler-helpers/autoscaler-util';
 import { numberWithFractionOrExceedRange } from '../../../core/autoscaler-helpers/autoscaler-validation';
 import { EditAutoscalerPolicyDirective } from '../edit-autoscaler-policy-base-step';
+import { AUTOSCALER_TIMEZONES } from '../../../core/autoscaler-helpers/autoscaler-timezones';
 
 interface EditLimitForm {
   instance_min_count: FormControl<number>;
@@ -37,7 +38,7 @@ export class EditAutoscalerPolicyStep1Component extends EditAutoscalerPolicyDire
 
 
   policyAlert = PolicyAlert;
-  timezoneOptions = Intl.supportedValuesOf('timeZone');
+  timezoneOptions = AUTOSCALER_TIMEZONES;
   editLimitForm: FormGroup<EditLimitForm>;
   // FWT-959 Part 2: observable surface for the parent's signal-step
   // handle. Mirrors editLimitForm.valid; statusChanges fires after every
@@ -53,10 +54,11 @@ export class EditAutoscalerPolicyStep1Component extends EditAutoscalerPolicyDire
       instance_max_count: this.fb.nonNullable.control(0, [Validators.required, this.validateGlobalLimitMax()]),
       timezone: this.fb.nonNullable.control('', [Validators.required])
     });
-    this.valid$ = this.editLimitForm.statusChanges.pipe(
+    // defer: start from the status when subscribed, not when built.
+    this.valid$ = defer(() => this.editLimitForm.statusChanges.pipe(
       startWith(this.editLimitForm.status),
       map(status => status === 'VALID'),
-    );
+    ));
   }
 
   ngOnInit() {
@@ -70,8 +72,10 @@ export class EditAutoscalerPolicyStep1Component extends EditAutoscalerPolicyDire
         this.editLimitForm.controls.timezone.setValue(this.currentPolicy.schedules?.timezone ?? '');
         this.editLimitForm.controls.instance_min_count.setValue(this.currentPolicy.instance_min_count);
         this.editLimitForm.controls.instance_max_count.setValue(this.currentPolicy.instance_max_count);
-        this.editLimitForm.controls.instance_min_count.setValidators([Validators.required, this.validateGlobalLimitMin()]);
-        this.editLimitForm.controls.instance_max_count.setValidators([Validators.required, this.validateGlobalLimitMax()]);
+        // Each count is checked against the other. The minimum was checked
+        // while the maximum was still unset, so check both again now.
+        this.editLimitForm.controls.instance_min_count.updateValueAndValidity();
+        this.editLimitForm.controls.instance_max_count.updateValueAndValidity();
         this.cdr.markForCheck();
         return this.currentPolicy;
       })

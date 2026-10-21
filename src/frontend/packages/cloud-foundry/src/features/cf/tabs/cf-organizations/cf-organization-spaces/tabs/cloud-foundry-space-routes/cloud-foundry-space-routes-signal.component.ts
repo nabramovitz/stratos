@@ -19,6 +19,7 @@ import {
 import {
   UserFavorite,
   UserFavoriteManager,
+  extractHttpErrorMessage,
 } from '@stratosui/store';
 
 import { BulkResult, CfRoutesSignalConfigService } from '../../../../../../../shared/signal-list-configs/route/cf-routes-signal-config.service';
@@ -26,9 +27,9 @@ import { CloudFoundryEndpointService } from '../../../../../services/cloud-found
 import { CloudFoundryOrganizationService } from '../../../../../services/cloud-foundry-organization.service';
 import { CloudFoundrySpaceService } from '../../../../../services/cloud-foundry-space.service';
 import { runBulkWithProgress } from '../../../../../../../services/async-jobs/bulk-progress';
-import { extractHttpErrorMessage } from '../../../../../../../services/extract-error-message';
 import type { StApp, StRoute } from '../../../../../../../services/endpoint-data/stratos-types';
 import { routeHref } from '../../../../../../applications/app-detail-data.service';
+import { unknownHowOf, unknownOutcomeMessage } from '../../../../../../../services/async-jobs/unknown-outcome-message';
 
 // Signal-native replacement for CloudFoundrySpaceRoutesComponent.
 // Scoped to one space under one org under one CF endpoint (all three guids
@@ -282,7 +283,7 @@ export class CloudFoundrySpaceRoutesSignalComponent {
   // straight to the final summary for that kind.
   private async runBulk(
     kind: 'delete' | 'unmap',
-    count: number,
+    targets: readonly { guid: string; url: string }[],
     op: () => Promise<BulkResult>,
   ): Promise<void> {
     try {
@@ -300,7 +301,8 @@ export class CloudFoundrySpaceRoutesSignalComponent {
         // pends, so refreshAfterPending is a no-op for it.
         refresh: () => this.routesConfig.refresh(),
         refreshAfterPending: kind === 'delete',
-        count,
+        count: targets.length,
+        names: new Map(targets.map(t => [t.guid, t.url])),
       });
     } finally {
       this.selectedRouteKeys.set(new Set());
@@ -330,7 +332,7 @@ export class CloudFoundrySpaceRoutesSignalComponent {
             true,
           );
           this.confirmDialog.open(confirm, async () => {
-            await this.runBulk('unmap', targets.length, () =>
+            await this.runBulk('unmap', targets, () =>
               this.routesConfig.bulkUnmapRoutes(cnsi, targets.map(r => r.guid)));
           });
         },
@@ -347,7 +349,7 @@ export class CloudFoundrySpaceRoutesSignalComponent {
             true,
           );
           this.confirmDialog.open(confirm, async () => {
-            await this.runBulk('delete', targets.length, () =>
+            await this.runBulk('delete', targets, () =>
               this.routesConfig.bulkDeleteRoutes(cnsi, targets.map(r => r.guid)));
           });
         },
@@ -360,9 +362,15 @@ export class CloudFoundrySpaceRoutesSignalComponent {
   // destroys the route entirely. Restores the V2-era listActionUnmap
   // dropped during the signal-native migration.
   private buildRouteActions = (route: StRoute): readonly SignalListRowAction<StRoute>[] => {
-    const runAction = async (label: string, op: () => Promise<void>) => {
+    // A delete resolves 'unknown' when it ended with a result nobody can
+    // determine: the row stays and the message says where to look.
+    const runAction = async (label: string, op: () => Promise<unknown>, name?: string) => {
       try {
-        await op();
+        const outcome = await op();
+        const how = unknownHowOf(outcome);
+        if (how) {
+          this.snackBar.error(unknownOutcomeMessage(name ? `${label} "${name}"` : label, 'The Routes list', how));
+        }
       } catch (err: unknown) {
         this.snackBar.error(`${label} failed: ${extractHttpErrorMessage(err)}`);
       }
@@ -398,7 +406,7 @@ export class CloudFoundrySpaceRoutesSignalComponent {
             true,
           );
           this.confirmDialog.open(confirm, async () => {
-            await runAction('Delete', () => this.routesConfig.deleteRoute(route.cnsiGuid, route.guid));
+            await runAction('Delete', () => this.routesConfig.deleteRoute(route.cnsiGuid, route.guid), route.url || route.guid);
           });
         },
       },

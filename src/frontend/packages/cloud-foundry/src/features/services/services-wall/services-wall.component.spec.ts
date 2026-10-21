@@ -34,6 +34,7 @@ function makeStubSignalConfigService() {
   return {
     initialize: vi.fn(),
     loadAll: vi.fn().mockResolvedValue(undefined),
+    startProgressPolling: vi.fn(),
     refresh: vi.fn().mockResolvedValue(undefined),
     registerSortExtractor: vi.fn(),
     registerFilterExtractor: vi.fn(),
@@ -128,6 +129,19 @@ describe('ServicesWallComponent', () => {
     } as any)).toBe('cnsi-1:si-1');
   });
 
+  // The pill names the operation, gives a failure's reason on hover and
+  // survives an instance with no last operation (the backend omits it).
+  it('Last Operation names the operation and hovers with a failure reason', async () => {
+    await component.ngOnInit();
+    const col = component.listConfig()!.columns.find(c => c.key === 'lastOp')!;
+    const si: any = { lastOperation: { type: 'update', state: 'failed', description: '<b>quota</b> exceeded' } };
+    expect(col.render(si)).toBe('Update failed');
+    expect(col.tooltip!(si)).toBe('Update failed — quota exceeded');
+    expect(col.render({} as any)).toBe('');
+    const sortBy = stubSignalConfig.registerSortExtractor.mock.calls.find((c: unknown[]) => c[0] === 'lastOp')![1];
+    expect(sortBy(si)).toBe('Update failed');
+  });
+
   it('Service Keys column links to the keys page, renders the lazy count, and triggers the fetch', async () => {
     await component.ngOnInit();
     await Promise.resolve();
@@ -204,5 +218,14 @@ describe('ServicesWallComponent', () => {
     expect(cfg!.filterDropdowns![0].selected).toBe(stubSignalConfig.selectedCnsi);
     expect(cfg!.filterDropdowns![1].selected).toBe(stubSignalConfig.selectedOrg);
     expect(cfg!.filterDropdowns![2].selected).toBe(stubSignalConfig.selectedSpace);
+  });
+  // The progress poll must end with this page, not run on in the root config.
+  it('polls operations in progress only while this page is open', async () => {
+    await component.ngOnInit();
+    const host = stubSignalConfig.startProgressPolling.mock.calls.at(-1)?.[0] as { destroyed: boolean } | undefined;
+    expect(host?.destroyed).toBe(false);
+
+    fixture.destroy();
+    expect(host?.destroyed).toBe(true);
   });
 });

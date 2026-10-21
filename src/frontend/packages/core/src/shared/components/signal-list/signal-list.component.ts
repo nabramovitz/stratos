@@ -189,7 +189,9 @@ export interface SignalListColumn<T> {
   // Optional, kind-agnostic. Overrides the hover `title` (tooltip) for this
   // column's cell/card-title; defaults to the rendered text. Used by the
   // routes card to show a route's full guid on hover while the visible title
-  // shows a short-guid fallback for unnamed routes.
+  // shows a short-guid fallback for unnamed routes. Of the other cells, only
+  // a pill reads it: the service-instance lists put a failed operation's
+  // reason on the Last Operation pill.
   tooltip?: (row: T) => string;
   // Optional for kind === 'pill' or 'dot'. Returns a color family. Default: neutral.
   pillColor?: (row: T) => SignalListPillColor;
@@ -439,6 +441,9 @@ export interface SignalListConfig<T> {
   // to a success/danger/neutral color so a quick glance over a wall of
   // cards surfaces problems.
   readonly cardAccentColor?: (row: T) => SignalListPillColor;
+  // Optional — minimum card width in card view (CSS length). Default 16rem;
+  // lists of wide cards (charts) set more so one card is not squeezed.
+  readonly cardMinWidth?: string;
   // Optional — when provided, each row is decorated with its state: row
   // coloring (error/warning/info) + an icon/message sub-row. MUST return a
   // STABLE Signal per row (store it on the row / in the consumer — do NOT
@@ -656,6 +661,10 @@ export class SignalListComponent<T> implements AfterViewInit {
 
   cardAccentFor(row: T): SignalListPillColor {
     return this.config.cardAccentColor ? this.config.cardAccentColor(row) : 'neutral';
+  }
+
+  cardGridColumns(): string {
+    return `repeat(auto-fill, minmax(${this.config.cardMinWidth ?? '16rem'}, 1fr))`;
   }
 
   pageSizeOptions(): readonly number[] {

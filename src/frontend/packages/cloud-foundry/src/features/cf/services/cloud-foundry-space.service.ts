@@ -1,9 +1,10 @@
 import { Injectable, Injector, Signal, inject } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
+import { observeSignal } from '@stratosui/store';
 import { combineLatest, Observable, of } from 'rxjs';
-import { filter, map, shareReplay, switchMap } from 'rxjs/operators';
+import { distinctUntilChanged, filter, map, shareReplay, switchMap } from 'rxjs/operators';
 
-import { CnsiUsersSnapshotService } from '../../../services/endpoint-data/cnsi-users-snapshot.service';
+import { CfUsersPagedDataService } from '../../../shared/data-services/cf-users-paged-data.service';
 import { QuotaDataService } from '../../../services/endpoint-data/quota-data.service';
 import { SpaceDataRegistry } from '../../../services/endpoint-data/space-data.registry';
 import { StOrgQuota, StSpace, StSpaceQuota } from '../../../services/endpoint-data/stratos-types';
@@ -31,7 +32,7 @@ export class CloudFoundrySpaceService {
   private cfUserProvidedServicesService = inject(CloudFoundryUserProvidedServicesService);
   private serviceCatalog = inject(ServiceCatalogDataService);
   private cfOrgService = inject(CloudFoundryOrganizationService);
-  private cnsiUsers = inject(CnsiUsersSnapshotService);
+  private cnsiUsers = inject(CfUsersPagedDataService);
   private spaceDataRegistry = inject(SpaceDataRegistry);
   private injector = inject(Injector);
 
@@ -45,7 +46,7 @@ export class CloudFoundrySpaceService {
   cfGuid: string;
   orgGuid: string;
   spaceGuid: string;
-  userRole$!: Observable<string>;
+  userRole$!: Observable<string | null>;
   /**
    * Sensible quota to use for space. If there's no specific space quota set this will be the org quota. If there's no org quota
    * a mock quota with everything allowed will be used
@@ -100,13 +101,14 @@ export class CloudFoundrySpaceService {
     this.initialiseSpaceObservables();
     this.initialiseAppObservables();
 
-    // V3-native: read role buckets from the StUser snapshot (lazy fetch of
+    // V3-native: read role buckets from the StUser cache (lazy fetch of
     // /pp/v1/cf/users/:cnsi). V2 helpers inspect user.managed_spaces etc. —
     // fields the V3 wire no longer carries.
     const users$ = toObservable(this.cnsiUsers.users(this.cfGuid), { injector: this.injector });
     this.userRole$ = combineLatest([this.cfEndpointService.currentUser$, users$]).pipe(
       map(([currentUser, users]) => {
-        if (!users) return 'None';
+        // Still loading: the tile shows its placeholder, not 'None'.
+        if (!users) return null;
         const me = users.find(u => u.guid === currentUser.guid);
         const roles = me?.spaceRoles.find(r => r.spaceGuid === this.spaceGuid)?.roles ?? [];
         return getSpaceRolesString(createUserRoleInSpace(
@@ -142,10 +144,16 @@ export class CloudFoundrySpaceService {
     // QuotaDataService returns a SignalSource; we bridge to Observable
     // for backwards-compat templates and chain into the org-quota
     // fallback below.
+    //
+    // observeSignal, not toObservable: toObservable's effect would outlive
+    // switchMap's unsubscribe, so each space re-emission (load, patch after
+    // an edit) would add one more effect for the life of the page.
     this.spaceQuotaDefinition$ = space$.pipe(
       map(s => s.quotaGuid || null),
+      // A rename patches the space but keeps its quota
+      distinctUntilChanged(),
       switchMap(quotaGuid => quotaGuid
-        ? toObservable(this.quotaData.spaceQuota(this.cfGuid, quotaGuid).value, { injector: this.injector })
+        ? observeSignal(this.quotaData.spaceQuota(this.cfGuid, quotaGuid).value, this.injector)
         : of(null as StSpaceQuota | null)),
       shareReplay({ bufferSize: 1, refCount: false }),
     );

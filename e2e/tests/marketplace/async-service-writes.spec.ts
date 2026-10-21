@@ -1,6 +1,7 @@
 import { APIRequestContext, Page, request as playwrightRequest } from '@playwright/test';
 import { test, expect } from '../../fixtures/test-base';
 import { CFApiHelper } from '../../helpers/cf-api.helper';
+import { TestBroker, next, pick } from '../../helpers/service-wizard.helper';
 
 /**
  * Service instance writes through the create wizard must end the same way
@@ -15,12 +16,6 @@ import { CFApiHelper } from '../../helpers/cf-api.helper';
  * back to its default mode afterwards.
  */
 
-interface TestBroker {
-  url: string;
-  offering: string;
-  plan: string;
-}
-
 const RESPONSE_MODES = ['sync', 'async'] as const;
 
 test.describe.configure({ mode: 'serial' });
@@ -31,19 +26,6 @@ test.skip(({ browserName }) => browserName !== 'chromium', 'runs in one browser:
 async function setBrokerMode(api: APIRequestContext, broker: TestBroker, mode: string): Promise<void> {
   const res = await api.post(`${broker.url}/admin/setResponseMode`, { data: { mode } });
   expect(res.ok(), `set broker response mode ${mode}`).toBe(true);
-}
-
-/** Opens a select in the current wizard step and picks the option named `name`. */
-async function pick(page: Page, index: number, name: string): Promise<void> {
-  await page.locator('.steppers [role=combobox]').nth(index).click();
-  const exact = new RegExp(`^\\s*${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`);
-  await page.locator('[role=listbox] app-option:visible').filter({ hasText: exact }).first().click();
-}
-
-async function next(page: Page, label: 'Next' | 'Finish' = 'Next'): Promise<void> {
-  const button = page.getByRole('button', { name: label });
-  await expect(button).toBeEnabled({ timeout: 15000 });
-  await button.click();
 }
 
 async function waitForInstance(cfApi: CFApiHelper, spaceGuid: string, name: string) {
@@ -75,8 +57,8 @@ async function deleteInstance(cfApi: CFApiHelper, spaceGuid: string, name: strin
 for (const mode of RESPONSE_MODES) {
   test.describe(`create service instance, ${mode} broker`, () => {
     // An async broker plus CF's own polling: a create with bind and its
-    // cleanup took 3.5 min on the lab.
-    test.setTimeout(360000);
+    // cleanup took 4.7 min on the lab (2026-10-17).
+    test.setTimeout(480000);
 
     let broker: TestBroker | undefined;
     let brokerApi: APIRequestContext;
@@ -116,8 +98,17 @@ for (const mode of RESPONSE_MODES) {
       await next(page);
       await page.getByRole('textbox', { name: /Name/ }).pressSequentially(name);
       await next(page, 'Finish');
-      // The wizard leaves the create page once it reports success.
-      await page.waitForURL(url => !url.pathname.endsWith('/create'), { timeout: 200000 });
+      // A write slower than 30 s gets the wait question, and one left
+      // unanswered is handed off: the wizard then closes before the outcome
+      // is known (and before any bind). Keep waiting, as a user who wants the
+      // result here would, so leaving the create page still means success.
+      const question = page.getByRole('alertdialog');
+      const left = page.waitForURL(url => !url.pathname.endsWith('/create'), { timeout: 300000 }).then(() => true);
+      while (!(await Promise.race([left, question.waitFor({ timeout: 300000 }).then(() => false)]))) {
+        await page.getByLabel('Wait another').fill('600');
+        await page.getByRole('button', { name: 'Keep waiting' }).click();
+        await expect(question).toBeHidden();
+      }
     }
 
     test('reports success only once CF has the instance', async ({ connectedEndpointsAdminPage, cfApi, secrets }) => {
@@ -147,6 +138,40 @@ for (const mode of RESPONSE_MODES) {
       } finally {
         await deleteInstance(cfApi, spaceGuid, name);
         await applicationHelper.cleanupTestApp(testApp);
+      }
+    });
+
+    // Lists and the instance page read the instance once; while its operation
+    // is in progress they must read it again, so its status reaches the result
+    // without a reload (#6002).
+    test('the services list and the instance page follow a create to its end', async ({ connectedEndpointsAdminPage, cfApi }) => {
+      test.skip(!broker, 'no services.testBroker in the secrets profile');
+      test.skip(mode !== 'async', 'only an async broker leaves the create in progress');
+      const { page, cfGuid, spaceGuid } = connectedEndpointsAdminPage;
+      const name = `e2e-${mode}-follow-${Date.now()}`;
+      const detail = await page.context().newPage();
+      try {
+        const planGuid = await cfApi.findServicePlanGuid(broker!.offering, spaceGuid);
+        expect(planGuid, `offering ${broker!.offering} has a plan in the test space`).toBeTruthy();
+        await cfApi.createManagedServiceInstance(spaceGuid, name, planGuid!);
+        const si = await waitForInstance(cfApi, spaceGuid, name);
+
+        await page.goto('/services');
+        await page.locator('[data-test=name-filter]').fill(name);
+        const row = page.locator('[data-test=row], [data-test=card]').filter({ hasText: name });
+        await detail.goto(`/services/service/${cfGuid}/${si.guid}`);
+        // The meta card renders its items' templates itself; find the row by its key.
+        const status = detail.locator('.meta-card-item__key', { hasText: 'Last operation' }).locator('xpath=..');
+
+        // CF reports the create as "initial" while it is queued, then "in progress".
+        await expect(row).toContainText(/initial|in progress/i, { timeout: 60000 });
+        await expect(status).toContainText(/initial|in progress/i, { timeout: 60000 });
+        // No reload from here on: each page must notice the end by itself.
+        await expect(row).toContainText(/succeeded/i, { timeout: 300000 });
+        await expect(status).toContainText(/succeeded/i, { timeout: 60000 });
+      } finally {
+        await detail.close();
+        await deleteInstance(cfApi, spaceGuid, name);
       }
     });
   });

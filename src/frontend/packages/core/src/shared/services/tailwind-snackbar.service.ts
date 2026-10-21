@@ -1,3 +1,4 @@
+import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { Injectable, ApplicationRef, Injector, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { Subject, Observable } from 'rxjs';
@@ -73,6 +74,7 @@ export class TailwindSnackBarService {
   private snackbars: HTMLElement[] = [];
 
   private appRef = inject(ApplicationRef);
+  private announcer = inject(LiveAnnouncer);
   private injector = inject(Injector);
   private router = inject(Router);
 
@@ -124,7 +126,9 @@ export class TailwindSnackBarService {
     return this.open(message, action, {
       duration: 0,
       ...(config ?? {}),
-      panelClass: ['snackbar-error', '!bg-danger']
+      // danger-700, not danger: white on --color-danger is 3.76:1 (light) and
+      // 2.77:1 (dark); on danger-700 it is 4.98:1, WCAG AA in both themes.
+      panelClass: ['snackbar-error', '!bg-danger-700']
         .concat(config?.panelClass ? (Array.isArray(config.panelClass) ? config.panelClass : [config.panelClass]) : []),
     });
   }
@@ -144,6 +148,9 @@ export class TailwindSnackBarService {
     // Add to DOM
     document.body.appendChild(snackbarElement);
     this.snackbars.push(snackbarElement);
+    // Screen readers miss a toast that arrives with its text; the announcer's
+    // live region is already on the page. Errors interrupt.
+    void this.announcer.announce(message, snackbarElement.classList.contains('snackbar-error') ? 'assertive' : 'polite');
 
     // Auto dismiss. Use ?? instead of || so that an explicit `duration: 0`
     // from the caller means "do not auto-dismiss" (the standard convention)
@@ -226,6 +233,9 @@ export class TailwindSnackBarService {
     }
 
     snackbar.className = classes.join(' ');
+    // On the red error toast the primary-blue action measured 1.02:1 and the
+    // grey close 1.48:1; both go white there.
+    const onRed = classes.includes('snackbar-error');
 
     // Create message element. whitespace-pre-line honours explicit "\n" in the
     // message (so callers can put a technical detail / error code on its own
@@ -239,14 +249,17 @@ export class TailwindSnackBarService {
     if (action) {
       const actionButton = document.createElement('button');
       actionButton.textContent = action;
-      actionButton.className = 'snackbar-action text-primary hover:text-primary/80 font-medium';
+      actionButton.className = onRed
+        ? 'snackbar-action text-white underline hover:no-underline font-medium'
+        : 'snackbar-action text-primary hover:text-primary/80 font-medium';
       snackbar.appendChild(actionButton);
     }
 
     // Create close button
     const closeButton = document.createElement('button');
     closeButton.textContent = '×';
-    closeButton.className = 'snackbar-close text-gray-400 hover:text-white text-xl font-bold ml-2';
+    closeButton.setAttribute('aria-label', 'Close');
+    closeButton.className = `snackbar-close ${onRed ? 'text-white' : 'text-gray-400 hover:text-white'} text-xl font-bold ml-2`;
     snackbar.appendChild(closeButton);
 
     return snackbar;

@@ -49,6 +49,23 @@ describe('SignalListComponent', () => {
     expect(rows[1].textContent).toContain('two');
   });
 
+  // Cards are 16rem minimum by default; a list of wide cards (the autoscaler
+  // metric charts) sets its own minimum so one card is not squeezed.
+  it('lays out cards with the configured minimum width', () => {
+    const columns = (cardMinWidth?: string) => {
+      const fixture = TestBed.createComponent(Host);
+      fixture.componentInstance.config = {
+        ...fixture.componentInstance.config,
+        viewMode: signal<'table' | 'card'>('card'),
+        cardMinWidth,
+      };
+      fixture.detectChanges();
+      return (fixture.nativeElement.querySelector('[data-test="card-grid"]') as HTMLElement).style.gridTemplateColumns;
+    };
+    expect(columns()).toBe('repeat(auto-fill, minmax(16rem, 1fr))');
+    expect(columns('40rem')).toBe('repeat(auto-fill, minmax(40rem, 1fr))');
+  });
+
   it('row-action menu items expose data-test hooks (label default, dataTest override)', () => {
     const fixture = TestBed.createComponent(Host);
     fixture.componentInstance.config = {
@@ -1227,6 +1244,48 @@ describe('SignalListComponent', () => {
       expect(copyButtons(fixture).length).toBe(1);
       expect(copyButtons(fixture)[0].getAttribute('aria-label')).toBe('Copy https://app.example.com/p');
     });
+  });
+
+  // A pill holds a short state; its column's tooltip can say more on hover
+  // (the service-instance lists put a failed operation's reason there).
+  describe('pill column hover text (tooltip)', () => {
+    @Component({
+      standalone: true,
+      imports: [SignalListComponent],
+      template: `<app-signal-list [config]="config" />`,
+    })
+    class PillHost {
+      items = signal([{ name: 'db', state: 'Update failed', reason: 'quota exceeded' }]);
+      config: SignalListConfig<{ name: string; state: string; reason: string }> = {
+        pagedItems: this.items.asReadonly(),
+        totalFilteredResults: signal(1).asReadonly(),
+        totalPages: signal(1).asReadonly(),
+        pageIndex: signal(0),
+        pageSize: signal(10),
+        isAnyLoading: signal(false).asReadonly(),
+        errorsByCnsi: signal(new Map<string, unknown>()).asReadonly(),
+        columns: [
+          { header: 'Name', key: 'name', render: r => r.name },
+          { header: 'State', key: 'state', kind: 'pill', render: r => r.state, tooltip: r => `${r.state} — ${r.reason}` },
+          { header: 'Plain', key: 'plain', kind: 'pill', render: r => r.state },
+        ],
+        getRowKey: r => r.name,
+      };
+    }
+
+    // The title sits on the pill's cell (table) or value span (card).
+    const pillTitles = (fixture: { nativeElement: HTMLElement }) =>
+      Array.from(fixture.nativeElement.querySelectorAll('span.rounded'))
+        .map(pill => pill.parentElement!.getAttribute('title'));
+
+    for (const viewMode of ['table', 'card'] as const) {
+      it(`titles a pill with its tooltip, else its text (${viewMode})`, () => {
+        const fixture = TestBed.createComponent(PillHost);
+        fixture.componentInstance.config = { ...fixture.componentInstance.config, viewMode: signal(viewMode) };
+        fixture.detectChanges();
+        expect(pillTitles(fixture)).toEqual(['Update failed — quota exceeded', 'Update failed']);
+      });
+    }
   });
 
   describe('bulk-action bar (bulkActions slot)', () => {

@@ -1,11 +1,12 @@
 import { HttpClient } from '@angular/common/http';
-import { Injectable, Injector, Signal, inject } from '@angular/core';
+import { Injectable, Injector, Signal, computed, inject } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { Route } from '@angular/router';
+import { observeSignal } from '@stratosui/store';
 import { combineLatest, EMPTY, Observable } from 'rxjs';
-import { catchError, filter, map, shareReplay, switchMap } from 'rxjs/operators';
+import { catchError, distinctUntilChanged, filter, map, shareReplay, switchMap } from 'rxjs/operators';
 
-import { CnsiUsersSnapshotService } from '../../../services/endpoint-data/cnsi-users-snapshot.service';
+import { CfUsersPagedDataService } from '../../../shared/data-services/cf-users-paged-data.service';
 import { OrgDataRegistry } from '../../../services/endpoint-data/org-data.registry';
 import { QuotaDataService } from '../../../services/endpoint-data/quota-data.service';
 import { StOrgDetail, StOrgQuota, StSpace } from '../../../services/endpoint-data/stratos-types';
@@ -72,7 +73,7 @@ export class CloudFoundryOrganizationService {
   private cfUserProvidedServicesService = inject(CloudFoundryUserProvidedServicesService);
   private serviceCatalog = inject(ServiceCatalogDataService);
   private quotaData = inject(QuotaDataService);
-  private cnsiUsers = inject(CnsiUsersSnapshotService);
+  private cnsiUsers = inject(CfUsersPagedDataService);
   private orgDataRegistry = inject(OrgDataRegistry);
   private injector = inject(Injector);
 
@@ -84,7 +85,7 @@ export class CloudFoundryOrganizationService {
   orgGuid: string;
   cfGuid: string;
   quotaLink$!: Observable<string[] | undefined>;
-  userOrgRole$!: Observable<string>;
+  userOrgRole$!: Observable<string | null>;
   // V3-shape — quotaDefinition$ now emits StOrgQuota directly. Consumers
   // that previously read V2 fields (memory_limit, etc.) must read the V3
   // camelCase equivalents (totalMemoryInMB, etc.). Backwards-compat shim
@@ -126,7 +127,8 @@ export class CloudFoundryOrganizationService {
     const users$ = toObservable(this.cnsiUsers.users(this.cfGuid), { injector: this.injector });
     this.userOrgRole$ = combineLatest([this.cfEndpointService.currentUser$, users$]).pipe(
       map(([currentUser, users]) => {
-        if (!users) return 'None';
+        // Still loading: the tile shows its placeholder, not 'None'.
+        if (!users) return null;
         const me = users.find(u => u.guid === currentUser.guid);
         const roles = me?.orgRoles.find(r => r.orgGuid === this.orgGuid)?.roles ?? [];
         return getOrgRolesString(createUserRoleInOrg(
@@ -207,8 +209,13 @@ export class CloudFoundryOrganizationService {
   private initialiseOrgObservables() {
     // V3-native: spaces come straight off the shared OrgDataService signal.
     this.orgDataService.load().subscribe({ error: () => {} });
-    this.spaces$ = toObservable(this.orgDataService.spaces, { injector: this.injector }).pipe(
-      filter(spaces => !!spaces),
+    // Held back until the spaces have arrived: the Spaces tile shows its
+    // placeholder, not "0", and the org's apps (filtered by space) wait too.
+    this.spaces$ = toObservable(
+      computed(() => (this.orgDataService.spacesSettled() ? this.orgDataService.spaces() : null)),
+      { injector: this.injector },
+    ).pipe(
+      filter((spaces): spaces is StSpace[] => !!spaces),
     );
 
     // V3-native private domains: hit /pp/v1/cf/org/:cnsi/:orgGuid/private_domains
@@ -232,9 +239,14 @@ export class CloudFoundryOrganizationService {
     this.quotaDefinition$ = orgSnapshot$.pipe(
       map(o => o.quotaGuid),
       filter(quotaGuid => !!quotaGuid),
+      // A rename patches the org but keeps its quota
+      distinctUntilChanged(),
+      // observeSignal, not toObservable: toObservable's effect would outlive
+      // switchMap's unsubscribe, so each org re-emission (load, patch after
+      // an edit) would add one more effect for the life of the page.
       switchMap(quotaGuid => {
         const source = this.quotaData.orgQuota(this.cfGuid, quotaGuid);
-        return toObservable(source.value, { injector: this.injector }).pipe(
+        return observeSignal(source.value, this.injector).pipe(
           filter((q): q is StOrgQuota => !!q),
         );
       }),

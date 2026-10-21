@@ -1,9 +1,11 @@
 import { effect, inject, Injectable, Injector, runInInjectionContext } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
+import { filter, switchMap, take } from 'rxjs/operators';
 
 import { autoscalerTransformArrayToMap } from '../../core/autoscaler-helpers/autoscaler-transform-policy';
 import { AutoscalerPolicyDataService } from '../../services/domain-data/autoscaler-policy-data.service';
 import { AppAutoscalerPolicyLocal } from '../../store/app-autoscaler.types';
+import { autoscalerDefaultTimezone } from '../../core/autoscaler-helpers/autoscaler-timezones';
 
 @Injectable()
 export class EditAutoscalerPolicyService {
@@ -15,13 +17,17 @@ export class EditAutoscalerPolicyService {
     instance_max_count: 10,
     scaling_rules: [],
     schedules: {
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      timezone: autoscalerDefaultTimezone(),
       recurring_schedule: [],
       specific_date: []
     }
   });
 
   private stateSubject = new BehaviorSubject(this.initialState);
+  // The editor's steps see no state until the saved policy has loaded (or
+  // is known not to exist), so nothing typed is replaced when it arrives.
+  private settled = new BehaviorSubject(false);
+  private loadStarted = false;
 
   // FWT-959 Track A wave-3 (A-policy slice): replaced the EntityServiceFactory
   // + GetAppAutoscalerPolicyAction wiring with the signal-native
@@ -34,6 +40,12 @@ export class EditAutoscalerPolicyService {
   // which matches the legacy behaviour (the take(1) filter only setState'd
   // when entity was present).
   updateFromStore(appGuid: string, cfGuid: string) {
+    // Step 1 calls this each time it is entered; loading again would put the
+    // saved policy back over edits made since.
+    if (this.loadStarted) {
+      return;
+    }
+    this.loadStarted = true;
     void this.policyData.load(cfGuid, appGuid);
 
     const loadingSig = this.policyData.loading(cfGuid, appGuid);
@@ -56,6 +68,8 @@ export class EditAutoscalerPolicyService {
         // policy, then stop listening.
         if (policy) {
           this.setState(policy);
+        } else {
+          this.settled.next(true);
         }
         ref.destroy();
       });
@@ -65,10 +79,15 @@ export class EditAutoscalerPolicyService {
   setState(state: AppAutoscalerPolicyLocal) {
     const newState = JSON.parse(JSON.stringify(state));
     this.stateSubject.next(newState);
+    this.settled.next(true);
   }
 
   getState(): Observable<AppAutoscalerPolicyLocal> {
-    return this.stateSubject.asObservable();
+    return this.settled.pipe(
+      filter(Boolean),
+      take(1),
+      switchMap(() => this.stateSubject),
+    );
   }
 
 }
