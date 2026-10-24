@@ -3,7 +3,7 @@ import { ChangeDetectorRef, Component, Directive, Input, OnChanges, signal } fro
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideZonelessChangeDetection } from '@angular/core';
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vitest';
 import { RouterTestingModule } from '@angular/router/testing';
@@ -14,6 +14,7 @@ import { CoreModule } from '../../../../core/core.module';
 import { MDAppModule } from '../../../../core/md.module';
 import { SignalStepHandle, StepComponent } from '../step/step.component';
 import { SteppersComponent } from './steppers.component';
+import { TailwindSnackBarService } from '../../../services/tailwind-snackbar.service';
 
 describe('SteppersComponent', () => {
   let component: SteppersComponent;
@@ -564,5 +565,117 @@ describe('SteppersComponent — all steps hidden, then shown', () => {
     expect(current().active).toBe(true);
     expect(steppers().allSteps[1].active).toBe(false);
     expect(host.entered).toEqual(['one', 'two', 'one']);
+  });
+});
+
+// A step whose submit fails with an HTML error page from a proxy: the
+// snackbar shows the page's heading and message as styled pieces.
+@Component({
+  standalone: true,
+  imports: [SteppersComponent, StepComponent],
+  template: `
+    <app-steppers>
+      <app-step title="One" [signalHandle]="handle"></app-step>
+      <app-step title="Two"></app-step>
+    </app-steppers>
+  `,
+})
+class FailingStepHostComponent {
+  handle: SignalStepHandle = {
+    valid: signal(true),
+    submit: () => Promise.reject(new HttpErrorResponse({
+      error: '<html><body><h1>504 Gateway Time-out</h1>\nThe server didn\'t respond in time.\n</body></html>\n',
+      status: 504,
+      statusText: 'Gateway Timeout',
+    })),
+  };
+}
+
+describe('SteppersComponent — failed step', () => {
+  it('shows an HTML error page as its heading and message', async () => {
+    const snackBar = { error: vi.fn(() => ({ dismiss: vi.fn() })), dismiss: vi.fn() };
+    TestBed.configureTestingModule({
+      imports: [FailingStepHostComponent, RouterTestingModule],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: TailwindSnackBarService, useValue: snackBar },
+      ],
+    });
+    await TestBed.compileComponents();
+    const hostFixture = TestBed.createComponent(FailingStepHostComponent);
+    await hostFixture.whenStable();
+    const steppers = hostFixture.debugElement.query(By.directive(SteppersComponent)).componentInstance as SteppersComponent;
+
+    steppers.goNext();
+    await vi.waitFor(() => expect(snackBar.error).toHaveBeenCalled());
+
+    expect(snackBar.error).toHaveBeenCalledWith(
+      [
+        { text: '504 Gateway Time-out', style: 'heading' },
+        { text: '\nThe server didn\'t respond in time.', style: 'text' },
+      ],
+      'Dismiss',
+      { panelClass: 'stepper-snack-bar' },
+    );
+  });
+});
+
+// The stepper clears its own error before the next try and when it goes
+// away. Other messages open beside it, as tabs, are not its to close.
+describe('SteppersComponent — its own error message', () => {
+  const setUp = async (snackBar?: unknown) => {
+    TestBed.configureTestingModule({
+      imports: [FailingStepHostComponent, RouterTestingModule],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        ...(snackBar ? [{ provide: TailwindSnackBarService, useValue: snackBar }] : []),
+      ],
+    });
+    await TestBed.compileComponents();
+    const hostFixture = TestBed.createComponent(FailingStepHostComponent);
+    await hostFixture.whenStable();
+    const steppers = hostFixture.debugElement.query(By.directive(SteppersComponent)).componentInstance as SteppersComponent;
+    return { hostFixture, steppers };
+  };
+
+  afterEach(() => document.querySelectorAll('.snackbar-box').forEach(box => box.remove()));
+
+  it('closes only its own error before the next try', async () => {
+    const ref = { dismiss: vi.fn() };
+    const snackBar = { error: vi.fn(() => ref), dismiss: vi.fn() };
+    const { steppers } = await setUp(snackBar);
+    steppers.goNext();
+    await vi.waitFor(() => expect(snackBar.error).toHaveBeenCalledTimes(1));
+    steppers.goNext();
+    expect(ref.dismiss).toHaveBeenCalledTimes(1);
+    expect(snackBar.dismiss).not.toHaveBeenCalled();
+  });
+
+  it('closes only its own error when it is destroyed', async () => {
+    const ref = { dismiss: vi.fn() };
+    const snackBar = { error: vi.fn(() => ref), dismiss: vi.fn() };
+    const { hostFixture, steppers } = await setUp(snackBar);
+    steppers.goNext();
+    await vi.waitFor(() => expect(snackBar.error).toHaveBeenCalledTimes(1));
+    hostFixture.destroy();
+    expect(ref.dismiss).toHaveBeenCalledTimes(1);
+    expect(snackBar.dismiss).not.toHaveBeenCalled();
+  });
+
+  it('leaves another open message up when it retries', async () => {
+    const { steppers } = await setUp();
+    const service = TestBed.inject(TailwindSnackBarService);
+    const open = () => Array.from(document.querySelectorAll('.snackbar-box:not([inert]) .snackbar-message'))
+      .map(m => m.textContent);
+    steppers.goNext();
+    await vi.waitFor(() => expect(open()).toHaveLength(1));
+    service.show('Other message', 'Dismiss');
+    steppers.goNext();
+    await vi.waitFor(() => expect(open()).toHaveLength(2));
+    expect(open()[0]).toBe('Other message');
   });
 });

@@ -8,8 +8,9 @@ import { catchError, map } from 'rxjs/operators';
 import { CommonModule } from '@angular/common';
 
 import { ApplicationService } from '@stratosui/cloud-foundry';
-import { StepOnNextFunction } from '@stratosui/core';
-import { AutoscalerConstants, autoscalerErrorMessage, PolicyAlert } from '../../../core/autoscaler-helpers/autoscaler-util';
+import { StepOnNextFunction, StepOnNextResult } from '@stratosui/core';
+import { leadPieces, piecesToText } from '@stratosui/store';
+import { AutoscalerConstants, autoscalerReason, PolicyAlert } from '../../../core/autoscaler-helpers/autoscaler-util';
 import {
   dateTimeIsSameOrAfter,
   numberWithFractionOrExceedRange,
@@ -112,13 +113,18 @@ export class EditAutoscalerPolicyStep4Component extends EditAutoscalerPolicyDire
         message: undefined as string | undefined,
       })),
       catchError(err => {
+        const lead = `Could not ${this.createUpdateTest}`;
+        if (!err) {
+          return observableOf<StepOnNextResult>({ success: false, redirect: false, message: lead });
+        }
         // The autoscaler's reason; an HttpErrorResponse's own message only
         // names the URL and the status.
-        const detail = err ? autoscalerErrorMessage(err) : '';
-        return observableOf({
+        const messagePieces = leadPieces(lead, autoscalerReason(err) ?? err);
+        return observableOf<StepOnNextResult>({
           success: false,
           redirect: false,
-          message: `Could not ${this.createUpdateTest}${detail ? `: ${detail}` : ''}`,
+          message: piecesToText(messagePieces),
+          messagePieces,
         });
       }),
     );
@@ -272,9 +278,9 @@ export class EditAutoscalerPolicyStep4Component extends EditAutoscalerPolicyDire
 export function validateRecurringSpecificMin(editForm: FormGroup<any>, editMutualValidation: { limit: boolean }): ValidatorFn {
   return (control: AbstractControl): ValidationErrors | null => {
     const invalid = editForm &&
-      numberWithFractionOrExceedRange(control.value, 1, editForm.controls.instance_max_count.value - 1, true);
+      numberWithFractionOrExceedRange(control.value, 1, editForm.controls.instance_max_count.value, true);
     const lastValid = editMutualValidation.limit;
-    editMutualValidation.limit = editForm && control.value < editForm.controls.instance_max_count.value;
+    editMutualValidation.limit = editForm && control.value <= editForm.controls.instance_max_count.value;
     if (editForm && lastValid !== editMutualValidation.limit) {
       editForm.controls.instance_max_count.updateValueAndValidity();
     }
@@ -288,9 +294,9 @@ export function validateRecurringSpecificMin(editForm: FormGroup<any>, editMutua
 export function validateRecurringSpecificMax(editForm: FormGroup<any>, editMutualValidation: { limit: boolean }): ValidatorFn {
   return (control: AbstractControl): ValidationErrors | null => {
     const invalid = editForm && numberWithFractionOrExceedRange(control.value,
-      editForm.controls.instance_min_count.value + 1, Number.MAX_VALUE, true);
+      editForm.controls.instance_min_count.value, Number.MAX_VALUE, true);
     const lastValid = editMutualValidation.limit;
-    editMutualValidation.limit = editForm && editForm.controls.instance_min_count.value < control.value;
+    editMutualValidation.limit = editForm && editForm.controls.instance_min_count.value <= control.value;
     if (editForm && lastValid !== editMutualValidation.limit) {
       editForm.controls.instance_min_count.updateValueAndValidity();
     }

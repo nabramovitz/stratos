@@ -74,7 +74,7 @@ export class CardCfRecentAppsComponent implements OnInit {
       this.hasEntities$ = of(false);
       return;
     }
-    this.canRefresh = this.refresh.observers.length > 0;
+    this.canRefresh = this.refresh.observed;
     // Every live caller passes allApps$ (home, CF, org and space summaries)
     const allApps$ = this.allApps$() ?? of([]);
     this.appsLoading$ = this.loading$() ?? of(false);
@@ -82,10 +82,10 @@ export class CardCfRecentAppsComponent implements OnInit {
 
     // Stats are loaded by each row (CompactAppCardComponent), once per
     // started app; the registry shares the request between rows.
-    this.recentApps$ = combineLatest(
+    this.recentApps$ = combineLatest([
       allApps$,
       this.maxRows$,
-    ).pipe(
+    ]).pipe(
       filter(([apps]) => !!apps),
       map(([apps, maxRows]) => this.restrictApps(apps, maxRows)),
     );

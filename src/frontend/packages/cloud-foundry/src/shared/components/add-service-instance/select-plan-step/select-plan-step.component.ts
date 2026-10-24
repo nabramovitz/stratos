@@ -10,8 +10,7 @@ import {
   distinctUntilChanged,
   filter,
   map,
-  publishReplay,
-  refCount,
+  shareReplay,
   startWith,
   switchMap,
   tap,
@@ -166,13 +165,12 @@ export class SelectPlanStepComponent implements OnDestroy {
         }
       }),
       map(plans => [...plans].sort((a, b) => naturalCompare(this.getDisplayName(a), this.getDisplayName(b)))),
-      publishReplay(1),
-      refCount(),
+      shareReplay({ bufferSize: 1, refCount: true }),
     );
 
-    this.selectedPlan$ = observableCombineLatest(
+    this.selectedPlan$ = observableCombineLatest([
       this.stepperForm.statusChanges.pipe(startWith(true)),
-      this.servicePlans$).pipe(
+      this.servicePlans$]).pipe(
         filter(([, servicePlans]) => !!servicePlans && servicePlans.length > 0),
         map(([, servicePlans]) => {
           return servicePlans.find(s => s.guid === this.stepperForm.controls.servicePlans.value);

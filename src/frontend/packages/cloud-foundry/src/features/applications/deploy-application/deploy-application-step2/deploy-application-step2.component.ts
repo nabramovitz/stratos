@@ -29,8 +29,7 @@ import {
   filter,
   map,
   pairwise,
-  publishReplay,
-  refCount,
+  shareReplay,
   startWith,
   switchMap,
   take,
@@ -270,11 +269,11 @@ export class DeployApplicationStep2Component
   };
 
   ngOnInit() {
-    this.sourceType$ = combineLatest(
+    this.sourceType$ = combineLatest([
       this.appDeploySourceTypes.getAutoSelectedType(this.route),
       this.sourceType$$,
       this.appDeploySourceTypes.types$.pipe(take(1), map(st => st[this.INITIAL_SOURCE_TYPE]))
-    ).pipe(
+    ]).pipe(
       map(([sourceFromParam, sourceFromStore, sourceDefault]) => sourceFromParam || sourceFromStore || sourceDefault),
       filter(sourceType => !!sourceType),
     );
@@ -310,8 +309,7 @@ export class DeployApplicationStep2Component
     ]).pipe(
       filter(([cfGuid, sourceType]) => !!cfGuid && !!sourceType),
       switchMap(([cfGuid, sourceType]) => this.appDeploySourceTypes.canDeployType(cfGuid, sourceType.id)),
-      publishReplay(1),
-      refCount()
+      shareReplay({ bufferSize: 1, refCount: true })
     );
 
     this.stepperText$ = this.canDeployType$.pipe(
@@ -373,16 +371,15 @@ export class DeployApplicationStep2Component
           );
         }),
         map(([branches, _branchName]) => branches),
-        publishReplay(1),
-        refCount()
+        shareReplay({ bufferSize: 1, refCount: true })
       );
 
-    const updateBranchAndCommit = observableCombineLatest(
+    const updateBranchAndCommit = observableCombineLatest([
       this.repositoryBranches$,
       deployBranchName$,
       this.projectInfo$,
       deployCommit$,
-    ).pipe(
+    ]).pipe(
       tap(([branches, name, projectInfo, commit]) => {
         const branch = branches.find(b => b.name === name);
         if (branch && !!projectInfo && branch.projectName === projectInfo.full_name) {

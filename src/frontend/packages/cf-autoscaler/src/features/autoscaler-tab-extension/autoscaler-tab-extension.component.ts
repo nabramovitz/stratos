@@ -24,20 +24,17 @@ import {
   TailwindSnackBarRef,
   StratosTab,
   StratosTabType,
-  CardContentComponent,
-  CardHeaderComponent,
-  CardTitleComponent,
-  CardWrapperComponent,
   CurrentUserPermissionsService,
   ConfirmationDialogConfig,
   ConfirmationDialogService,
   CustomIconComponent,
+  ListSubNavAction,
+  ListSubNavAddAction,
+  ListSubNavComponent,
   MetadataItemComponent,
   NoContentMessageComponent,
   PollingIndicatorComponent,
-  TileComponent,
-  TileGridComponent,
-  TileGroupComponent
+  ScrollFadeComponent,
 } from '@stratosui/core';
 import {
   ApplicationMonitorService,
@@ -61,6 +58,7 @@ import {
   AppAutoscalerPolicyLocal,
   AppScalingTrigger } from '../../store/app-autoscaler.types';
 import { CardAutoscalerDefaultComponent } from '../../shared/card-autoscaler-default/card-autoscaler-default.component';
+import { CardAutoscalerReadingsComponent } from '../../shared/card-autoscaler-readings/card-autoscaler-readings.component';
 
 // Re-typed pagination param shape kept locally so the template / handlers
 // don't have to import the legacy AutoscalerPaginationParams from the
@@ -126,19 +124,15 @@ interface AutoscalerTabPaginationParams {
   imports: [
     CommonModule,
     BaseChartDirective,
-    TileGridComponent,
-    TileGroupComponent,
-    TileComponent,
-    CardWrapperComponent,
-    CardHeaderComponent,
-    CardTitleComponent,
-    CardContentComponent,
+    ListSubNavComponent,
     CardAutoscalerDefaultComponent,
+    CardAutoscalerReadingsComponent,
     CardAppUsageComponent,
     CustomIconComponent,
     MetadataItemComponent,
     PollingIndicatorComponent,
-    NoContentMessageComponent
+    NoContentMessageComponent,
+    ScrollFadeComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -203,6 +197,21 @@ export class AutoscalerTabExtensionComponent implements OnInit, OnDestroy {
     const history = this.appAutoscalerScalingHistory();
     return this.noPolicy() && (!history || history.length === 0);
   });
+
+  // The sub-nav row the other app tabs use (Routes, Variables): the rule
+  // count on the left, the policy actions on the right.
+  readonly scalingRuleCount = computed(() => this.appAutoscalerPolicy()?.scaling_rules_form?.length ?? 0);
+  readonly policyPending = computed(() => !this.appAutoscalerPolicy() && !this.noPolicy() && !this.policyError());
+  private readonly hasPolicy = computed(() => !!this.appAutoscalerPolicy());
+  readonly policyActions: ListSubNavAction[] = [
+    { label: 'Edit Policy', icon: 'edit', invoke: () => this.updatePolicyPage(), visible: this.hasPolicy },
+    { label: 'Delete Policy', icon: 'delete', variant: 'destructive', invoke: () => this.disableAutoscaler(), visible: this.hasPolicy },
+  ];
+  readonly createPolicyAction: ListSubNavAddAction = {
+    label: 'Create Policy',
+    invoke: () => this.updatePolicyPage(true),
+    visible: computed(() => this.noPolicy()),
+  };
 
   public noPolicyMessageFirstLine = 'This application has no Autoscaler Policy';
   public noPolicyMessageSecondLine = {

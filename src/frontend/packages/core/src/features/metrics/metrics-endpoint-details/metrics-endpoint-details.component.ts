@@ -3,7 +3,7 @@ import { ChangeDetectionStrategy, Component, inject, Input, signal  } from '@ang
 import { toObservable } from '@angular/core/rxjs-interop';
 import { EndpointModel } from '@stratosui/store';
 import { combineLatest, Observable } from 'rxjs';
-import { distinctUntilChanged, filter, map, publishReplay, refCount } from 'rxjs/operators';
+import { distinctUntilChanged, filter, map, shareReplay } from 'rxjs/operators';
 
 import { EndpointListDetailsComponent } from '../../../shared/components/endpoint-list/endpoint-list.helpers';
 import { mapMetricsData } from '../metrics.helpers';
@@ -53,16 +53,15 @@ export class MetricsEndpointDetailsComponent extends EndpointListDetailsComponen
     );
 
     // Raw endpoint data for this metrics endpoint
-    this.data$ = combineLatest(
+    this.data$ = combineLatest([
       endpoints$,
       guid$
-    ).pipe(
+    ]).pipe(
       map(([endpoints, guid]) => endpoints.find((item) => item.provider.guid === guid)),
       filter(provider => !!provider),
       filter(data => data.provider.connectionStatus === 'connected'),
       map((provider) => this.processProvider(provider)),
-      publishReplay(1),
-      refCount()
+      shareReplay({ bufferSize: 1, refCount: true })
     );
   }
 

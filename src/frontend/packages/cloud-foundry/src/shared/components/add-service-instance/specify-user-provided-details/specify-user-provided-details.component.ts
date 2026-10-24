@@ -20,10 +20,11 @@ interface BindExistingInstanceForm {
 }
 
 import { StatefulIconComponent, safeUnsubscribe, urlValidationExpression, environment, StepOnNextResult, isValidJsonValidator } from '@stratosui/core';
+import { leadPieces, piecesToText } from '@stratosui/store';
 import { AppNameUniqueDirective } from '../../../directives/app-name-unique.directive/app-name-unique.directive';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { combineLatest as obsCombineLatest, Observable, of as observableOf, Subscription, from } from 'rxjs';
-import { take, filter, map, publishReplay, refCount, startWith, switchMap, withLatestFrom } from 'rxjs/operators';
+import { take, filter, map, shareReplay, startWith, switchMap, withLatestFrom } from 'rxjs/operators';
 
 import { IUserProvidedServiceInstanceData } from '../../../../cf-api-svc.types';
 import { AppDetailDataService } from '../../../../features/applications/app-detail-data.service';
@@ -337,8 +338,7 @@ export class SpecifyUserProvidedDetailsComponent implements OnDestroy {
         });
       }),
       startWith(null),
-      publishReplay(1),
-      refCount()
+      shareReplay({ bufferSize: 1, refCount: true })
     );
   }
 
@@ -422,11 +422,9 @@ export class SpecifyUserProvidedDetailsComponent implements OnDestroy {
       withLatestFrom(this.csiState$),
       switchMap(([result, state]) => {
         if (!result.success) {
-          return observableOf({
-            success: false,
-            redirect: false,
-            message: 'Failed to create User Provided Service Instance. Reason: "' + (result.message ?? '') + '"',
-          });
+          const messagePieces = leadPieces(
+            'Failed to create User Provided Service Instance. Reason', result.error ?? result.message);
+          return observableOf({ success: false, redirect: false, message: piecesToText(messagePieces), messagePieces });
         }
         if (state.bindAppGuid && result.guid) {
           return this.createApplicationServiceBinding(result.guid, state);
@@ -447,7 +445,8 @@ export class SpecifyUserProvidedDetailsComponent implements OnDestroy {
       .pipe(
         map(req => {
           if (!req.success) {
-            return { success: false, message: `Failed to create service instance binding: ${req.message}` };
+            const messagePieces = leadPieces('Failed to create service instance binding', req.error ?? req.message);
+            return { success: false, message: piecesToText(messagePieces), messagePieces };
           } else {
             // Bind succeeded — CF mutates VCAP_SERVICES on the app. Refresh
             // env vars on AppDetailDataService when bind happened from inside
@@ -472,10 +471,12 @@ export class SpecifyUserProvidedDetailsComponent implements OnDestroy {
     ).pipe(
       switchMap(result => {
         if (!result.success) {
+          const messagePieces = leadPieces('Failed to update service instance', result.error ?? result.message);
           return observableOf<StepOnNextResult>({
             success: false,
             redirect: false,
-            message: `Failed to update service instance: ${result.message ?? ''}`,
+            message: piecesToText(messagePieces),
+            messagePieces,
           });
         }
         // The bound app's denormalized service-instance data (name, tags,

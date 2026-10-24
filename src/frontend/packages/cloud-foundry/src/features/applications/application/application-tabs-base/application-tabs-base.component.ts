@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, EffectRef, Injector, NgZone, OnDestroy, OnInit, ChangeDetectionStrategy, effect, inject, runInInjectionContext, signal } from '@angular/core';
+import { Component, EffectRef, Injector, OnDestroy, OnInit, ChangeDetectionStrategy, effect, inject, runInInjectionContext, signal } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { Router, RouterModule } from '@angular/router';
 import { GitSCMService, GitSCMType } from '@stratosui/git';
@@ -62,7 +62,6 @@ export class ApplicationTabsBaseComponent implements OnInit, OnDestroy {
   applicationService = inject(ApplicationService);
   private router = inject(Router);
   private endpointsService = inject(EndpointsService);
-  private ngZone = inject(NgZone);
   private currentUserPermissionsService = inject(CurrentUserPermissionsService);
   private userFavoriteManager = inject(UserFavoriteManager);
   private cfEndpoints = inject(CfEndpointsDataService);
@@ -318,10 +317,10 @@ export class ApplicationTabsBaseComponent implements OnInit, OnDestroy {
     // snackbar convey the action's progress/result in place. Gating on "app
     // not yet present" stops those refreshes from blanking the whole page with
     // the spinner (the restage repaint regression).
-    this.isFetching$ = observableCombineLatest(
+    this.isFetching$ = observableCombineLatest([
       this.applicationService.isFetchingApp$,
       toObservable(this.detail.app, { injector: this.injector }),
-    ).pipe(
+    ]).pipe(
       map(([isFetchingApp, app]) => isFetchingApp && !app),
     );
 
@@ -330,19 +329,19 @@ export class ApplicationTabsBaseComponent implements OnInit, OnDestroy {
       startWith({ updating: true }),
     );
 
-    const initialFetch$ = observableCombineLatest(
+    const initialFetch$ = observableCombineLatest([
       this.applicationService.isFetchingApp$,
       this.applicationService.isFetchingEnvVars$,
       this.applicationService.isFetchingStats$
-    ).pipe(
+    ]).pipe(
       map(([isFetchingApp, isFetchingEnvVars, isFetchingStats]) => {
         return isFetchingApp || isFetchingEnvVars || isFetchingStats;
       }));
 
-    this.summaryDataChanging$ = observableCombineLatest(
+    this.summaryDataChanging$ = observableCombineLatest([
       initialFetch$,
       this.applicationService.isUpdatingApp$,
-    ).pipe(map(([isFetchingApp, isUpdating]) => {
+    ]).pipe(map(([isFetchingApp, isUpdating]) => {
       return !!(isFetchingApp || isUpdating);
     }));
   }

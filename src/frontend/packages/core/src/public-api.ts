@@ -41,6 +41,7 @@ export { ProfileSettingsTypes } from './shared/components/profile-settings/profi
 // Tailwind Material Replacements
 export * from './shared/services/tailwind-material-replacements';
 export * from './shared/services/tailwind-snackbar.service';
+export { ERROR_PIECE_CLASS, ErrorTextComponent } from './shared/components/error-text/error-text.component';
 export * from './shared/services/endpoint-auth-state.service';
 export * from './shared/services/tailwind-dialog.service';
 export * from './shared/services/tailwind-sort.service';
@@ -62,6 +63,7 @@ export { StepComponent, StepOnNextFunction } from './shared/components/stepper/s
 export { PageSubNavComponent } from './shared/components/page-sub-nav/page-sub-nav.component';
 export { PageSubNavSectionComponent } from './shared/components/page-sub-nav-section/page-sub-nav-section.component';
 export { ListSubNavComponent, ListSubNavAddAction, ListSubNavAction } from './shared/components/list-sub-nav/list-sub-nav.component';
+export { ScrollFadeComponent } from './shared/components/scroll-fade/scroll-fade.component';
 export { DuplicateUrlBannerComponent } from './shared/components/duplicate-url-banner/duplicate-url-banner.component';
 export { IPageSideNavTab } from './features/dashboard/page-side-nav/page-side-nav.component';
 
