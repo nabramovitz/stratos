@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Input, input } from '@angular/core';
 
 import { CustomTooltipDirective } from '@stratosui/core';
 
@@ -20,7 +20,7 @@ import { CustomTooltipDirective } from '@stratosui/core';
 })
 export class TristateValueComponent {
   @Input() value: string | number | null | undefined;
-  @Input() unavailable: boolean | undefined = false;
-  @Input() unavailableTooltip = 'Not exposed by V3 API';
-  @Input() emptyText = '';
+  readonly unavailable = input<boolean | undefined>(false);
+  readonly unavailableTooltip = input('Not exposed by V3 API');
+  readonly emptyText = input('');
 }

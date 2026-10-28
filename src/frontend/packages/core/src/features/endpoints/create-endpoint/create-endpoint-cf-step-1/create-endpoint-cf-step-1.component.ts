@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, AfterContentInit, Component, Injector, Input, inject } from '@angular/core';
+import { ChangeDetectionStrategy, AfterContentInit, Component, Injector, Input, inject, input } from '@angular/core';
 import { ReactiveFormsModule, Validators, FormBuilder, FormControl, FormGroup } from '@angular/forms';
 import { cfEndpointUrlValidator, normalizeUrl } from '../../../../shared/validators';
 import { CustomCheckboxComponent } from '../../../../shared/components/custom-checkbox/custom-checkbox.component';
@@ -14,7 +14,6 @@ import {
 import { from, Observable } from 'rxjs';
 import { map, startWith } from 'rxjs/operators';
 
-import { EndpointsSignalService } from '../../../../core/signals/endpoints-signal.service';
 import { getIdFromRoute } from '../../../../core/utils.service';
 import { IStepperStep, StepOnNextFunction, StepOnNextResult } from '../../../../shared/components/stepper/step/step.component';
 import { SessionService } from '../../../../shared/services/session.service';
@@ -61,12 +60,11 @@ export class CreateEndpointCfStep1Component extends CreateEndpointHelperComponen
   private fb = inject(FormBuilder);
   private snackBarService = inject(TailwindSnackBarService);
   private endpointsSignalConfig = inject(EndpointsSignalConfigService);
-  private endpointsSignals = inject(EndpointsSignalService);
 
 
   registerForm: FormGroup<CreateEndpointForm>;
 
-  @Input() finalStep = false;
+  readonly finalStep = input(false);
   private pFixedUrl!: string;
   @Input()
   get fixedUrl(): string {
@@ -184,28 +182,15 @@ export class CreateEndpointCfStep1Component extends CreateEndpointHelperComponen
       ssoAllowed: this.registerForm.value.ssoAllowedField ? !!this.registerForm.value.ssoAllowedField : false
     };
     if (!result.error) {
-      this.snackBarService.show(`Successfully registered '${name}'`);
-      // Warn if another endpoint is already registered with the same URL.
-      // Multiple registrations are permitted (different users/operators may each need their own),
-      // but the user should know about existing registrations.
-      const urlHost = new URL(url).host;
-      // Delay past the endpoints-page subscription that calls snackBarService.hide()
-      // when endpoint connectivity state updates after registration completes.
-      setTimeout(() => {
-        const entities = this.endpointsSignals.endpoints();
-        const dupes = Object.values(entities).filter(e =>
-          e.api_endpoint?.Host === urlHost && e.guid !== result.guid
-        );
-        if (dupes.length > 0) {
-          const names = dupes.map(e => e.name).join(', ');
-          this.snackBarService.show(`Note: '${url}' is also registered as: ${names}`, 'Dismiss');
-        }
-      }, 1500);
+      // 7 s: it shows while the dialog moves to its Connect step.
+      this.snackBarService.show(`Successfully registered '${name}'`, undefined, 7000);
+      // Another endpoint at the same URL is not warned about here: the
+      // endpoints page's banner says so above Total Endpoints.
     }
     const success = !result.error;
     return {
       success,
-      redirect: success && this.finalStep,
+      redirect: success && this.finalStep(),
       message: success ? '' : result.message,
       data
     };

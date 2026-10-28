@@ -1,7 +1,9 @@
-import { Injectable, inject } from '@angular/core';
+import { EnvironmentInjector, Injectable, inject } from '@angular/core';
 import { Router } from '@angular/router';
+import { Observable, of } from 'rxjs';
+import { take } from 'rxjs/operators';
 
-import { EndpointModel, entityCatalog } from '@stratosui/store';
+import { EndpointModel, EndpointsDataService, entityCatalog } from '@stratosui/store';
 
 import { ConfirmationDialogConfig } from '../../shared/components/confirmation-dialog.config';
 import { ConfirmationDialogService } from '../../shared/components/confirmation-dialog.service';
@@ -10,6 +12,7 @@ import { EndpointAuthStateService } from '../../shared/services/endpoint-auth-st
 import { TailwindDialogService } from '../../shared/services/tailwind-dialog.service';
 import { TailwindSnackBarService } from '../../shared/services/tailwind-snackbar.service';
 import { CONNECT_ENDPOINT_DIALOG_OPTIONS, ConnectEndpointDialogComponent } from './connect-endpoint-dialog/connect-endpoint-dialog.component';
+import { EndpointPermissionsService } from './endpoint-permissions.service';
 import { EndpointsSignalConfigService } from './endpoints-page/endpoints-signal-config.service';
 
 /**
@@ -30,19 +33,22 @@ export function isEndpointExpired(ep: EndpointModel, staleGuids: ReadonlySet<str
     (ep.connectionStatus === 'connected' && !!ep.guid && staleGuids.has(ep.guid));
 }
 
+function currentValue(value$: Observable<boolean> | undefined, fallback: boolean): boolean {
+  let value = fallback;
+  value$?.pipe(take(1)).subscribe(v => value = v).unsubscribe();
+  return value;
+}
+
 /**
- * Per-endpoint kebab actions (Connect / Disconnect / Edit / Unregister) with
- * their dialog and snackbar flows. Shared by the /endpoints signal list and
+ * Per-endpoint kebab actions (Connect / Disconnect / Edit / Unregister, then
+ * any the endpoint type adds) with their dialog and snackbar flows. Shared by the /endpoints signal list and
  * the /cloud-foundry endpoint picker so both surfaces offer the same
  * endpoint management menu.
  *
- * Decisions deliberately mirror the legacy EndpointListHelper: visibility
- * tied to connectionStatus + endpoint type capability flags, with destructive
- * Unregister flagged danger so it stands apart visually. The legacy
- * permission-aware visibility checks (Edit / Unregister hidden behind
- * EDIT_ADMIN_ENDPOINT etc.) are intentionally NOT ported here for the first
- * cut - the surrounding permission model needs its own pass during the
- * endpoint subpages migration.
+ * Visibility follows connectionStatus, the endpoint type's capability flags
+ * and the user's permission for each action (EndpointPermissionsService,
+ * which mirrors jetstream). Destructive Unregister is flagged danger so it
+ * stands apart visually.
  */
 @Injectable({ providedIn: 'root' })
 export class EndpointRowActionsService {
@@ -52,6 +58,9 @@ export class EndpointRowActionsService {
   private tailwindDialog = inject(TailwindDialogService);
   private snackBar = inject(TailwindSnackBarService);
   private authState = inject(EndpointAuthStateService);
+  private permissions = inject(EndpointPermissionsService);
+  private endpointsData = inject(EndpointsDataService);
+  private envInjector = inject(EnvironmentInjector);
 
   /**
    * `unregister: false` for surfaces that project endpoints without managing
@@ -71,24 +80,31 @@ export class EndpointRowActionsService {
 
     const out: SignalListRowAction<EndpointModel>[] = [];
 
+    const canConnect = this.permissions.canConnect(ep);
+    const canManage = this.permissions.canManage(ep);
+
     if (isConnected) {
-      out.push({
-        // `link_off` is Material Symbols only - under the classic
-        // Material Icons font shipped here it fails to compose as a
-        // ligature, widening the kebab cell. `power_settings_new`
-        // composes correctly and conveys disconnect.
-        label: 'Disconnect', icon: 'power_settings_new',
-        invoke: () => this.openDisconnectConfirm(ep),
-      });
-      out.push({
-        // Re-auth in place: opens the connect dialog against the already
-        // connected endpoint so a fresh token replaces the current one -
-        // no manual disconnect step. Same flow the stale-token snackbar's
-        // Reconnect action uses.
-        label: 'Reconnect', icon: 'refresh',
-        invoke: () => this.openConnectDialog(ep),
-      });
-    } else if (connectable) {
+      if (this.permissions.canDisconnect(ep)) {
+        out.push({
+          // `link_off` is Material Symbols only - under the classic
+          // Material Icons font shipped here it fails to compose as a
+          // ligature, widening the kebab cell. `power_settings_new`
+          // composes correctly and conveys disconnect.
+          label: 'Disconnect', icon: 'power_settings_new',
+          invoke: () => this.openDisconnectConfirm(ep),
+        });
+      }
+      if (canConnect) {
+        out.push({
+          // Re-auth in place: opens the connect dialog against the already
+          // connected endpoint so a fresh token replaces the current one -
+          // no manual disconnect step. Same flow the stale-token snackbar's
+          // Reconnect action uses.
+          label: 'Reconnect', icon: 'refresh',
+          invoke: () => this.openConnectDialog(ep),
+        });
+      }
+    } else if (connectable && canConnect) {
       out.push({
         label: 'Connect', icon: 'link',
         disabled: !isDisconnected,
@@ -96,20 +112,41 @@ export class EndpointRowActionsService {
       });
     }
 
-    out.push({
-      label: 'Edit', icon: 'edit',
-      invoke: () => { this.router.navigate(`/endpoints/edit/${ep.guid}`.split('/')); },
-    });
+    if (canManage) {
+      out.push({
+        label: 'Edit', icon: 'edit',
+        invoke: () => { this.router.navigate(`/endpoints/edit/${ep.guid}`.split('/')); },
+      });
+    }
 
-    if (opts.unregister !== false) {
+    if (canManage && opts.unregister !== false) {
       out.push({
         label: 'Unregister', icon: 'delete', danger: true,
         invoke: () => this.openUnregisterConfirm(ep),
       });
     }
 
+    out.push(...this.typeActions(ep));
+
     return out;
   };
+
+  // Actions an endpoint type adds to the menu (endpointListActions, e.g.
+  // Synchronize for a Helm repository). Their visible/enabled checks are
+  // Observables over the row; the menu is built synchronously, so take the
+  // value they hold now.
+  private typeActions(ep: EndpointModel): SignalListRowAction<EndpointModel>[] {
+    const def = entityCatalog.getEndpoint(ep.cnsi_type ?? '', ep.sub_type)?.definition;
+    const actions = def?.endpointListActions?.(this.endpointsData, this.envInjector) ?? [];
+    return actions
+      .filter(action => currentValue(action.createVisible?.(of(ep)), true))
+      .map(action => ({
+        label: action.label,
+        icon: action.icon,
+        disabled: !currentValue(action.createEnabled?.(of(ep)), true),
+        invoke: () => action.action(ep),
+      }));
+  }
 
   private openConnectDialog(ep: EndpointModel): void {
     // Same data shape the legacy endpoint-list helper uses - keeps the dialog

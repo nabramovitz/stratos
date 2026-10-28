@@ -1,4 +1,4 @@
-import { Injectable, EventEmitter, Directive, Input, Output, inject } from '@angular/core';
+import { Injectable, Directive, Input, inject, output } from '@angular/core';
 
 export type TailwindSortDirection = 'asc' | 'desc' | '';
 
@@ -24,7 +24,7 @@ export class TailwindSortDirective {
   @Input() direction: TailwindSortDirection = '';
   @Input() disabled = false;
 
-  @Output() sortChange = new EventEmitter<TailwindSort>();
+  readonly sortChange = output<TailwindSort>();
 
   sort(sortable: TailwindSortable): void {
     if (this.disabled) {

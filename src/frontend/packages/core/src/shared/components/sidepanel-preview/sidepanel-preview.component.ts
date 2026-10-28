@@ -1,6 +1,6 @@
 import { Portal, PortalModule } from '@angular/cdk/portal';
 import { CommonModule } from '@angular/common';
-import { Component, Input, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, Input, inject, ChangeDetectionStrategy, input } from '@angular/core';
 
 import { IFavoriteMetadata, UserFavorite } from '../../../../../store/src/types/user-favorites.types';
 import { EntityFavoriteStarComponent } from '../../../core/entity-favorite-star/entity-favorite-star.component';
@@ -23,8 +23,7 @@ export class SidepanelPreviewComponent {
   public sidePanelService = inject(SidePanelService);
 
   // Null while the caller is still deriving the title (e.g. markdown preview)
-  @Input()
-  title!: string | null;
+  readonly title = input<string | null>();
 
   @Input()
   favorite?: UserFavorite<IFavoriteMetadata>;

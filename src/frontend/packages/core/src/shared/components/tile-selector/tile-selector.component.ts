@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output  } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Input, input, output } from '@angular/core';
 
 import { ITileConfig } from '../tile/tile-selector.types';
 import { TileSelectorTileComponent } from '../tile-selector-tile/tile-selector-tile.component';
@@ -20,7 +20,7 @@ export class TileSelectorComponent {
   public hiddenOptions: ITileConfig[] = [];
   public showingMore = false;
   @Input() smallerTiles = false;
-  @Input() compactTiles = false;
+  readonly compactTiles = input(false);
   private pDynamicSmallerTiles = 0;
   @Input() set dynamicSmallerTiles(tiles: number) {
     this.pDynamicSmallerTiles = tiles;
@@ -50,7 +50,7 @@ export class TileSelectorComponent {
     return this.pOptions;
   }
 
-  @Output() selection = new EventEmitter<ITileConfig | null>();
+  readonly selection = output<ITileConfig | null>();
   public selected: ITileConfig | null = null;
 
   constructor() { }

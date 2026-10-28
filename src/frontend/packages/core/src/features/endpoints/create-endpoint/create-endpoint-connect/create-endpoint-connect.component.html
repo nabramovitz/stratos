@@ -11,17 +11,20 @@
       endpoints page.
     </div>
   </div>
+  @if (doConnect) {
   <div>
-    <div class="connect__title">
-      <span class="connect__title-inner text-[var(--content-text)]">Connection Credentials</span>
-      @if (helpDocumentUrl) {
-        <button [appBlur]="true" class="connect__title-help btn btn-icon" type="button" (click)="showHelp()">
+    <!-- The gap and shrink-0 keep the help button off the title's end -->
+    <div class="connect__title gap-2">
+      <span class="connect__title-inner min-w-0 text-[var(--content-text)]">{{ credentialsTitle() }}</span>
+      @if (helpDocumentUrl()) {
+        <button [appBlur]="true" class="connect__title-help btn btn-icon shrink-0" type="button" aria-label="Help on connecting" (click)="showHelp()">
           <app-custom-icon>help</app-custom-icon>
         </button>
       }
     </div>
-    <app-connect-endpoint [disabled]="!doConnect" class="stepper-form" (valid)="valid = $event"
-      (authType)="helpDocumentUrl = $event.help" [connectService]="connectService">
+    <app-connect-endpoint class="stepper-form" (valid)="valid = $event"
+      (authType)="authTypeChanged($event)" [connectService]="connectService">
     </app-connect-endpoint>
   </div>
+  }
 </div>

@@ -1,5 +1,5 @@
 
-import { ChangeDetectionStrategy, Component, Input  } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Input, input } from '@angular/core';
 import { CustomTooltipDirective } from '../custom-tooltip/custom-tooltip.directive';
 import { CustomIconComponent } from '../custom-material/custom-material.component';
 
@@ -14,7 +14,7 @@ import { CustomIconComponent } from '../custom-material/custom-material.componen
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class EntitySummaryTitleComponent {
-  @Input() title?: string;
+  readonly title = input<string>();
   @Input() subTitle?: string;
   @Input() info?: string;
   @Input() subText?: string;
@@ -25,12 +25,12 @@ export class EntitySummaryTitleComponent {
   set imagePath(image: string | null) {
     this.image = image;
   }
-  @Input() fallBackIcon?: string;
-  @Input() fallBackIconFont?: string;
+  readonly fallBackIcon = input<string>();
+  readonly fallBackIconFont = input<string>();
   public image: string | null = null;
 
   public failedImageLoad() {
-    if (this.fallBackIcon) {
+    if (this.fallBackIcon()) {
       this.image = null;
     }
   }

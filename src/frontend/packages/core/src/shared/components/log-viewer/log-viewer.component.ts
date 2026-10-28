@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, ElementRef, Input, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, Input, OnDestroy, OnInit, ViewChild, input } from '@angular/core';
 import {
   BehaviorSubject,
   combineLatest as observableCombineLatest,
@@ -54,12 +54,12 @@ interface ConnectionErrorInfo {
 })
 export class LogViewerComponent implements OnInit, OnDestroy {
 
-  @Input() filter?: (a: any) => void;
+  readonly filter = input<(a: any) => void>();
 
-  @Input() status!: Observable<number>;
+  readonly status = input<Observable<number>>();
 
   // How many times the parent retries before it reports the stream failed
-  @Input() maxReconnectAttempts = 5;
+  readonly maxReconnectAttempts = input(5);
 
   private logStreamSubject = new BehaviorSubject<Observable<any>>(NEVER);
 
@@ -116,8 +116,9 @@ export class LogViewerComponent implements OnInit, OnDestroy {
       share()
     );
 
-    if (this.status) {
-      this.statusSub = this.status.subscribe({
+    const status = this.status();
+    if (status) {
+      this.statusSub = status.subscribe({
         next: wsStatus => {
           switch (wsStatus) {
             case 0:
@@ -147,7 +148,7 @@ export class LogViewerComponent implements OnInit, OnDestroy {
                 severity: 'error',
                 userMessage: errorMsg,
                 timestamp: Date.now(),
-                retryable: this.connectionAttempts < this.maxReconnectAttempts
+                retryable: this.connectionAttempts < this.maxReconnectAttempts()
               };
               this.connectionErrorInfo$.next(this.lastConnectionError);
               this.statusMessage$.next({
@@ -160,7 +161,7 @@ export class LogViewerComponent implements OnInit, OnDestroy {
             case -2: {
               // Retrying connection
               this.connectionAttempts++;
-              const retryMsg = `Connection lost. Retrying (attempt ${this.connectionAttempts}/${this.maxReconnectAttempts})...`;
+              const retryMsg = `Connection lost. Retrying (attempt ${this.connectionAttempts}/${this.maxReconnectAttempts()})...`;
               this.statusMessage$.next({
                 message: retryMsg,
                 isError: false
@@ -240,7 +241,8 @@ export class LogViewerComponent implements OnInit, OnDestroy {
         // Apply filter to messages if applicable
         map(logs => logs.map(log => {
           try {
-            return this.filter ? this.filter(log) : log;
+            const filterValue = this.filter();
+            return filterValue ? filterValue(log) : log;
           } catch (filterErr) {
             console.error('Error applying filter to log:', log, filterErr);
             return log; // Fall back to unfiltered log on filter error
@@ -411,7 +413,7 @@ export class LogViewerComponent implements OnInit, OnDestroy {
     }
 
     const baseMsg = 'Unable to connect to log stream.';
-    const actionMsg = this.connectionAttempts >= this.maxReconnectAttempts
+    const actionMsg = this.connectionAttempts >= this.maxReconnectAttempts()
       ? 'Maximum retry attempts reached. Please refresh the page to try again.'
       : 'The application will attempt to reconnect automatically.';
 

@@ -130,6 +130,26 @@ describe('MetaCardComponent', () => {
     expect(menuButton).toBeTruthy();
   });
 
+  // Material icon ligatures are text: the kebab was named "more_vert" and
+  // each item read as glyph plus label ("link Connect").
+  it('names the action menu button and hides item glyphs', async () => {
+    component.actionMenu = [{ label: 'Connect', icon: 'link', action: () => {}, can: of(true) }];
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const menuButton = element.querySelector('button.meta-card__header__button') as HTMLButtonElement;
+    expect(menuButton.getAttribute('aria-label')).toBe('Actions');
+    expect(menuButton.querySelector('app-custom-icon')!.getAttribute('aria-hidden')).toBe('true');
+
+    menuButton.click();
+    await fixture.whenStable();
+    const item = element.querySelector('[role="menu"] button') as HTMLButtonElement;
+    expect(item.querySelector('app-custom-icon')!.getAttribute('aria-hidden')).toBe('true');
+    expect(item.textContent).toContain('Connect');
+    // A menu's items are menu items, or a screen reader finds the menu empty.
+    expect(item.getAttribute('role')).toBe('menuitem');
+  });
+
   it('should hide actions without permission', () => {
     component.actionMenu = [
       {

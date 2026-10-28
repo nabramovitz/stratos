@@ -2,13 +2,13 @@ import {
   ChangeDetectionStrategy,
   Component,
   Input,
-  Output,
-  EventEmitter,
   ContentChildren,
   QueryList,
   AfterContentInit,
   ViewChild,
   TemplateRef,
+  input,
+  output
 } from "@angular/core";
 import { NgTemplateOutlet } from "@angular/common";
 
@@ -24,9 +24,9 @@ export interface MatTabChangeEvent {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CustomTabComponent {
-  @Input() label = "";
-  @Input() disabled = false;
-  @Input() textLabel = "";
+  readonly label = input("");
+  readonly disabled = input(false);
+  readonly textLabel = input("");
 
   @ViewChild(TemplateRef, { static: true }) content!: TemplateRef<any>;
 
@@ -43,11 +43,11 @@ export class CustomTabComponent {
 })
 export class CustomTabGroupComponent implements AfterContentInit {
   @Input() selectedIndex = 0;
-  @Input() backgroundColor = "primary";
-  @Input() color = "primary";
+  readonly backgroundColor = input("primary");
+  readonly color = input("primary");
 
-  @Output() selectedIndexChange = new EventEmitter<number>();
-  @Output() selectedTabChange = new EventEmitter<MatTabChangeEvent>();
+  readonly selectedIndexChange = output<number>();
+  readonly selectedTabChange = output<MatTabChangeEvent>();
 
   // strict: @ContentChildren is populated by Angular before ngAfterContentInit
   @ContentChildren(CustomTabComponent) tabs!: QueryList<CustomTabComponent>;
@@ -60,7 +60,7 @@ export class CustomTabGroupComponent implements AfterContentInit {
     if (index < 0 || index >= this.tabs.length) return;
 
     const newTab = this.tabs.toArray()[index];
-    if (newTab.disabled) return;
+    if (newTab.disabled()) return;
 
     this.tabs.forEach((tab, i) => {
       tab.isActive = i === index;

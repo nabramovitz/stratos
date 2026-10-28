@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnDestroy, Output, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnDestroy, Output, inject, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CustomFormFieldComponent } from '../custom-form-field/custom-form-field.component';
@@ -85,8 +85,7 @@ export class MetricsRangeSelectorComponent implements OnDestroy {
     }
   }
 
-  @Input()
-  public validate?: (start: Date | undefined, end: Date | undefined) => string;
+  public readonly validate = input<(start: Date | undefined, end: Date | undefined) => string>();
 
   set showOverlay(show: boolean) {
     this.showOverlayValue = show;

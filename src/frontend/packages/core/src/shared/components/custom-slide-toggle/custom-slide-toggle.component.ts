@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, Input, Output, EventEmitter, forwardRef  } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Input, forwardRef, input, output, ChangeDetectorRef, inject } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR, FormsModule } from '@angular/forms';
 
 
@@ -25,19 +25,21 @@ export interface MatSlideToggleChange {
   ]
 })
 export class CustomSlideToggleComponent implements ControlValueAccessor {
+  private readonly cdr = inject(ChangeDetectorRef);
+
   @Input() disabled = false;
   @Input() checked = false;
-  @Input() value: any;
-  @Input() name!: string;
-  @Input() id!: string;
-  @Input() required = false;
-  @Input() labelPosition: 'before' | 'after' = 'after';
-  @Input() color: 'primary' | 'accent' | 'warn' = 'primary';
-  @Input() invalid = false;
+  readonly value = input<any>();
+  readonly name = input<string>();
+  readonly id = input<string>();
+  readonly required = input(false);
+  readonly labelPosition = input<'before' | 'after'>('after');
+  readonly color = input<'primary' | 'accent' | 'warn'>('primary');
+  readonly invalid = input(false);
   @Input() errorMessage = '';
 
   // eslint-disable-next-line @angular-eslint/no-output-native -- intentional Material API parity: drop-in for mat-slide-toggle which emits (change)
-  @Output() change = new EventEmitter<MatSlideToggleChange>();
+  readonly change = output<MatSlideToggleChange>();
 
   private _onChange = (_value: any) => {};
   private _onTouched = () => {};
@@ -57,8 +59,11 @@ export class CustomSlideToggleComponent implements ControlValueAccessor {
   }
 
   // ControlValueAccessor implementation
+  // The form calls these from code, not through a binding, so under OnPush
+  // the view must be marked for check.
   writeValue(value: boolean): void {
     this.checked = value;
+    this.cdr.markForCheck();
   }
 
   registerOnChange(fn: any): void {
@@ -71,5 +76,6 @@ export class CustomSlideToggleComponent implements ControlValueAccessor {
 
   setDisabledState(isDisabled: boolean): void {
     this.disabled = isDisabled;
+    this.cdr.markForCheck();
   }
 }

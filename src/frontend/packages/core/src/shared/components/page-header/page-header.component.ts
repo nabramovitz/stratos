@@ -1,7 +1,7 @@
 import { Portal, TemplatePortal } from '@angular/cdk/portal';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { ChangeDetectionStrategy, ChangeDetectorRef, AfterViewInit, Component, Input, OnDestroy, TemplateRef, ViewChild, ViewContainerRef, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, AfterViewInit, Component, Input, OnDestroy, TemplateRef, ViewChild, ViewContainerRef, computed, inject, input } from '@angular/core';
 import { RouterModule, ActivatedRoute, Router } from '@angular/router';
 import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
@@ -147,14 +147,13 @@ export class PageHeaderComponent implements OnDestroy, AfterViewInit {
   // previous owner instead of leaving the outlet empty).
   private previousPortal: Portal<any> | undefined;
 
-  @Input() hideSideNavButton = false;
+  readonly hideSideNavButton = input(false);
 
-  @Input() hideEndpointErrors = false;
+  readonly hideEndpointErrors = input(false);
 
-  @Input() hideMenu = false;
+  readonly hideMenu = input(false);
 
-  @Input()
-  endpointIds$!: Observable<string[]>;
+  readonly endpointIds$ = input<Observable<string[]>>();
 
   @Input()
   set tabs(tabs: IPageSideNavTab[]) {
@@ -176,12 +175,12 @@ export class PageHeaderComponent implements OnDestroy, AfterViewInit {
     }
   }
 
-  @Input() showUnderFlow = false;
+  readonly showUnderFlow = input(false);
 
   private pShowHistory = true;
   @Input()
   get showHistory(): boolean {
-    return !this.logoutOnly && this.pShowHistory;
+    return !this.logoutOnly() && this.pShowHistory;
   }
   set showHistory(showHistory: boolean) {
     this.pShowHistory = showHistory;
@@ -234,7 +233,7 @@ export class PageHeaderComponent implements OnDestroy, AfterViewInit {
   }
 
   // Used when non-admin logs in with no-endpoints -> only show logout in the menu
-  @Input() logoutOnly?: boolean;
+  readonly logoutOnly = input<boolean>();
 
   private getBreadcrumb(breadcrumbs: IHeaderBreadcrumb[] | null) {
     if (!breadcrumbs || !breadcrumbs.length) {

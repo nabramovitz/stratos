@@ -100,7 +100,9 @@ func buildJSONResponse(cnsiList []string, responses map[string]*api.CNSIRequest)
 		var errorResponse []byte
 		switch {
 		case !ok:
-			errorStatus.StatusCode = 500
+			// No response at all: as ProxyRequest reports an endpoint that
+			// did not answer before its timeout.
+			errorStatus.StatusCode = http.StatusGatewayTimeout
 			errorStatus.Status = "Request timed out"
 		case cnsiResponse.Error != nil:
 			errorStatus.StatusCode = 500
@@ -109,7 +111,7 @@ func buildJSONResponse(cnsiList []string, responses map[string]*api.CNSIRequest)
 			response = cnsiResponse.Response
 		}
 		// Check the HTTP Status code to make sure that it is actually a valid response
-		if cnsiResponse.StatusCode >= 400 {
+		if ok && cnsiResponse.StatusCode >= 400 {
 			errorStatus.Status = cnsiResponse.Status
 			errorStatus.StatusCode = cnsiResponse.StatusCode
 			if errorStatus.StatusCode <= 0 {
@@ -293,8 +295,21 @@ func (p *portalProxy) ProxyRequest(c *echo.Context, uri *url.URL) (map[string]*a
 		case res := <-done:
 			responses[res.GUID] = res
 		case <-deadline:
-			// Return whatever we have so far rather than blocking
+			// Return whatever we have so far rather than blocking, and a
+			// timeout for each endpoint that has not answered, so the
+			// per-endpoint response reports it (buildJSONResponse turns it
+			// into the usual {error, errorResponse} entry).
 			slog.Warn("Proxy request timed out waiting for all responses", "received", len(responses), "expected", len(cnsiList))
+			for _, cnsi := range cnsiList {
+				if _, ok := responses[cnsi]; !ok {
+					responses[cnsi] = &api.CNSIRequest{
+						GUID:       cnsi,
+						StatusCode: http.StatusGatewayTimeout,
+						Status:     "Request timed out",
+						Error:      errors.New("the endpoint did not answer in time"),
+					}
+				}
+			}
 			return responses, nil
 		}
 	}
@@ -389,11 +404,13 @@ func (p *portalProxy) SendProxiedResponse(c *echo.Context, responses map[string]
 	}
 
 	if shouldPassthrough {
-		cnsiGUID := cnsiList[0]
-		res, ok := responses[cnsiGUID]
-		if !ok {
-			return echo.NewHTTPError(http.StatusRequestTimeout, "Request timed out")
+		// A passthrough goes to one endpoint (ProxyRequest refuses more).
+		// ProxyRequest reports an endpoint that did not answer in time as a
+		// 504 entry; an empty map can still come from another caller.
+		if len(cnsiList) == 0 {
+			return echo.NewHTTPError(http.StatusGatewayTimeout, "Request timed out")
 		}
+		res := responses[cnsiList[0]]
 
 		// in passthrough mode, set the status code to that of the single response
 		c.Response().WriteHeader(res.StatusCode)
@@ -468,7 +485,7 @@ func (p *portalProxy) doRequest(cnsiRequest *api.CNSIRequest, done chan<- *api.C
 
 	if err != nil {
 		cnsiRequest.StatusCode = 500
-		cnsiRequest.Status = "Error proxing request"
+		cnsiRequest.Status = "Error proxying request"
 		cnsiRequest.Response = []byte(err.Error())
 		cnsiRequest.Error = err
 	} else if res.Body != nil {

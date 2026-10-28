@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, Input, Signal, WritableSignal, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Signal, WritableSignal, computed, inject, signal, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { combineLatest, of } from 'rxjs';
@@ -15,7 +15,10 @@ import {
 import {
   SignalListCellTemplateDirective,
 } from '../../../../../core/src/shared/components/signal-list/signal-list-cell-template.directive';
-import { TailwindSnackBarService } from '../../../../../core/src/shared/services/tailwind-snackbar.service';
+import {
+  TailwindSnackBarRef,
+  TailwindSnackBarService,
+} from '../../../../../core/src/shared/services/tailwind-snackbar.service';
 import { KubeConfigHelper } from '../kube-config.helper';
 import { KubeConfigFileCluster } from '../kube-config.types';
 import { KubeConfigTableCertComponent } from './kube-config-table-cert/kube-config-table-cert.component';
@@ -45,10 +48,12 @@ import { KubeConfigTableUserSelectComponent } from './kube-config-table-user-sel
 })
 export class KubeConfigSelectionComponent {
 
-  @Input() applyStarted!: boolean;
+  readonly applyStarted = input<boolean>();
 
   public helper = inject(KubeConfigHelper);
   private snackbarService = inject(TailwindSnackBarService);
+  // The last "Failed to load Kube Config" message, cleared by the next parse.
+  private parseErrorSnackBar?: TailwindSnackBarRef<unknown>;
 
   // Clusters as a signal. `helper.clusters$` filters to truthy arrays, so
   // this starts empty and populates once a kube config is parsed. Drives
@@ -210,17 +215,20 @@ export class KubeConfigSelectionComponent {
     }))
   );
 
+  // Only this step's own message: hide() would also dismiss other features'
+  // messages.
   clustersParse(cluster: string) {
-    this.snackbarService.hide();
+    this.parseErrorSnackBar?.dismiss();
+    this.parseErrorSnackBar = undefined;
     this.helper.parse(cluster).pipe(take(1)).subscribe(errorString => {
       if (errorString) {
-        this.snackbarService.show(`Failed to load Kube Config: ${errorString}`, 'Close');
+        this.parseErrorSnackBar = this.snackbarService.show(`Failed to load Kube Config: ${errorString}`, 'Close');
       }
     });
   }
 
   onEnter = () => {
-    if (!this.applyStarted) {
+    if (!this.applyStarted()) {
       return;
     }
     // Handle back from review step (ensure newly registered endpoints are taken into account)

@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, AfterViewInit, Component, ComponentRef, EventEmitter, Input, OnChanges, OnDestroy, OnInit, Output, SimpleChanges, ViewChild, ViewContainerRef, signal, inject } from '@angular/core';
+import { ChangeDetectionStrategy, AfterViewInit, Component, ComponentRef, Input, OnChanges, OnDestroy, OnInit, SimpleChanges, ViewChild, ViewContainerRef, signal, inject, output } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { RouterModule } from '@angular/router';
 import { combineLatest, Observable, of, Subscription } from 'rxjs';
@@ -11,6 +11,7 @@ import {
 import { EndpointModel, entityCatalog } from '../../../../../../store/src/public-api';
 import { UserFavoriteManager } from '../../../../../../store/src/user-favorite-manager';
 import { EntityFavoriteStarComponent } from '../../../../core/entity-favorite-star/entity-favorite-star.component';
+import { CustomTooltipDirective } from '../../../../shared/components/custom-tooltip/custom-tooltip.directive';
 import { MultilineTitleComponent } from '../../../../shared/components/multiline-title/multiline-title.component';
 import { SidePanelMode, SidePanelService } from '../../../../shared/services/side-panel.service';
 import { TailwindDialogService } from '../../../../shared/services/tailwind-dialog.service';
@@ -44,6 +45,7 @@ enum Status {
   standalone: true,
   imports: [
     AppBusyComponent,
+    CustomTooltipDirective,
     CommonModule,
     RouterModule,
     MultilineTitleComponent,
@@ -85,7 +87,7 @@ export class HomePageEndpointCardComponent implements OnInit, OnChanges, OnDestr
     this.updateLayout();
   }
 
-  @Output() loaded = new EventEmitter<void>();
+  readonly loaded = output<void>();
 
   // strict: assigned in ngOnInit before the template subscribes
   favorites$!: Observable<any>;
@@ -287,7 +289,7 @@ export class HomePageEndpointCardComponent implements OnInit, OnChanges, OnDestr
   public updateLayout() {
     this._layout.set(this.pLayout);
     if (this.ref && this.ref.instance) {
-      this.ref.instance.layout = this.pLayout;
+      this.ref.setInput('layout', this.pLayout);
     }
   }
 
@@ -302,8 +304,8 @@ export class HomePageEndpointCardComponent implements OnInit, OnChanges, OnDestr
     }
 
     this.ref = this.customCard.createComponent(component);
-    this.ref.instance.endpoint = this.endpoint;
-    this.ref.instance.layout = this.pLayout;
+    this.ref.setInput('endpoint', this.endpoint);
+    this.ref.setInput('layout', this.pLayout);
     this.loadCardIfReady();
   }
 
@@ -328,10 +330,10 @@ export class HomePageEndpointCardComponent implements OnInit, OnChanges, OnDestr
       ).subscribe({
         next: () => {
           this._status.set(Status.OK);
-          this.loaded.next(void 0);
+          this.loaded.emit(void 0);
         },
         error: () => {
-          this.loaded.next(void 0);
+          this.loaded.emit(void 0);
           this._status.set(Status.Error);
           this.sub.unsubscribe();
         }

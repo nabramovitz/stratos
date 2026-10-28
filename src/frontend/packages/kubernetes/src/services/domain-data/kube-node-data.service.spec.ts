@@ -137,4 +137,28 @@ describe('KubeNodeDataService', () => {
       expect(svc.errors()()).toEqual([]);
     });
   });
+
+  // The proxy answers 200 with a per-endpoint error entry for a failed call.
+  it('records a per-endpoint proxy error with its reason, cleared by a later good load', async () => {
+    const failing = svc.refresh(KUBE_GUID);
+    httpMock.expectOne(NODES_URL).flush({ [KUBE_GUID]: { error: { statusCode: 500, status: 'Error proxying request' }, errorResponse: 'dial tcp: i/o timeout' } });
+    await failing;
+    expect(svc.errors()()).toEqual([expect.objectContaining({
+      code: 'FETCH_ERROR',
+      detail: 'Error proxying request: dial tcp: i/o timeout',
+      affected: [KUBE_GUID],
+    })]);
+
+    const retrying = svc.refresh(KUBE_GUID);
+    httpMock.expectOne(NODES_URL).flush({ [KUBE_GUID]: { items: [] } });
+    await retrying;
+    expect(svc.errors()()).toEqual([]);
+  });
+
+  it('refresh keeps the endpoint\'s node count in step with the list', async () => {
+    const refreshing = svc.refresh(KUBE_GUID);
+    httpMock.expectOne(NODES_URL).flush({ [KUBE_GUID]: { items: [{ metadata: { name: 'n1' } }, { metadata: { name: 'n2' } }] } });
+    await refreshing;
+    expect(TestBed.inject(KubeEndpointDataRegistry).getService(KUBE_GUID).nodeCount()).toBe(2);
+  });
 });

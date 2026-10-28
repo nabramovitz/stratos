@@ -22,7 +22,13 @@ import { take, map } from 'rxjs/operators';
 import { EndpointsService } from '../../../../../core/src/core/endpoints.service';
 import { getIdFromRoute } from '../../../../../core/src/core/utils.service';
 import { ConnectEndpointConfig } from '../../../../../core/src/features/endpoints/connect.service';
+import { confirmUnregisterOnPrevious } from '../../../../../core/src/features/endpoints/create-endpoint/confirm-unregister-on-previous';
 import { CreateEndpointConnectComponent } from '../../../../../core/src/features/endpoints/create-endpoint/create-endpoint-connect/create-endpoint-connect.component';
+import { ConfirmationDialogService } from '../../../../../core/src/shared/components/confirmation-dialog.service';
+import {
+  ENDPOINT_REGISTER_HANDLE,
+  leaveEndpointRegistration,
+} from '../../../../../core/src/features/endpoints/endpoint-register-modal/endpoint-register-handle';
 import { EndpointsSignalConfigService } from '../../../../../core/src/features/endpoints/endpoints-page/endpoints-signal-config.service';
 import { SignalStepHandle, StepComponent } from '../../../../../core/src/shared/components/stepper/step/step.component';
 import { SteppersComponent } from '../../../../../core/src/shared/components/stepper/steppers/steppers.component';
@@ -94,6 +100,11 @@ export class GitRegistrationComponent extends CreateEndpointHelperComponent impl
   private router = inject(Router);
   private cdr = inject(ChangeDetectorRef);
   private endpointsSignalConfig = inject(EndpointsSignalConfigService);
+  private confirmDialog = inject(ConfirmationDialogService);
+  // Present when hosted by the Register Endpoint dialog, which this form
+  // closes instead of navigating to /endpoints (the page under the dialog).
+  private registerHandle = inject(ENDPOINT_REGISTER_HANDLE, { optional: true });
+  readonly cancelAction = this.registerHandle ? () => this.registerHandle!.close(false) : undefined;
   sessionService: SessionService;
   currentUserPermissionsService: CurrentUserPermissionsService;
   userProfileService: UserProfileService;
@@ -146,6 +157,7 @@ export class GitRegistrationComponent extends CreateEndpointHelperComponent impl
   // Previous — "Prev = start over" UX. Cleared after unregister so the
   // form can re-register cleanly.
   private registeredGuid: string | null = null;
+  private registeredName = '';
 
   registerStepHandle: SignalStepHandle = {
     valid: this.registerValid.asReadonly(),
@@ -183,6 +195,10 @@ export class GitRegistrationComponent extends CreateEndpointHelperComponent impl
         this._connect()?.onEnter(data as any);
       }
     },
+    // Previous unregisters (onLeave below), so it asks first.
+    confirmPrevious: () => this.registeredGuid ?
+      confirmUnregisterOnPrevious(this.confirmDialog, this.registeredName) :
+      Promise.resolve(true),
     onLeave: async (isNext) => {
       if (isNext || !this.registeredGuid) {
         return;
@@ -199,10 +215,10 @@ export class GitRegistrationComponent extends CreateEndpointHelperComponent impl
       if (!result.success) {
         throw new Error(result.message || 'Failed to connect endpoint');
       }
-      // Connect's legacy onNext returns redirect:true on success →
-      // navigate back to /endpoints (the stepper's cancel URL).
+      // Connect's legacy onNext returns redirect:true on success: the
+      // form is done.
       if (result.redirect) {
-        await this.router.navigate(['/endpoints']);
+        await leaveEndpointRegistration(this.registerHandle, this.router, true);
       }
     },
   };
@@ -432,7 +448,9 @@ export class GitRegistrationComponent extends CreateEndpointHelperComponent impl
     };
     if (!result.error) {
       this.registeredGuid = data.guid;
-      this.snackBarService.show(`Successfully registered '${name}'`);
+      this.registeredName = name;
+      // 7 s: it shows while the dialog moves to its Connect step.
+      this.snackBarService.show(`Successfully registered '${name}'`, undefined, 7000);
     }
     const success = !result.error;
     return {

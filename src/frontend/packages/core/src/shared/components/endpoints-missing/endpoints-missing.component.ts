@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, Input, OnInit, inject, ChangeDetectionStrategy, input } from '@angular/core';
 import { combineLatest as observableCombineLatest, Observable } from 'rxjs';
 import { delay, map, startWith } from 'rxjs/operators';
 
@@ -30,7 +30,7 @@ export interface EndpointMissingMessageParts {
 export class EndpointsMissingComponent implements OnInit {
 
   @Input() showToolbarHint = true;
-  @Input() showDirectToEndpointMessage = true;
+  readonly showDirectToEndpointMessage = input(true);
 
   noContent$!: Observable<EndpointMissingMessageParts | null>;
 

@@ -1,5 +1,5 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, ComponentRef, EventEmitter, Injector, Input, OnDestroy, OnInit, Output, ViewChild, ViewContainerRef, signal, Signal, inject } from '@angular/core';
-import { Observable, Subscription } from 'rxjs';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, ComponentRef, Injector, OnDestroy, OnInit, ViewChild, ViewContainerRef, signal, Signal, inject, input, output } from '@angular/core';
+import { Observable, Unsubscribable } from 'rxjs';
 import { toObservable } from '@angular/core/rxjs-interop';
 
 import { safeUnsubscribe } from '../../../core/utils.service';
@@ -37,11 +37,12 @@ export class StackedInputActionsComponent implements OnInit, OnDestroy {
   private injector = inject(Injector);
 
 
-  @Input() stateIn$!: Observable<StackedInputActionsState[]>;
-  @Input() isEmailInput = true;
-  @Input() stackedActionConfig!: StackedInputActionConfig;
+  // Every host binds it: the rows report their results through it.
+  readonly stateIn$ = input.required<Observable<StackedInputActionsState[]>>();
+  readonly isEmailInput = input(true);
+  readonly stackedActionConfig = input<StackedInputActionConfig>();
 
-  @Output() stateOut = new EventEmitter<StackedInputActionsUpdate>();
+  readonly stateOut = output<StackedInputActionsUpdate>();
 
   @ViewChild('inputs', { read: ViewContainerRef, static: true })
   inputs!: ViewContainerRef;
@@ -60,7 +61,7 @@ export class StackedInputActionsComponent implements OnInit, OnDestroy {
       update: StackedInputActionUpdate | null
     }
   } = {};
-  private subs: Subscription[] = [];
+  private subs: Unsubscribable[] = [];
 
   addComponent(): void {
     const componentRef = this.inputs.createComponent(StackedInputActionComponent);
@@ -70,7 +71,7 @@ export class StackedInputActionsComponent implements OnInit, OnDestroy {
     // Inputs go through setInput so the OnPush component is marked for check.
     componentRef.setInput('key', this.count++);
     componentRef.setInput('position', this.inputs.length - 1);
-    componentRef.setInput('config', this.stackedActionConfig);
+    componentRef.setInput('config', this.stackedActionConfig());
     // Handle when the component wants to be removed
     this.subs.push(stackedAction.remove.subscribe(() => {
       this.removeComponent(stackedAction);
@@ -160,7 +161,7 @@ export class StackedInputActionsComponent implements OnInit, OnDestroy {
     // Add the first component
     this.addComponent();
     // Push state change into their respective components
-    this.subs.push(this.stateIn$.subscribe(states => {
+    this.subs.push(this.stateIn$().subscribe(states => {
       // Disable the 'add new' button
       this.disabled.set(states.some(state => state.result === StackedInputActionResult.PROCESSING));
       // Push state using signal update function

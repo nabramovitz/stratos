@@ -247,7 +247,9 @@ func (p *portalProxy) buildCNSIList(c *echo.Context) ([]*api.CNSIRecord, error) 
 		}
 
 		if p.GetConfig().UserEndpointsEnabled != config.UserEndpointsConfigEnum.AdminOnly {
-			// if endpoint with same url exists as system and user endpoint, hide the system endpoint
+			// The user's own endpoints come first. One of them hides a system
+			// endpoint of the same type at the same URL; endpoints of other
+			// types can share a URL (Metrics at a Cloud Foundry API address).
 			unfilteredList, err := p.ListAdminEndpoints(userID.(string))
 			if err != nil {
 				return unfilteredList, err
@@ -256,21 +258,17 @@ func (p *portalProxy) buildCNSIList(c *echo.Context) ([]*api.CNSIRecord, error) 
 			filteredList := []*api.CNSIRecord{}
 
 			for _, endpoint := range unfilteredList {
-				duplicateSystemEndpoint := false
-				duplicateEndpointIndex := -1
-
-				for i := 0; i < len(filteredList); i++ {
-					if filteredList[i].APIEndpoint.String() == endpoint.APIEndpoint.String() {
-						duplicateSystemEndpoint = len(filteredList[i].Creator) == 0
-						duplicateEndpointIndex = i
+				hidden := false
+				if len(endpoint.Creator) == 0 {
+					for _, own := range filteredList {
+						if len(own.Creator) != 0 && own.CNSIType == endpoint.CNSIType &&
+							own.APIEndpoint.String() == endpoint.APIEndpoint.String() {
+							hidden = true
+							break
+						}
 					}
 				}
-
-				if duplicateEndpointIndex != -1 && !u.Admin {
-					if duplicateSystemEndpoint {
-						filteredList[duplicateEndpointIndex] = endpoint
-					}
-				} else {
+				if !hidden {
 					filteredList = append(filteredList, endpoint)
 				}
 			}
@@ -434,8 +432,10 @@ func (p *portalProxy) GetCNSIRecord(guid string) (api.CNSIRecord, error) {
 	return rec, nil
 }
 
-func (p *portalProxy) GetAdminCNSIRecordByEndpoint(endpoint string) (api.CNSIRecord, error) {
-	slog.Debug("GetAdminCNSIRecordByEndpoint", "apiEndpoint", endpoint)
+// GetAdminCNSIRecordByEndpoint finds the admin-registered endpoint of the
+// given type at a URL; endpoints of other types may share the URL.
+func (p *portalProxy) GetAdminCNSIRecordByEndpoint(endpoint string, cnsiType string) (api.CNSIRecord, error) {
+	slog.Debug("GetAdminCNSIRecordByEndpoint", "apiEndpoint", endpoint, "type", cnsiType)
 	var rec *api.CNSIRecord
 
 	endpointList, err := p.listCNSIByAPIEndpoint(endpoint)
@@ -445,7 +445,7 @@ func (p *portalProxy) GetAdminCNSIRecordByEndpoint(endpoint string) (api.CNSIRec
 
 	// search for endpoint created by an admin
 	for _, endpoint := range endpointList {
-		if len(endpoint.Creator) == 0 {
+		if len(endpoint.Creator) == 0 && endpoint.CNSIType == cnsiType {
 			rec = endpoint
 		}
 	}

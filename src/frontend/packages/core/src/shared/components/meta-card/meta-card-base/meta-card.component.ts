@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, ContentChild, Input, HostListener, contentChildren, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ContentChild, Input, HostListener, contentChildren, signal, input } from '@angular/core';
 import { combineLatest, Observable, of as observableOf, of } from 'rxjs';
 import { map } from 'rxjs/operators';
 
@@ -18,14 +18,6 @@ import { AppProgressBarComponent } from '../../progress-bar/app-progress-bar.com
 import { MetaCardItemComponent } from '../meta-card-item/meta-card-item.component';
 import { MetaCardTitleComponent } from '../meta-card-title/meta-card-title.component';
 
-
-export function createMetaCardMenuItemSeparator(): MenuItem {
-  return {
-    label: '-',
-    separator: true,
-    action: () => { }
-  };
-}
 
 @Component({
   selector: 'app-meta-card',
@@ -64,26 +56,19 @@ export class MetaCardComponent {
   // the ngrx list framework — live cards supply [favorite] explicitly. The
   // only remaining [entityConfig] binder, card-app, is dead `list/` code
   // deleted in workstream D; this input keeps it compiling until then.
-  @Input()
-  entityConfig: unknown;
+  readonly entityConfig = input<unknown>();
 
-  @Input()
-  public confirmFavoriteRemoval = false;
+  public readonly confirmFavoriteRemoval = input(false);
 
-  @Input()
-  statusIcon = true;
+  readonly statusIcon = input(true);
 
-  @Input()
-  statusIconByTitle = false;
+  readonly statusIconByTitle = input(false);
 
-  @Input()
-  statusIconTooltip!: string;
+  readonly statusIconTooltip = input<string>();
 
-  @Input()
-  statusBackground = false;
+  readonly statusBackground = input(false);
 
-  @Input()
-  mode!: string;
+  readonly mode = input<string>();
 
   @Input()
   clickAction?: () => void;

@@ -1,6 +1,5 @@
 import { effect, Injector, Signal, untracked } from '@angular/core';
 import {
-  entityCatalog,
   EndpointModel,
   EndpointsDataService,
   EndpointType,
@@ -12,11 +11,12 @@ export interface ConnectAuthParams {
   password?: string;
   token?: string;
 }
-import { combineLatest, defer, from, Observable, of, ReplaySubject, Subject, Subscription, timer } from 'rxjs';
-import { delay, distinctUntilChanged, filter, map, pairwise, startWith, switchMap, tap } from 'rxjs/operators';
+import { combineLatest, defer, from, merge, Observable, of, ReplaySubject, Subject, Subscription, timer } from 'rxjs';
+import { delay, filter, finalize, map, pairwise, shareReplay, startWith, switchMap, take, tap } from 'rxjs/operators';
 
 import { EndpointsService } from '../../core/endpoints.service';
 import { safeUnsubscribe } from '../../core/utils.service';
+import { TailwindSnackBarService } from '../../shared/services/tailwind-snackbar.service';
 import { rememberUsername } from './remembered-username';
 
 export interface ConnectEndpointConfig {
@@ -32,35 +32,34 @@ export interface ConnectEndpointConfig {
   username?: string;
 }
 
+// TLS options for the endpoint, set in the connect form by a user who may
+// edit the endpoint. Saved to the endpoint before the connect runs.
+export interface ConnectEndpointTls {
+  skipSSL: boolean;
+  caCert: string;
+}
+
 export interface ConnectEndpointData {
   authType: string;
   authVal: ConnectAuthParams;
   systemShared: boolean;
   bodyContent: string;
+  tls?: ConnectEndpointTls;
 }
-
-// Why is this here instead of somewhere more common? Answer - Because it'd create circulate dependencies due to reliance on entityCatalog
-//
-// endpoint-token-lifecycle (Task 3): left as-is rather than widened to treat
-// 'expired' as connected — this export currently has no importers anywhere
-// in the codebase (verified by repo-wide grep), so there is no dialog flow
-// to break either way. If a caller shows up, re-decide against that flow's
-// actual behaviour rather than defaulting to widen.
-export const isEndpointConnected = (endpoint: EndpointModel): boolean => {
-  if (!endpoint.cnsi_type) {
-    return endpoint.connectionStatus === 'connected';
-  }
-  const epType = entityCatalog.getEndpoint(endpoint.cnsi_type, endpoint.sub_type)?.definition;
-  return endpoint.connectionStatus === 'connected' || !!epType?.unConnectable;
-};
 
 export class ConnectEndpointService {
 
   public connectingError$!: Observable<string | null>;
   private hasConnected = new Subject<boolean>();
+  // Each tokens call that succeeded
+  private connectSucceeded = new Subject<void>();
+  // Why saving the TLS options failed; null once a new attempt starts.
+  private saveError = new Subject<string | null>();
 
-  // This Observable is used to observe when conenction has completed
+  // Emits when a connect has completed: true when this service has already
+  // told the user (its "Connected to …" offer), so the caller need not.
   public hasConnected$: Observable<boolean> = this.hasConnected.asObservable();
+  private reportedConnect = false;
   public isBusy$!: Observable<boolean>;
 
   private connecting$!: Observable<boolean>;
@@ -73,6 +72,7 @@ export class ConnectEndpointService {
   private bridgeTeardowns: (() => void)[] = [];
 
   private hasAttemptedConnect!: boolean;
+  private inFlight?: Observable<{ success: boolean, errorMessage: string }>;
   private pData!: ConnectEndpointData;
 
   // We need a delay to ensure the BE has finished registering the endpoint.
@@ -113,16 +113,15 @@ export class ConnectEndpointService {
       }
     }));
 
-    this.subs.push(this.connected$.pipe(
-      // Gate on hasAttemptedConnect (like connectingError$): for an
-      // already-connected endpoint (Reconnect flow) the endpoint carries a
-      // user from the moment the dialog opens, and without the gate the
-      // pre-existing connection reads as an instant success - the dialog
-      // self-closes with a "Connected" snackbar before any input.
-      filter(([isConnected]) => isConnected && this.hasAttemptedConnect),
+    // Report a connect only once the tokens call succeeded. An endpoint
+    // being Reconnected is connected throughout, so watching it for a
+    // user read any refresh of the endpoint list during a failed attempt
+    // (e.g. after saving its TLS options) as success, and the dialog
+    // closed with no error shown.
+    this.subs.push(this.connectSucceeded.pipe(
+      switchMap(() => this.connected$.pipe(filter(([isConnected]) => isConnected), take(1))),
       delay(this.connectDelay),
-      tap(() => this.hasConnected.next(true)),
-      distinctUntilChanged(([isConnected], [oldIsConnected]) => isConnected && oldIsConnected),
+      tap(() => this.hasConnected.next(this.reportedConnect)),
     ).subscribe(([, endpoint]) => this.endpointsService.checkEndpoint(endpoint))
     );
   }
@@ -174,9 +173,12 @@ export class ConnectEndpointService {
         return of(newBusy);
       })
     );
-    this.connectingError$ = this.update$.pipe(
-      filter(() => this.hasAttemptedConnect),
-      map(update => update.error ? update.message || 'Could not connect to the endpoint' : null)
+    this.connectingError$ = merge(
+      this.saveError,
+      this.update$.pipe(
+        filter(() => this.hasAttemptedConnect),
+        map(update => update.error ? update.message || 'Could not connect to the endpoint' : null)
+      ),
     );
 
     this.setupCombinedObservables();
@@ -214,6 +216,98 @@ export class ConnectEndpointService {
   }
 
   public submit(): Observable<{ success: boolean, errorMessage: string }> {
+    // One connect at a time: a submit while one runs (Enter pressed again,
+    // or Enter after the Connect button) shares it instead of starting
+    // another.
+    return defer(() => {
+      if (!this.inFlight) {
+        this.inFlight = from(this.saveTls()).pipe(
+          switchMap(({ failure, previous }) => {
+            if (failure !== null) {
+              return of({ success: false, errorMessage: failure });
+            }
+            // The options were saved for this connect only: a connect that
+            // fails puts them back (the form keeps the edit for a retry).
+            return this.connect().pipe(
+              switchMap(result => result.success || !previous ? of(result) : from(this.restoreTls(previous, result))),
+            );
+          }),
+          take(1),
+          finalize(() => this.inFlight = undefined),
+          shareReplay({ bufferSize: 1, refCount: false }),
+        );
+      }
+      return this.inFlight;
+    });
+  }
+
+  // Save TLS options that differ from the endpoint's, so the connect uses
+  // them. Resolves to why saving failed (or null) and, once saved, the
+  // options the endpoint had before.
+  private async saveTls(): Promise<{ failure: string | null, previous?: ConnectEndpointTls }> {
+    this.saveError.next(null);
+    const tls = this.pData?.tls;
+    const endpoint = this.endpointsData.endpoints().get(this.config.guid);
+    if (!endpoint) {
+      return { failure: null };
+    }
+    const previous = { skipSSL: !!endpoint.skip_ssl_validation, caCert: endpoint.ca_cert ?? '' };
+    if (!tls || (tls.skipSSL === previous.skipSSL && tls.caCert === previous.caCert)) {
+      return { failure: null };
+    }
+    const state = await this.updateTls(endpoint, tls);
+    if (!state.error) {
+      return { failure: null, previous };
+    }
+    const message = state.message || 'Could not save the TLS options';
+    this.saveError.next(message);
+    return { failure: message };
+  }
+
+  // Put back the options saved for a connect that failed. The connect's
+  // error stands; a failure to restore is added to it.
+  private async restoreTls(previous: ConnectEndpointTls, result: { success: boolean, errorMessage: string }) {
+    const endpoint = this.endpointsData.endpoints().get(this.config.guid);
+    const state = endpoint ? await this.updateTls(endpoint, previous) : { error: true, message: 'The endpoint is no longer known' };
+    if (!state.error) {
+      return result;
+    }
+    const errorMessage = `${result.errorMessage || 'Could not connect to the endpoint'} ` +
+      `(the endpoint's previous TLS options could not be restored: ${state.message || 'unknown error'})`;
+    this.saveError.next(errorMessage);
+    return { success: false, errorMessage };
+  }
+
+  private updateTls(endpoint: EndpointModel, tls: ConnectEndpointTls): Promise<ActionState> {
+    return this.endpointsData.update(this.config.guid, {
+      endpointType: this.config.type,
+      name: endpoint.name,
+      skipSSL: tls.skipSSL,
+      setClientInfo: false,
+      allowSSO: endpoint.sso_allowed,
+      caCert: tls.caCert,
+    });
+  }
+
+  // The user is also connected, at the same address, to endpoints of this
+  // type that the backend paired with this one (a personal endpoint is
+  // involved). Every connection stays unless the user asks; dismissing
+  // keeps them all. The message reports the connect too: one connect, one
+  // message.
+  private offerDisconnect(others: { guid: string, name: string }[]) {
+    const snackBar = this.injector.get(TailwindSnackBarService);
+    const names = others.map(other => `'${other.name}'`).join(', ');
+    snackBar.show(`Connected to '${this.config.name}'. You are also connected to this address through ${names}. ` +
+      'Dismiss to keep all connected.', 'Disconnect others')
+      .onAction().pipe(take(1)).subscribe(() => others.forEach(other =>
+        this.endpointsData.disconnect(other.guid).then(state => {
+          if (state.error) {
+            snackBar.show(`Could not disconnect '${other.name}': ${state.message}`, 'Dismiss');
+          }
+        })));
+  }
+
+  private connect(): Observable<{ success: boolean, errorMessage: string }> {
     this.hasAttemptedConnect = true;
     const { authType, authVal, systemShared } = this.pData;
     // bodyContent is intentionally unused — see body: null comment below.
@@ -254,6 +348,11 @@ export class ConnectEndpointService {
           const username = (authVal as { username?: string })?.username;
           if (username) {
             rememberUsername(this.config.guid, username);
+          }
+          this.reportedConnect = !!actionState.alsoConnected?.length;
+          this.connectSucceeded.next();
+          if (actionState.alsoConnected?.length) {
+            this.offerDisconnect(actionState.alsoConnected);
           }
         }
         return {

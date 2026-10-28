@@ -5,7 +5,6 @@ import {
   ChangeDetectorRef,
   Component,
   ComponentRef,
-  Input,
   OnDestroy,
   OnInit,
   ViewChild,
@@ -13,17 +12,21 @@ import {
   computed,
   inject,
   signal,
+  input
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { entityCatalog } from '@stratosui/store';
 import { firstValueFrom, Subscription } from 'rxjs';
 
 import { getIdFromRoute } from '../../../core/utils.service';
+import { ConfirmationDialogService } from '../../../shared/components/confirmation-dialog.service';
 import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 import { SignalStepHandle, StepComponent } from '../../../shared/components/stepper/step/step.component';
 import { SteppersComponent } from '../../../shared/components/stepper/steppers/steppers.component';
+import { ENDPOINT_REGISTER_HANDLE, leaveEndpointRegistration } from '../endpoint-register-modal/endpoint-register-handle';
 import { EndpointsSignalConfigService } from '../endpoints-page/endpoints-signal-config.service';
 import { CreateEndpointCfStep1Component } from './create-endpoint-cf-step-1/create-endpoint-cf-step-1.component';
+import { confirmUnregisterOnPrevious } from './confirm-unregister-on-previous';
 import { CreateEndpointConnectComponent } from './create-endpoint-connect/create-endpoint-connect.component';
 
 @Component({
@@ -47,7 +50,7 @@ export class CreateEndpointComponent implements OnInit, AfterViewInit, OnDestroy
   // pageHeader signal — the inner one's ngOnDestroy on modal close clears
   // the signal and the outer (endpoints-page) header disappears until a
   // hard reload.
-  @Input() hideHeader = false;
+  readonly hideHeader = input(false);
 
   showConnectStep: boolean;
 
@@ -60,8 +63,9 @@ export class CreateEndpointComponent implements OnInit, AfterViewInit, OnDestroy
   // used when the endpoint type ships its own registrationComponent (e.g.
   // KubeConfigRegistrationComponent, GitRegistrationComponent); those
   // children manage their own steppers and are migrated separately. The
-  // handles below only drive the legacy inline 2-step flow rendered when
-  // no custom registrationComponent is wired up.
+  // handles below only drive the inline flow (Register, plus Connect for
+  // types that can connect) rendered when no custom registrationComponent
+  // is wired up.
   @ViewChild('step1', { static: false }) step1?: CreateEndpointCfStep1Component;
 
   // Signal-backed (not a plain field): the connect step is instantiated
@@ -77,6 +81,11 @@ export class CreateEndpointComponent implements OnInit, AfterViewInit, OnDestroy
   private router = inject(Router);
   private cdr = inject(ChangeDetectorRef);
   private endpointsSignalConfig = inject(EndpointsSignalConfigService);
+  private confirmDialog = inject(ConfirmationDialogService);
+  // Present when hosted by the Register Endpoint dialog, which this form
+  // closes instead of navigating to /endpoints (the page under the dialog).
+  private registerHandle = inject(ENDPOINT_REGISTER_HANDLE, { optional: true });
+  readonly cancelAction = this.registerHandle ? () => this.registerHandle!.close(false) : undefined;
 
   // step1.validate is an Observable — we mirror it into a signal once the
   // view initialises (it's constructed lazily in ngAfterContentInit).
@@ -89,6 +98,7 @@ export class CreateEndpointComponent implements OnInit, AfterViewInit, OnDestroy
   // can re-register cleanly. Mirrors git-registration's pattern.
   private registeredGuid: string | null = null;
   private registeredType: string | null = null;
+  private registeredName = '';
 
   step1StepHandle: SignalStepHandle = {
     valid: this.step1Valid.asReadonly(),
@@ -104,11 +114,12 @@ export class CreateEndpointComponent implements OnInit, AfterViewInit, OnDestroy
       if (result.data) {
         this.registeredGuid = result.data.guid;
         this.registeredType = result.data.type;
+        this.registeredName = result.data.name;
       }
-      // Legacy `redirect: true` (only emitted when finalStep is set, i.e.
-      // when there's no connect step) means "navigate back to /endpoints".
+      // `redirect: true` (only emitted when finalStep is set, i.e. when
+      // there's no connect step) means the form is done.
       if (result.redirect) {
-        await this.router.navigate(['/endpoints']);
+        await leaveEndpointRegistration(this.registerHandle, this.router, true);
         return;
       }
       // Hand the registration result to the connect step via the stepper's
@@ -142,6 +153,10 @@ export class CreateEndpointComponent implements OnInit, AfterViewInit, OnDestroy
         this._connect()?.onEnter(data as any);
       }
     },
+    // Previous unregisters (onLeave below), so it asks first.
+    confirmPrevious: () => this.registeredGuid ?
+      confirmUnregisterOnPrevious(this.confirmDialog, this.registeredName) :
+      Promise.resolve(true),
     onLeave: async (isNext) => {
       if (isNext || !this.registeredGuid || !this.registeredType) {
         return;
@@ -161,10 +176,9 @@ export class CreateEndpointComponent implements OnInit, AfterViewInit, OnDestroy
         throw new Error(result.message || 'Failed to connect endpoint');
       }
       // Connect's legacy onNext always returns redirect:true on success,
-      // meaning "navigate to the stepper's cancel URL" — for this stepper
-      // that is /endpoints.
+      // meaning the form is done.
       if (result.redirect) {
-        await this.router.navigate(['/endpoints']);
+        await leaveEndpointRegistration(this.registerHandle, this.router, true);
       }
     },
   };

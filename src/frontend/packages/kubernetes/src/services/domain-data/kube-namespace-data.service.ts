@@ -3,6 +3,7 @@ import { Injectable, Signal, computed, inject, signal, untracked } from '@angula
 import { firstValueFrom } from 'rxjs';
 
 import { KUBE_LIST_DEFAULT_LIMIT, KubeListResponse } from '../endpoint-data/kube-paged-response';
+import { KubeProxyResponse, kubeProxyResult } from '../endpoint-data/kube-proxy-response';
 import { KubeNamespace, StratosError } from '../endpoint-data/kube-types';
 import { KubeEndpointDataRegistry } from '../endpoint-data/kube-endpoint-data.registry';
 import { KubeEndpointEviction, evictErrors } from '../endpoint-data/kube-endpoint-eviction';
@@ -45,6 +46,30 @@ export class KubeNamespaceDataService {
     });
   }
 
+  // The namespace list's load errors for the endpoint. They live on the
+  // per-endpoint service (tagged 'namespaces'; load() and
+  // refresh('namespaces') clear them), re-resolved after an eviction
+  // like namespacesForEndpoint.
+  listErrors(kubeGuid: string): Signal<StratosError[]> {
+    return computed(() => this.namespaceListErrors(kubeGuid));
+  }
+
+  // listErrors as a plain reactive read (call it inside a computed).
+  namespaceListErrors(kubeGuid: string): StratosError[] {
+    this.eviction.epoch(kubeGuid);
+    return untracked(() => this.registry.getService(kubeGuid)).errors()
+      .filter(e => e.affected?.includes('namespaces'));
+  }
+
+  // Whether the endpoint's namespace list is loading; resolved like
+  // listErrors.
+  listLoading(kubeGuid: string): Signal<boolean> {
+    return computed(() => {
+      this.eviction.epoch(kubeGuid);
+      return untracked(() => this.registry.getService(kubeGuid)).namespacesLoading();
+    });
+  }
+
   // Single-namespace projection by name — derived from the per-endpoint
   // cache. Callers (e.g. the namespace detail page) refresh() first.
   namespaceByName(kubeGuid: string, name: string): Signal<KubeNamespace | undefined> {
@@ -68,11 +93,13 @@ export class KubeNamespaceDataService {
 
   // Create a namespace on the target endpoint. POSTs through the jetstream
   // proxy (single-endpoint, targeted by the x-cap-cnsi-list header) and
-  // rejects on a non-2xx so the caller can surface the failure. Refreshes
+  // rejects on a non-2xx or the endpoint's error entry so the caller can
+  // surface the failure. Refreshes
   // the per-endpoint cache on success so the new namespace appears.
   async create(kubeGuid: string, name: string): Promise<void> {
     const headers = new HttpHeaders({ 'x-cap-cnsi-list': kubeGuid });
-    await firstValueFrom(this.http.post('/pp/v1/proxy/api/v1/namespaces', { metadata: { name } }, { headers }));
+    await firstValueFrom(this.http.post<KubeProxyResponse<unknown>>('/pp/v1/proxy/api/v1/namespaces', { metadata: { name } }, { headers })
+      .pipe(kubeProxyResult(kubeGuid)));
     await this.refresh({ kubeGuid });
   }
 
@@ -89,11 +116,10 @@ export class KubeNamespaceDataService {
   async fetchDirect(kubeGuid: string): Promise<KubeNamespace[]> {
     const headers = new HttpHeaders({ 'x-cap-cnsi-list': kubeGuid });
     try {
-      const resp = await firstValueFrom(this.http.get<{ [cnsi: string]: KubeListResponse<KubeNamespace> }>(
+      const list = await firstValueFrom(this.http.get<KubeProxyResponse<KubeListResponse<KubeNamespace>>>(
         `/pp/v1/proxy/api/v1/namespaces?limit=${KUBE_LIST_DEFAULT_LIMIT}`,
         { headers },
-      ));
-      const list = resp?.[kubeGuid];
+      ).pipe(kubeProxyResult<KubeListResponse<KubeNamespace>>(kubeGuid)));
       return (list?.items ?? []).map(ns => ({
         ...ns,
         kubeGuid,
@@ -105,6 +131,7 @@ export class KubeNamespaceDataService {
       const next: StratosError = {
         scope: 'envelope',
         code,
+        status,
         title: 'kube-namespaces-direct',
         detail: (err as Error)?.message ?? String(err),
         affected: [kubeGuid],

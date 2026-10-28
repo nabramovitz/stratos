@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Component, provideZonelessChangeDetection, signal } from '@angular/core';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { RouterTestingModule } from '@angular/router/testing';
 import { of, Subject } from 'rxjs';
@@ -19,6 +20,7 @@ import { EndpointStatusSignalService } from '../../../core/signals/endpoint-stat
 import { CustomizationService, CustomizationsMetadata } from '../../../core/customizations.types';
 import { TailwindSnackBarService } from '../../../shared/services/tailwind-snackbar.service';
 import { EndpointModalService } from '../endpoint-register-modal/endpoint-modal.service';
+import { EndpointRegisterModalComponent } from '../endpoint-register-modal/endpoint-register-modal.component';
 import { EndpointsPageComponent } from './endpoints-page.component';
 
 @Component({ selector: 'app-test-welcome', template: '<p class="test-welcome">Welcome</p>' })
@@ -165,5 +167,44 @@ describe('EndpointsPageComponent', () => {
     const el = await renderEmptyPage();
     expect(el.querySelector('.test-welcome')?.textContent).toBe('Welcome');
     expect(el.querySelector('app-endpoints-missing')).toBeNull();
+  });
+
+  // The Register Endpoint dialog reports a registration when its form is
+  // done; the page refreshes and closes the dialog. The form already said
+  // "Successfully registered '<name>'" when the endpoint was registered, so
+  // the page adds no second message.
+  it('closes the Register dialog when an endpoint was registered', async () => {
+    mockSnackBarService.show.mockClear();
+    mockEndpointModalService.closeModal.mockClear();
+    component.openRegisterModal();
+    await fixture.whenStable();
+    const modal = fixture.debugElement.query(By.directive(EndpointRegisterModalComponent));
+    expect(modal).not.toBeNull();
+
+    (modal.componentInstance as EndpointRegisterModalComponent).endpointRegistered.emit();
+    await fixture.whenStable();
+
+    expect(fixture.debugElement.query(By.directive(EndpointRegisterModalComponent))).toBeNull();
+    expect(mockEndpointModalService.closeModal).toHaveBeenCalledTimes(1);
+    expect(mockSnackBarService.show).not.toHaveBeenCalledWith('Endpoint registered successfully!', 'OK', 5000);
+  });
+
+  // The page's own "no connected endpoints" message is the only one it may
+  // clear: the Register form's "Successfully registered '<name>'" arrives
+  // just before the endpoints update, and hide() would dismiss it too.
+  it('leaves messages it did not open alone', async () => {
+    mockSnackBarService.hide.mockClear();
+    fixture.destroy();
+    expect(mockSnackBarService.hide).not.toHaveBeenCalled();
+  });
+
+  // The open dialog locks the page scroll (body.modal-open); leaving the page
+  // with it open must release it.
+  it('releases the page scroll when it goes away with the Register dialog open', async () => {
+    component.openRegisterModal();
+    await fixture.whenStable();
+    mockEndpointModalService.closeModal.mockClear();
+    fixture.destroy();
+    expect(mockEndpointModalService.closeModal).toHaveBeenCalledTimes(1);
   });
 });

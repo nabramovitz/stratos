@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnInit, Output, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Input, OnInit, computed, inject, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
 import { Observable, map } from 'rxjs';
@@ -105,15 +105,15 @@ export class SideNavComponent implements OnInit {
   @Input() set iconMode(isIconMode: boolean) {
     if (isIconMode !== this.isIconMode) {
       this.isIconMode = isIconMode;
-      this.changedMode.next(void 0);
+      this.changedMode.emit(void 0);
     }
   }
   get iconMode() {
     return this.isIconMode;
   }
 
-  @Input() tabs: SideNavItem[] = [];
-  @Output() changedMode = new EventEmitter();
+  readonly tabs = input<SideNavItem[]>([]);
+  readonly changedMode = output();
   private isIconMode = true;
 
   public toggleSidenav() {

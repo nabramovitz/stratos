@@ -1,9 +1,11 @@
 import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { Injectable, Signal, computed, inject, signal } from '@angular/core';
-import { Observable, firstValueFrom, of } from 'rxjs';
-import { catchError, map, shareReplay } from 'rxjs/operators';
+import { Observable, defer, firstValueFrom, of } from 'rxjs';
+import { catchError, finalize, map, shareReplay } from 'rxjs/operators';
 
 import { KUBE_LIST_DEFAULT_LIMIT, KubeListResponse } from '../endpoint-data/kube-paged-response';
+import { KubeLoadTracker } from '../endpoint-data/kube-load-tracker';
+import { KubeProxyResponse, kubeProxyResult } from '../endpoint-data/kube-proxy-response';
 import { KubeEndpointEviction, evictErrors, evictKeys } from '../endpoint-data/kube-endpoint-eviction';
 import { KubePod, KubePodContainerStatus, StratosError } from '../endpoint-data/kube-types';
 
@@ -52,6 +54,7 @@ export class KubePodDataService {
   private readonly _byScope = signal<Map<string, CacheEntry>>(new Map());
   private readonly _errors = signal<StratosError[]>([]);
   private readonly _unavailable = signal<Set<string>>(new Set());
+  private readonly loads = new KubeLoadTracker();
 
   constructor() {
     this.eviction.register(kubeGuid => this.evictEndpoint(kubeGuid));
@@ -59,6 +62,19 @@ export class KubePodDataService {
 
   errors(): Signal<StratosError[]> {
     return this._errors.asReadonly();
+  }
+
+  // The failures of the pod list for one scope: a node's pods, a
+  // namespace's, or the whole cluster's. A reactive read: call it inside
+  // a computed.
+  scopeErrors(scope: { kubeGuid: string; namespace?: string; nodeName?: string }): StratosError[] {
+    const key = scopeKey(scope);
+    return this._errors().filter(e => e.affected?.includes(key));
+  }
+
+  // Whether the pod list for one scope is loading. A reactive read.
+  scopeLoading(scope: { kubeGuid: string; namespace?: string; nodeName?: string }): boolean {
+    return this.loads.isLoading(scopeKey(scope));
   }
 
   // -- Public read APIs ----------------------------------------------------
@@ -192,8 +208,18 @@ export class KubePodDataService {
   private fetchPods(kubeGuid: string, key: string, title: string, url: string): Observable<KubePod[]> {
     const live = this.eviction.current(kubeGuid);
     const headers = new HttpHeaders({ 'x-cap-cnsi-list': kubeGuid });
-    return this.http.get<{ [cnsi: string]: KubeListResponse<KubePod> }>(url, { headers }).pipe(
-      map(resp => live() ? this.absorbResponse(key, kubeGuid, resp?.[kubeGuid]) : []),
+    return defer(() => {
+      const loaded = this.loads.start(key);
+      return this.fetchPodList(kubeGuid, key, title, url, headers, live).pipe(finalize(loaded));
+    });
+  }
+
+  private fetchPodList(
+    kubeGuid: string, key: string, title: string, url: string, headers: HttpHeaders, live: () => boolean,
+  ): Observable<KubePod[]> {
+    return this.http.get<KubeProxyResponse<KubeListResponse<KubePod>>>(url, { headers }).pipe(
+      kubeProxyResult<KubeListResponse<KubePod>>(kubeGuid),
+      map(list => live() ? this.absorbResponse(key, kubeGuid, list) : []),
       catchError((err: HttpErrorResponse | unknown) => {
         if (live()) {
           this.markUnavailable(key, err, title, kubeGuid);
@@ -225,14 +251,15 @@ export class KubePodDataService {
 
   // Signal-native pod delete (replaces the ngrx deleteResource pipeline).
   // DELETEs through the Jetstream proxy, then drops the pod from every cached
-  // scope so the lists/graph update immediately. Errors propagate to the
-  // caller (resource viewer renders the failure snackbar).
+  // scope so the lists/graph update immediately. Errors, including the
+  // endpoint refusing the delete, propagate to the caller (resource viewer
+  // renders the failure snackbar).
   async delete(kubeGuid: string, name: string, namespace?: string): Promise<void> {
     const headers = new HttpHeaders({ 'x-cap-cnsi-list': kubeGuid });
     const url = namespace
       ? `/pp/v1/proxy/api/v1/namespaces/${encodeURIComponent(namespace)}/pods/${encodeURIComponent(name)}`
       : `/pp/v1/proxy/api/v1/pods/${encodeURIComponent(name)}`;
-    await firstValueFrom(this.http.delete(url, { headers }));
+    await firstValueFrom(this.http.delete<KubeProxyResponse<unknown>>(url, { headers }).pipe(kubeProxyResult(kubeGuid)));
     this._byScope.update(curr => {
       const next = new Map(curr);
       for (const [key, entry] of next) {
@@ -257,6 +284,7 @@ export class KubePodDataService {
     const next: StratosError = {
       scope: 'envelope',
       code,
+      status,
       title,
       detail: (err as Error)?.message ?? String(err),
       // The scope key lets a later successful load of this scope clear it.
@@ -279,6 +307,12 @@ export class KubePodDataService {
 }
 
 // --- helpers ---------------------------------------------------------------
+
+function scopeKey(scope: { kubeGuid: string; namespace?: string; nodeName?: string }): string {
+  if (scope.namespace) return nsKey(scope.kubeGuid, scope.namespace);
+  if (scope.nodeName) return nodeKey(scope.kubeGuid, scope.nodeName);
+  return clusterKey(scope.kubeGuid);
+}
 
 function clusterKey(kubeGuid: string): string {
   return `cluster:${kubeGuid}`;

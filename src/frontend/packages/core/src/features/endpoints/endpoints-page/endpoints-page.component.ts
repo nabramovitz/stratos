@@ -24,7 +24,7 @@ import { safeUnsubscribe } from '../../../core/utils.service';
 import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 import { EndpointsMissingComponent } from '../../../shared/components/endpoints-missing/endpoints-missing.component';
 import { ListSubNavComponent } from '../../../shared/components/list-sub-nav/list-sub-nav.component';
-import { TailwindSnackBarService } from '../../../shared/services/tailwind-snackbar.service';
+import { TailwindSnackBarRef, TailwindSnackBarService } from '../../../shared/services/tailwind-snackbar.service';
 import { SessionService } from '../../../shared/services/session.service';
 import { EndpointModalService } from '../endpoint-register-modal/endpoint-modal.service';
 import { EndpointRegisterModalComponent } from '../endpoint-register-modal/endpoint-register-modal.component';
@@ -110,13 +110,14 @@ export class EndpointsPageComponent implements AfterViewInit, OnDestroy, OnInit 
   public readonly noEndpoints = signal(0);
 
   public canBackupRestore$: Observable<boolean>;
-  public showRegisterModal = false;
+  public readonly showRegisterModal = signal(false);
   public isInitialised$: Observable<boolean>;
 
   private snackBarText = {
     message: `There are no connected endpoints, connect with your personal credentials to get started.`,
     action: 'Got it'
   };
+  private noConnectedSnackBar?: TailwindSnackBarRef<unknown>;
 
   public customizations: CustomizationsMetadata;
 
@@ -173,11 +174,15 @@ export class EndpointsPageComponent implements AfterViewInit, OnDestroy, OnInit 
     clearInterval(this.healthCheckTimeout);
   }
 
+  // Only this page's own message: hide() would also dismiss others, such as
+  // the Register form's "Successfully registered", which arrives just
+  // before the endpoints update.
   private showSnackBar(show: boolean) {
     if (show) {
-      this.snackBarService.show(this.snackBarText.message, this.snackBarText.action, 20000);
+      this.noConnectedSnackBar = this.snackBarService.show(this.snackBarText.message, this.snackBarText.action, 20000);
     } else {
-      this.snackBarService.hide();
+      this.noConnectedSnackBar?.dismiss();
+      this.noConnectedSnackBar = undefined;
     }
   }
 
@@ -258,16 +263,22 @@ export class EndpointsPageComponent implements AfterViewInit, OnDestroy, OnInit 
     } catch (error) {
       console.error('Error hiding snackbar:', error);
     }
+
+    // Leaving with the Register dialog open (e.g. through the side nav)
+    // must still release the page scroll the dialog locked.
+    if (this.showRegisterModal()) {
+      this.closeRegisterModal();
+    }
   }
 
   // Modal methods
   openRegisterModal() {
-    this.showRegisterModal = true;
+    this.showRegisterModal.set(true);
     this.endpointModalService.openModal();
   }
 
   closeRegisterModal() {
-    this.showRegisterModal = false;
+    this.showRegisterModal.set(false);
     this.endpointModalService.closeModal();
   }
 
@@ -287,8 +298,8 @@ export class EndpointsPageComponent implements AfterViewInit, OnDestroy, OnInit 
       console.error('Error checking endpoints after registration:', error);
     }
 
-    // Show success message
-    this.snackBarService.show('Endpoint registered successfully!', 'OK', 5000);
+    // No message here: the registration form said "Successfully registered
+    // '<name>'" when the endpoint was registered.
 
     // Close the modal
     this.closeRegisterModal();

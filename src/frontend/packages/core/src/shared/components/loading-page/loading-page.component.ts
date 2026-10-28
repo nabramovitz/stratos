@@ -1,6 +1,6 @@
 import { animate, style, transition, trigger } from '@angular/animations';
 import { CommonModule } from '@angular/common';
-import { Component, Input, OnInit, ChangeDetectionStrategy, computed, inject } from '@angular/core';
+import { Component, Input, OnInit, ChangeDetectionStrategy, computed, inject, input } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 
 import { StratosBrandingService } from '../../../../../theme/stratos-branding.service';
@@ -38,8 +38,7 @@ export class LoadingPageComponent implements OnInit {
   @Input()
   isLoading!: Observable<boolean>;
 
-  @Input()
-  text = 'Retrieving your data';
+  readonly text = input('Retrieving your data');
 
   @Input()
   alert = '';
@@ -47,8 +46,7 @@ export class LoadingPageComponent implements OnInit {
   /** Pin an indicator look; omitted → deterministic pick from the pool
    *  keyed on `text`, so a given page keeps one look across visits while
    *  different pages vary. */
-  @Input()
-  variant?: LoadingPageVariant;
+  readonly variant = input<LoadingPageVariant>();
 
   private branding = inject(StratosBrandingService, { optional: true });
 
@@ -57,10 +55,11 @@ export class LoadingPageComponent implements OnInit {
   );
 
   protected resolved(): LoadingPageVariant {
-    if (this.variant) return this.variant;
+    const variant = this.variant();
+    if (variant) return variant;
     let h = 0;
-    for (let i = 0; i < this.text.length; i++) {
-      h = (h * 31 + this.text.charCodeAt(i)) | 0;
+    for (let i = 0; i < this.text().length; i++) {
+      h = (h * 31 + this.text().charCodeAt(i)) | 0;
     }
     return VARIANT_POOL[Math.abs(h) % VARIANT_POOL.length];
   }

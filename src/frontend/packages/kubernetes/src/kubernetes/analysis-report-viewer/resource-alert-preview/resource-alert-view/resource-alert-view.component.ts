@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, Input} from '@angular/core';
+import { ChangeDetectionStrategy, Component, Input, input } from '@angular/core';
 
 interface ResourceAlert {
   namespace?: string;
@@ -31,7 +31,7 @@ export class ResourceAlertViewComponent {
     }
   }
 
-  @Input() showHeader = true;
+  readonly showHeader = input(true);
 
   normalize(data: ResourceAlert[]): ResourceAlertGroup[] {
     // Normalize the alerts into groups

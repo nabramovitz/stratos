@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output  } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Input, input, output } from '@angular/core';
 import { isValid, isBefore, isEqual } from 'date-fns';
 
 import { DateTimeComponent } from '../date-time/date-time.component';
@@ -59,13 +59,10 @@ export class StartEndDateComponent {
   get end(): Date | undefined {
     return this.endValue;
   }
-  @Output()
-  public endChange = new EventEmitter<Date>();
-  @Output()
-  public startChange = new EventEmitter<Date>();
+  public readonly endChange = output<Date>();
+  public readonly startChange = output<Date>();
 
-  @Output()
-  public isValid = new EventEmitter<boolean>();
+  public readonly isValid = output<boolean>();
 
   public validValue = true;
   public validMessage: string | null = null;
@@ -91,17 +88,16 @@ export class StartEndDateComponent {
   // Undefined (caller bound nothing) falls back to the default range check.
   // Validators receive whichever date is missing as null/undefined, so a custom
   // validator can also check a lone date.
-  @Input()
-  public validate: ((start: Date | undefined, end: Date | undefined) => string | null) | undefined =
-    (start: Date | undefined, end: Date | undefined): string | null => {
-      if (!end || !start) {
+  public readonly validate = input<((start: Date | undefined, end: Date | undefined) => string | null) | undefined>((start: Date | undefined, end: Date | undefined): string | null => {
+    if (!end || !start) {
         return null;
-      }
-      return isBefore(end, start) ? 'Start date must be before end date.' : null;
     }
+    return isBefore(end, start) ? 'Start date must be before end date.' : null;
+});
 
   private pValidate(start: Date | undefined, end: Date | undefined): boolean {
-    this.validMessage = this.validate ? this.validate(start, end) : null;
+    const validate = this.validate();
+    this.validMessage = validate ? validate(start, end) : null;
     return !this.validMessage;
   }
 

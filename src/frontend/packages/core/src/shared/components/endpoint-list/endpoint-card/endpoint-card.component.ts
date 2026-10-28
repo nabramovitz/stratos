@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, ComponentRef, Input, OnDestroy, OnInit, ViewChild, ViewContainerRef, ChangeDetectorRef, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ComponentRef, Input, OnDestroy, OnInit, ViewChild, ViewContainerRef, ChangeDetectorRef, inject, input } from '@angular/core';
 import { CustomTooltipDirective } from '../../custom-tooltip/custom-tooltip.directive';
 import { RouterModule } from '@angular/router';
 import { toObservable } from '@angular/core/rxjs-interop';
@@ -94,7 +94,7 @@ export class EndpointCardComponent extends CardCell<EndpointModel> implements On
   // Optional per-endpoint kebab menu, rendered by the meta-card header.
   // Consumers that suppress it (e.g. the kubernetes endpoints page) simply
   // leave it unset.
-  @Input() actionMenu: MenuItem[] | null = null;
+  readonly actionMenu = input<MenuItem[] | null>(null);
 
   @Input() component: EndpointListDetailsComponent | null = null;
   private endpointDetails!: ViewContainerRef;

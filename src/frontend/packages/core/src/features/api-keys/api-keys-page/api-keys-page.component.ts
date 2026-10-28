@@ -22,6 +22,7 @@ import { PageHeaderComponent } from '../../../shared/components/page-header/page
 import { NoContentMessageComponent } from '../../../shared/components/no-content-message/no-content-message.component';
 import { ProductNameComponent } from '../../../shared/components/product-name.ccomponent';
 import { CustomIconComponent } from '../../../shared/components/custom-material/custom-material.component';
+import { CopyToClipboardComponent } from '../../../shared/components/copy-to-clipboard/copy-to-clipboard.component';
 
 @Component({
   selector: 'app-api-keys-page',
@@ -31,6 +32,7 @@ import { CustomIconComponent } from '../../../shared/components/custom-material/
   standalone: true,
   imports: [
     CommonModule,
+    CopyToClipboardComponent,
     CustomIconComponent,
     CustomTooltipDirective,
     PageHeaderComponent,
@@ -48,6 +50,14 @@ export class ApiKeysPageComponent {
   private listConfigService = inject(ApiKeysSignalConfigService);
 
   public keyDetails: WritableSignal<ApiKey | null> = signal(null);
+  // The card shows the new key only while the key exists: deleting it
+  // takes its secret off the screen.
+  public newKey: Signal<ApiKey | null> = computed(() => {
+    const key = this.keyDetails();
+    return key && this.dataService.apiKeys().some(k => k.guid === key.guid) ? key : null;
+  });
+  // Hidden until asked, so a bystander does not read the key as it arrives.
+  public secretShown = signal(false);
 
   // null until the first fetch settles so the empty-state and the list
   // both stay hidden during initial load. After fetch: true if there
@@ -66,9 +76,10 @@ export class ApiKeysPageComponent {
 
   async addApiKey(): Promise<void> {
     const newKey = await firstValueFrom(
-      this.dialog.open(AddApiKeyDialogComponent, { disableClose: true }).afterClosed(),
+      this.dialog.open(AddApiKeyDialogComponent, { disableClose: true, panelClass: 'p-6' }).afterClosed(),
     );
     if (newKey) {
+      this.secretShown.set(false);
       this.keyDetails.set(newKey);
     }
   }

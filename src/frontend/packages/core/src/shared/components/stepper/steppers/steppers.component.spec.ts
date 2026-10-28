@@ -6,6 +6,7 @@ import { provideZonelessChangeDetection } from '@angular/core';
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vitest';
+import { Router } from '@angular/router';
 import { RouterTestingModule } from '@angular/router/testing';
 import { createBasicStoreModule } from "@test-framework/core-test.helper";
 
@@ -61,9 +62,9 @@ describe('SteppersComponent', () => {
   // the initial filter. Routes step would never appear even after routes
   // loaded. This test pins the filter path to mark for check.
   it('re-filters visible steps and marks for check when a step unhides', () => {
-    const stepA = Object.assign(new StepComponent(), { title: 'A' });
-    const stepB = Object.assign(new StepComponent(), { title: 'B' });
-    const stepC = Object.assign(new StepComponent(), { title: 'C' });
+    const stepA = Object.assign(TestBed.runInInjectionContext(() => new StepComponent()), { title: 'A' });
+    const stepB = Object.assign(TestBed.runInInjectionContext(() => new StepComponent()), { title: 'B' });
+    const stepC = Object.assign(TestBed.runInInjectionContext(() => new StepComponent()), { title: 'C' });
     stepA.hidden = true;
     stepB.hidden = false;
     stepC.hidden = false;
@@ -86,8 +87,8 @@ describe('SteppersComponent', () => {
   // bind-service wizard's Service Instance step rendered empty. Delivery
   // must happen after the activating render, with the routed enterData.
   it('delivers onEnter after the activating render, not synchronously', async () => {
-    const stepA = Object.assign(new StepComponent(), { title: 'A' });
-    const stepB = Object.assign(new StepComponent(), { title: 'B' });
+    const stepA = Object.assign(TestBed.runInInjectionContext(() => new StepComponent()), { title: 'A' });
+    const stepB = Object.assign(TestBed.runInInjectionContext(() => new StepComponent()), { title: 'B' });
     stepA.valid = true;
     const entered: unknown[] = [];
     stepB.signalHandle = {
@@ -677,5 +678,126 @@ describe('SteppersComponent — its own error message', () => {
     steppers.goNext();
     await vi.waitFor(() => expect(open()).toHaveLength(2));
     expect(open()[0]).toBe('Other message');
+  });
+});
+
+// Cancel leaves the stepper: the step's leave hook runs (a signal handle's
+// onLeave, as for a legacy onLeave input), and a host that is not a route of
+// its own (the Register Endpoint dialog) can take Cancel itself instead of a
+// router navigation.
+@Component({
+  standalone: true,
+  imports: [SteppersComponent, StepComponent],
+  template: `
+    <app-steppers cancel="/somewhere" [cancelAction]="cancelAction">
+      <app-step title="One" [signalHandle]="handle"></app-step>
+      <app-step title="Two" [signalHandle]="handle"></app-step>
+    </app-steppers>
+  `,
+})
+class CancelHostComponent {
+  left: (boolean | undefined)[] = [];
+  cancelAction?: () => void;
+  handle: SignalStepHandle = {
+    valid: signal(true),
+    onLeave: (isNext) => { this.left.push(isNext); },
+  };
+}
+
+describe('SteppersComponent — Cancel', () => {
+  let hostFixture: ComponentFixture<CancelHostComponent>;
+  let host: CancelHostComponent;
+  const cancelButton = () => hostFixture.nativeElement.querySelector('#stepper_cancel') as HTMLButtonElement;
+
+  beforeEach(async () => {
+    TestBed.configureTestingModule({
+      imports: [CancelHostComponent, RouterTestingModule.withRoutes([{ path: 'somewhere', children: [] }])],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+      ],
+    });
+    await TestBed.compileComponents();
+    hostFixture = TestBed.createComponent(CancelHostComponent);
+    host = hostFixture.componentInstance;
+  });
+
+  it('runs the step\'s leave hook', async () => {
+    await hostFixture.whenStable();
+    cancelButton().click();
+    expect(host.left).toEqual([false]);
+  });
+
+  it('hands Cancel to the host instead of navigating when given a cancel action', async () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl');
+    host.cancelAction = vi.fn();
+    await hostFixture.whenStable();
+    cancelButton().click();
+    await hostFixture.whenStable();
+    expect(host.cancelAction).toHaveBeenCalledTimes(1);
+    expect(host.left).toEqual([false]);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+});
+
+// A step can ask before Previous leaves it (e.g. when leaving undoes work).
+@Component({
+  standalone: true,
+  imports: [SteppersComponent, StepComponent],
+  template: `
+    <app-steppers>
+      <app-step title="One" [signalHandle]="first"></app-step>
+      <app-step title="Two" [signalHandle]="second"></app-step>
+    </app-steppers>
+  `,
+})
+class ConfirmPreviousHostComponent {
+  answer = false;
+  left: (boolean | undefined)[] = [];
+  first: SignalStepHandle = { valid: signal(true) };
+  second: SignalStepHandle = {
+    valid: signal(true),
+    confirmPrevious: () => Promise.resolve(this.answer),
+    onLeave: (isNext) => { this.left.push(isNext); },
+  };
+}
+
+describe('SteppersComponent — Previous with a confirmation', () => {
+  let hostFixture: ComponentFixture<ConfirmPreviousHostComponent>;
+  let host: ConfirmPreviousHostComponent;
+  let steppers: SteppersComponent;
+
+  beforeEach(async () => {
+    TestBed.configureTestingModule({
+      imports: [ConfirmPreviousHostComponent, RouterTestingModule],
+      providers: [provideZonelessChangeDetection(), provideHttpClient(), provideHttpClientTesting()],
+    });
+    await TestBed.compileComponents();
+    hostFixture = TestBed.createComponent(ConfirmPreviousHostComponent);
+    host = hostFixture.componentInstance;
+    await hostFixture.whenStable();
+    steppers = hostFixture.debugElement.query(By.directive(SteppersComponent)).componentInstance as SteppersComponent;
+    steppers.setActive(1);
+    await hostFixture.whenStable();
+  });
+
+  const clickPrevious = async () => {
+    (hostFixture.nativeElement.querySelector('#stepper_previous') as HTMLButtonElement).click();
+    await hostFixture.whenStable();
+  };
+
+  it('stays on the step when the user declines', async () => {
+    host.answer = false;
+    await clickPrevious();
+    expect(steppers.currentIndex()).toBe(1);
+    expect(host.left).toEqual([]);
+  });
+
+  it('goes back when the user agrees', async () => {
+    host.answer = true;
+    await clickPrevious();
+    expect(steppers.currentIndex()).toBe(0);
+    expect(host.left).toEqual([false]);
   });
 });

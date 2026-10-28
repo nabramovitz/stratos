@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, Input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Input, signal, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { CustomTooltipDirective } from '../custom-tooltip/custom-tooltip.directive';
 
@@ -20,24 +20,25 @@ export class MetadataItemComponent {
 
   @Input() icon!: string;
 
-  @Input() public iconFont?: string;
+  public readonly iconFont = input<string>();
 
   @Input() public label?: string;
 
   @Input() public tooltip?: string;
 
   // Are we editing?
-  @Input() public edit?: boolean;
+  public readonly edit = input<boolean>();
 
   // Does the item have a value to copy to the clipboard? = show the copy glyph
-  @Input() public clipboardValue?: string;
+  public readonly clipboardValue = input<string>();
 
   // Briefly swaps the copy glyph to a check_circle after a successful write.
   readonly copied = signal(false);
 
   copyToClipboard(): void {
-    if (!this.clipboardValue) return;
-    const text = this.clipboardValue;
+    const clipboardValue = this.clipboardValue();
+    if (!clipboardValue) return;
+    const text = clipboardValue;
     const done = () => {
       this.copied.set(true);
       setTimeout(() => this.copied.set(false), 1200);

@@ -1,9 +1,10 @@
 import { CommonModule } from '@angular/common';
-import { Component, Input, ChangeDetectionStrategy, booleanAttribute, inject } from '@angular/core';
+import { Component, Input, ChangeDetectionStrategy, booleanAttribute, inject, input } from '@angular/core';
 import { Router } from '@angular/router';
 
 import {
   CardCell,
+  CustomTooltipDirective,
   EndpointsSignalService,
   MetaCardComponent,
   MetaCardItemComponent,
@@ -35,6 +36,7 @@ import { TableCellServiceTagsComponent } from './table-cell-service-tags/table-c
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
+    CustomTooltipDirective,
     MetaCardComponent,
     MetaCardItemComponent,
     MetaCardKeyComponent,
@@ -68,7 +70,7 @@ export class CfServiceCardComponent extends CardCell<StServiceOffering> {
   };
 
   // Attribute form (disableCardClick / disableCardClick="true") coerces to boolean
-  @Input({ transform: booleanAttribute }) disableCardClick = false;
+  readonly disableCardClick = input(false, { transform: booleanAttribute });
 
   @Input()
   set row(row: StServiceOffering) {

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Input, input } from '@angular/core';
 
 import { GitCommit } from '@stratosui/git';
 
@@ -12,5 +12,5 @@ import { GitCommit } from '@stratosui/git';
 export class GithubCommitAuthorComponent {
   // strict: required @Input, always bound by the host template.
   @Input() commit!: GitCommit;
-  @Input() showAvatar = true;
+  readonly showAvatar = input(true);
 }

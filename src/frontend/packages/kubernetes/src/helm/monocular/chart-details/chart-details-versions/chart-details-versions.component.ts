@@ -3,6 +3,7 @@ import {
   Input,
   inject,
   ChangeDetectionStrategy,
+  input
 } from "@angular/core";
 import { DatePipe, SlicePipe } from "@angular/common";
 import { ActivatedRoute, RouterLink } from "@angular/router";
@@ -19,7 +20,7 @@ import { ChartsService } from "../../shared/services/charts.service";
   imports: [DatePipe, RouterLink, SlicePipe],
 })
 export class ChartDetailsVersionsComponent {
-  @Input() versions!: ChartVersion[];
+  readonly versions = input<ChartVersion[]>();
   @Input() currentVersion!: ChartVersion;
   showAllVersions = false;
   private route = inject(ActivatedRoute);
@@ -43,7 +44,8 @@ export class ChartDetailsVersionsComponent {
   }
 
   showMoreLink(): boolean {
-    return this.versions && this.versions.length > 5 && !this.showAllVersions;
+    const versions = this.versions();
+    return !!versions && versions.length > 5 && !this.showAllVersions;
   }
 
   setShowAllVersions() {
@@ -51,9 +53,10 @@ export class ChartDetailsVersionsComponent {
   }
 
   shownVersions(): ChartVersion[] {
-    if (this.versions) {
+    const versions = this.versions();
+    if (versions) {
       return this.showAllVersions
-        ? this.versions
+        ? versions
         : this.getNonDevelopmentVersion().slice(0, 5);
     }
     return [];
@@ -61,7 +64,7 @@ export class ChartDetailsVersionsComponent {
 
   getNonDevelopmentVersion(): ChartVersion[] {
     const nonDevel: ChartVersion[] = [];
-    for (const version of this.versions) {
+    for (const version of this.versions() ?? []) {
       if (version.attributes.version.indexOf("-") === -1) {
         nonDevel.push(version);
       }

@@ -8,7 +8,7 @@ describe('CopyToClipboardComponent', () => {
   let component: CopyToClipboardComponent;
   let fixture: ComponentFixture<CopyToClipboardComponent>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     TestBed.configureTestingModule({
       providers: [provideZonelessChangeDetection()],
       imports: [CopyToClipboardComponent],
@@ -18,15 +18,17 @@ describe('CopyToClipboardComponent', () => {
 
     fixture = TestBed.createComponent(CopyToClipboardComponent);
     component = fixture.componentInstance;
-    component.tooltip = 'Copy to clipboard';
-    component.text = 'hello world';
-    fixture.detectChanges();
+    fixture.componentRef.setInput('tooltip', 'Copy to clipboard');
+    fixture.componentRef.setInput('text', 'hello world');
+    await fixture.whenStable();
   });
 
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
+
+  const live = (): HTMLElement => fixture.nativeElement.querySelector('[aria-live="polite"]');
 
   it('renders the copy action initially', () => {
     const button = fixture.nativeElement.querySelector('button')
@@ -35,26 +37,31 @@ describe('CopyToClipboardComponent', () => {
     expect(button).toBeTruthy();
     expect(button.getAttribute('title')).toBe('Copy to clipboard');
     expect(button.textContent).toContain('content_copy');
+    // The live region is there before anything is said in it.
+    expect(live()?.textContent?.trim()).toBe('');
   });
 
   it('shows a success state when the clipboard write succeeds and resets after the delay', async () => {
-    vi.useFakeTimers();
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(window.navigator, 'clipboard', {
       configurable: true,
       value: { writeText },
     });
 
-    component.copyToClipboard(component.text);
+    component.copyToClipboard(component.text());
     await Promise.resolve();
-    fixture.detectChanges();
+    await fixture.whenStable();
 
     expect(writeText).toHaveBeenCalledWith('hello world');
     expect(component.didUserPressCopy()).toBe('yes and succeeded');
     expect(fixture.nativeElement.textContent).toContain('Copied to clipboard');
+    // Announced: the on-screen tick and text are not.
+    expect(live().textContent?.trim()).toBe('Copied to clipboard');
 
-    await vi.advanceTimersByTimeAsync(800);
-    fixture.detectChanges();
+    // Real timers: under fake timers the state set by the component's 800 ms
+    // timer changed, but whenStable did not render it.
+    await new Promise(resolve => setTimeout(resolve, 850));
+    await fixture.whenStable();
 
     expect(component.didUserPressCopy()).toBe('yes and saw succeeded');
     const button = fixture.nativeElement.querySelector('button');
@@ -69,9 +76,9 @@ describe('CopyToClipboardComponent', () => {
       value: { writeText },
     });
 
-    component.copyToClipboard(component.text);
+    component.copyToClipboard(component.text());
     await Promise.resolve();
-    fixture.detectChanges();
+    await fixture.whenStable();
 
     expect(writeText).toHaveBeenCalledWith('hello world');
     expect(component.didUserPressCopy()).toBe('yes but failed');
@@ -80,6 +87,7 @@ describe('CopyToClipboardComponent', () => {
     expect(errorIcon.getAttribute('title')).toContain('Failed to copy text');
     expect(fixture.nativeElement.textContent).not.toContain('Copied to clipboard');
     expect(fixture.nativeElement.textContent).toContain('error');
+    expect(live().textContent?.trim()).toBe('Copy failed');
   });
 
 });

@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, Input, OnInit, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Input, OnInit, inject, input } from '@angular/core';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { combineLatest, Observable, of as observableOf } from 'rxjs';
 import { take, map, shareReplay, share } from 'rxjs/operators';
@@ -23,9 +23,8 @@ export class PageHeaderEventsComponent implements OnInit {
   private eventService = inject(GlobalEventService);
 
   @Input()
-  public endpointIds$!: Observable<string[]>;
-  @Input()
-  public simpleErrorMessage = false;
+  public endpointIds$?: Observable<string[]>;
+  public readonly simpleErrorMessage = input(false);
 
   public errorMessage$!: Observable<string>;
   // Emits the single underlying event when only one endpoint is in

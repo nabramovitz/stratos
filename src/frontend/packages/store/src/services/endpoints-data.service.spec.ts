@@ -126,11 +126,29 @@ describe('EndpointsDataService', () => {
     await svc.whenReady(); // should not fire another request
   });
 
+  // A refresh must not look like the first load: the endpoints page shows
+  // its loader only until the first fetch settles.
+  it('stays hydrated, keeping the endpoints, while a refresh loads', async () => {
+    expect(svc.hydrated()).toBe(false);
+    const first = svc.getAll();
+    httpMock.expectOne(SYSTEM_INFO_URL).flush(makeSystemInfo());
+    await first;
+    expect(svc.hydrated()).toBe(true);
+
+    const refresh = svc.getAll();
+    expect(svc.loading()).toBe(true);
+    expect(svc.hydrated()).toBe(true);
+    expect(svc.endpoints().size).toBe(3);
+    httpMock.expectOne(SYSTEM_INFO_URL).flush(makeSystemInfo());
+    await refresh;
+  });
+
   it('getAll() failure populates error and still marks hydrated', async () => {
     const p = svc.getAll().catch(() => undefined);
     httpMock.expectOne(SYSTEM_INFO_URL).flush('boom', { status: 500, statusText: 'err' });
     await p;
     expect(svc.error()).not.toBeNull();
+    expect(svc.hydrated()).toBe(true);
     await svc.whenReady(); // hydrated even on failure
   });
 
@@ -232,6 +250,25 @@ describe('EndpointsDataService', () => {
     // Successful connect emits on the connectedSignal delta queue.
     expect(svc.connectedSignal()).toHaveLength(1);
     expect(svc.connectedSignal()[0]).toMatchObject({ guid: 'cf-2', type: 'cf' });
+  });
+
+  it('connect returns the other connections the backend names', async () => {
+    const p = svc.getAll();
+    httpMock.expectOne(SYSTEM_INFO_URL).flush(makeSystemInfo());
+    await p;
+
+    const cp = svc.connect('cf-2', {
+      endpointType: 'cf',
+      authType: 'creds',
+      authValues: { username: 'u', password: 'p' },
+      systemShared: false,
+    });
+    httpMock.expectOne('/api/v1/tokens').flush({ also_connected: [{ guid: 'cf-1', name: 'CF one' }] });
+    await new Promise(r => setTimeout(r, 0));
+    httpMock.expectOne(SYSTEM_INFO_URL).flush(makeSystemInfo());
+    const state = await cp;
+
+    expect(state.alsoConnected).toEqual([{ guid: 'cf-1', name: 'CF one' }]);
   });
 
   it('clearConnected resets the connect delta queue', async () => {

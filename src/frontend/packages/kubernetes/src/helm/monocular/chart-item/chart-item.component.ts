@@ -1,5 +1,5 @@
 
-import { Component, Input, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, Input, OnInit, inject, ChangeDetectionStrategy, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Observable } from 'rxjs';
 
@@ -19,11 +19,11 @@ export class ChartItemComponent implements OnInit {
   // Chart to represent
   @Input() chart!: Chart;
   // Show version form by default
-  @Input() showVersion = true;
+  readonly showVersion = input(true);
   // Truncate the description
-  @Input() showDescription = true;
+  readonly showDescription = input(true);
 
-  @Input() artifactHubAndHelmRepoTypes$!: Observable<boolean>; // strict: required @Input, always bound by the parent template
+  readonly artifactHubAndHelmRepoTypes$ = input<Observable<boolean>>();
 
   private chartsService = inject(ChartsService);
 

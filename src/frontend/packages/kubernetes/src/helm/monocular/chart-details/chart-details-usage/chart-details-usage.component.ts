@@ -1,5 +1,5 @@
 import { AsyncPipe } from '@angular/common';
-import { Component, Input, ViewEncapsulation, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ViewEncapsulation, inject, ChangeDetectionStrategy, input } from '@angular/core';
 import { CustomTooltipDirective } from '@stratosui/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
@@ -16,14 +16,15 @@ import { getMonocularEndpoint } from '../../stratos-monocular.helper';
   imports: [AsyncPipe, CustomTooltipDirective, RouterLink]
 })
 export class ChartDetailsUsageComponent {
-  @Input() chart!: Chart;
-  @Input() currentVersion!: string; // strict: required @Input, only rendered inside @if (currentVersion) with a bound string
+  // Its one host (chart-details-info) binds both, inside @if (currentVersion).
+  readonly chart = input.required<Chart>();
+  readonly currentVersion = input.required<string>();
   installing!: boolean;
   public endpointsService = inject(EndpointsService);
   private route = inject(ActivatedRoute);
 
   get installUrl(): string {
-    return `/workloads/install/${getMonocularEndpoint(this.route, this.chart)}/${this.chart.id}/${this.currentVersion}`;
+    return `/workloads/install/${getMonocularEndpoint(this.route, this.chart())}/${this.chart().id}/${this.currentVersion()}`;
   }
 
 }

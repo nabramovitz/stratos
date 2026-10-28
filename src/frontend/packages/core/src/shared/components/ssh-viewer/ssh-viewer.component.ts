@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, ElementRef, Input, OnDestroy, OnInit, ViewChild, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ElementRef, Input, OnDestroy, OnInit, ViewChild, computed, inject, signal, ChangeDetectionStrategy, input } from '@angular/core';
 import { Observable, Subject, Subscription, takeUntil } from 'rxjs';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
@@ -35,14 +35,13 @@ export class SshViewerComponent implements OnInit, OnDestroy {
 
   public readonly error = computed(() => this.streamError() ?? this.parentError());
 
-  @Input()
-  sshStream!: Observable<any>;
+  // Both hosts (app SSH, kube console) bind the stream pair; the
+  // terminal cannot connect without them.
+  readonly sshStream = input.required<Observable<any>>();
 
-  @Input()
-  sshInput!: Subject<string>;
+  readonly sshInput = input.required<Subject<string>>();
 
-  @Input()
-  public connectionStatus!: Observable<number>;
+  public readonly connectionStatus = input<Observable<number>>();
 
   public readonly isConnected = signal(false);
   public readonly attemptingConnection = signal(false);
@@ -62,7 +61,8 @@ export class SshViewerComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
 
   ngOnInit() {
-    if (!this.connectionStatus) {
+    const connectionStatus = this.connectionStatus();
+    if (!connectionStatus) {
       return;
     }
 
@@ -74,7 +74,7 @@ export class SshViewerComponent implements OnInit, OnDestroy {
         }
       });
 
-    this.connectSubscription = this.connectionStatus
+    this.connectSubscription = connectionStatus
       .pipe(takeUntil(this.destroy$))
       .subscribe((count: number) => {
         this.isConnected.set(count !== 0);
@@ -92,13 +92,13 @@ export class SshViewerComponent implements OnInit, OnDestroy {
 
     this.xterm.onKey(e => {
       if (this.msgSubscription && !this.msgSubscription.closed) {
-        this.sshInput.next(JSON.stringify({ key: e.key }));
+        this.sshInput().next(JSON.stringify({ key: e.key }));
       }
     });
 
     this.xterm.onResize(size => {
       if (this.msgSubscription && !this.msgSubscription.closed) {
-        this.sshInput.next(JSON.stringify({ cols: size.cols, rows: size.rows }));
+        this.sshInput().next(JSON.stringify({ cols: size.cols, rows: size.rows }));
       }
     });
 
@@ -151,7 +151,7 @@ export class SshViewerComponent implements OnInit, OnDestroy {
     this.streamError.set(undefined);
     this.message.set('');
     this.xterm.reset();
-    this.msgSubscription = this.sshStream
+    this.msgSubscription = this.sshStream()
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (data: string) => {

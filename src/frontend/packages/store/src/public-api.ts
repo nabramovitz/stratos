@@ -199,6 +199,7 @@ export type {
   EndpointUpdateOptions,
 } from './services/endpoints-data.service';
 export { EndpointDisconnectCleanupService } from './services/endpoint-disconnect-cleanup.service';
+export { describeLastConnectError, EndpointLastErrorService } from './services/endpoint-last-error.service';
 
 // W-a1 — signal-native metrics data service. Replaces the V2
 // MetricsAction / EntityServiceFactory / getPaginationObservables paths
@@ -206,6 +207,7 @@ export { EndpointDisconnectCleanupService } from './services/endpoint-disconnect
 // metrics.effects.ts once all consumers (chart component + range
 // selectors + 4 call sites) migrate to this service.
 export { MetricsDataService } from './services/metrics-data.service';
+export { ProxyErrorEntry, isProxyErrorEntry, proxyErrorReason } from './services/proxy-error-entry';
 export type {
   MetricsFetchState,
   MetricsObservation,

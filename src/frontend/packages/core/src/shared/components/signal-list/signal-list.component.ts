@@ -1,6 +1,7 @@
-import { Component, HostListener, Input, Signal, WritableSignal, ChangeDetectionStrategy, ContentChild, ContentChildren, QueryList, ElementRef, TemplateRef, ViewChild, signal, DestroyRef, inject, AfterViewInit } from '@angular/core';
+import { Component, HostListener, Input, Signal, WritableSignal, ChangeDetectionStrategy, ContentChild, ContentChildren, QueryList, ElementRef, TemplateRef, ViewChild, signal, DestroyRef, inject, AfterViewInit, Injector } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
+import { EndpointsDataService } from '@stratosui/store';
 
 import { UsageGaugeComponent } from '../usage-gauge/usage-gauge.component';
 import { AppBusyComponent } from '../busy-indicator/busy-indicator.component';
@@ -190,8 +191,9 @@ export interface SignalListColumn<T> {
   // column's cell/card-title; defaults to the rendered text. Used by the
   // routes card to show a route's full guid on hover while the visible title
   // shows a short-guid fallback for unnamed routes. Of the other cells, only
-  // a pill reads it: the service-instance lists put a failed operation's
-  // reason on the Last Operation pill.
+  // a pill or a dot reads it: the service-instance lists put a failed
+  // operation's reason on the Last Operation pill, the endpoints list a
+  // failed connect's reason on the Status dot.
   tooltip?: (row: T) => string;
   // Optional for kind === 'pill' or 'dot'. Returns a color family. Default: neutral.
   pillColor?: (row: T) => SignalListPillColor;
@@ -418,6 +420,10 @@ export interface SignalListConfig<T> {
   // in-page recovery affordance instead of an empty list until
   // re-navigation (#5577).
   readonly errorMessage?: string;
+  // The failure's reason (e.g. the endpoint's own error text), shown
+  // under errorMessage in the failed-load state. A signal, so the text
+  // follows the latest failure; nothing is shown while it is undefined.
+  readonly errorDetail?: Signal<string | undefined>;
   readonly nameFilter?: WritableSignal<string>;
   // Column keys (see SignalListColumn.key / header fallback) eligible for
   // the text-filter. When 2+ entries are provided AND filterField is
@@ -509,6 +515,15 @@ export interface SignalListConfig<T> {
 })
 export class SignalListComponent<T> implements AfterViewInit {
   @Input({ required: true }) config!: SignalListConfig<T>;
+
+  private readonly injector = inject(Injector);
+
+  // The error banner's label for an errorsByCnsi key: the endpoint's name,
+  // or the key itself when no endpoint has that guid. Resolved only while
+  // the banner shows, so lists without errors need no endpoint data.
+  endpointLabel(cnsiGuid: string): string {
+    return this.injector.get(EndpointsDataService).endpoints().get(cnsiGuid)?.name || cnsiGuid;
+  }
 
   // Optional content-projected template for fully-custom card rendering.
   // When supplied AND viewMode is 'card', signal-list delegates the card
@@ -1035,7 +1050,7 @@ export class SignalListComponent<T> implements AfterViewInit {
 
   cellTemplateFor(col: SignalListColumn<T>): TemplateRef<{ $implicit: T; row: T }> | undefined {
     if (col.kind !== 'template' || !col.templateName || !this.cellTemplates) return undefined;
-    return this.cellTemplates.find(d => d.name === col.templateName)?.template;
+    return this.cellTemplates.find(d => d.name() === col.templateName)?.template;
   }
 
   // Per-row state (RowState) -------------------------------------------
@@ -1123,7 +1138,7 @@ export class SignalListComponent<T> implements AfterViewInit {
 
   // The projected `__rowMessage` template, if the host supplied one.
   rowMessageTemplate(): TemplateRef<{ $implicit: T; row: T }> | undefined {
-    return this.cellTemplates?.find(d => d.name === SignalListComponent.ROW_MESSAGE_TEMPLATE)?.template;
+    return this.cellTemplates?.find(d => d.name() === SignalListComponent.ROW_MESSAGE_TEMPLATE)?.template;
   }
 
   // Per-segment text classes: bold emphasis + optional tone color.
@@ -1453,9 +1468,21 @@ export class SignalListComponent<T> implements AfterViewInit {
   // Falls back to "Filter by Name" for the single-field case.
   filterPlaceholder(): string {
     if (!this.showFilterFieldSelector()) return 'Filter by Name';
-    const key = this.config.filterField!();
+    return `Filter by ${this.filterFieldHeader()}`;
+  }
+
+  // Header of the column the filter-field selector names.
+  filterFieldHeader(): string {
+    const key = this.config.filterField?.();
     const col = this.config.columns.find(c => this.columnKey(c) === key);
-    return `Filter by ${col?.header ?? 'Name'}`;
+    return col?.header ?? 'Name';
+  }
+
+  // Accessible name of a row's checkbox or radio: the column's header (or
+  // "Select" for an unheaded selection column) and the row's title cell.
+  rowSelectLabel(col: SignalListColumn<T>, row: T): string {
+    const title = this.titleColumn()?.render(row) ?? '';
+    return `${col.header || 'Select'} ${title}`.trim();
   }
 
   onSortFieldChange(field: string): void {

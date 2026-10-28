@@ -1,8 +1,8 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, AfterContentInit, Component, ContentChildren, Injector, Input, OnDestroy, OnInit, QueryList, TemplateRef, ViewEncapsulation, afterNextRender, effect, inject, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, AfterContentInit, Component, ContentChildren, Injector, Input, OnDestroy, OnInit, QueryList, TemplateRef, ViewEncapsulation, afterNextRender, effect, inject, signal, untracked, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { RoutingHistoryService } from '@stratosui/store';
-import { combineLatest, Observable, of as observableOf, Subscription } from 'rxjs';
+import { combineLatest, Observable, of as observableOf, Subscription, Unsubscribable } from 'rxjs';
 import { take, catchError, defaultIfEmpty, finalize, map, switchMap } from 'rxjs/operators';
 
 import { TailwindSnackBarService, TailwindSnackBarRef } from '../../../services/tailwind-snackbar.service';
@@ -47,15 +47,18 @@ export class SteppersComponent implements OnInit, AfterContentInit, OnDestroy {
 
   @ContentChildren(StepComponent) stepComponents!: QueryList<StepComponent>;
 
-  @Input() cancel?: string;
+  readonly cancel = input<string>();
   // When true the Cancel button does a full-page load to `cancel` instead of a
   // router navigation. Needed by first-run setup, which has no in-app
   // destination and wants Cancel to hard-refresh back to the flow's start.
-  @Input() cancelReload = false;
-  @Input() nextButtonProgress = true;
-  @Input() basePreviousRedirect: StepperRedirectPayload | null = this.route.snapshot.queryParams[BASE_REDIRECT_QUERY] ? {
+  readonly cancelReload = input(false);
+  // When set, Cancel calls this instead of navigating to `cancel`: for a
+  // stepper whose host is not a route, such as the Register Endpoint dialog.
+  readonly cancelAction = input<() => void>();
+  readonly nextButtonProgress = input(true);
+  readonly basePreviousRedirect = input<StepperRedirectPayload | null>(this.route.snapshot.queryParams[BASE_REDIRECT_QUERY] ? {
     path: this.route.snapshot.queryParams[BASE_REDIRECT_QUERY]
-  } : null;
+} : null);
   // Optional context summary rendered above the step headers. Hosts pass
   // a TemplateRef that surfaces the user's in-progress selections (CF /
   // Org / Space / offering / plan / name) so the wizard always shows
@@ -66,7 +69,7 @@ export class SteppersComponent implements OnInit, AfterContentInit, OnDestroy {
   allSteps: StepComponent[] = [];
   showNextButtonProgress = false;
 
-  hiddenSubs: Subscription[] = [];
+  hiddenSubs: Unsubscribable[] = [];
 
   stepValidateSub: Subscription | null = null;
 
@@ -142,8 +145,9 @@ export class SteppersComponent implements OnInit, AfterContentInit, OnDestroy {
       map(previousState => {
         // If we have a previous state, and that previous state was not login (i.e. we've come from afresh), go to whatever the default
         // cancel state is
-        if (this.cancel) {
-          return this.cancel;
+        const cancel = this.cancel();
+        if (cancel) {
+          return cancel;
         }
         return previousState && previousState.url !== '/login' ? previousState.url.split('?')[0] : '/home';
       })
@@ -272,7 +276,7 @@ export class SteppersComponent implements OnInit, AfterContentInit, OnDestroy {
         return;
       }
 
-      this.showNextButtonProgress = this.nextButtonProgress;
+      this.showNextButtonProgress = this.nextButtonProgress();
       this.nextSub = obs$.pipe(
         take(1),
         defaultIfEmpty({ success: false, message: 'No response from step', data: {}, redirect: false, redirectPayload: undefined, ignoreSuccess: false } as StepOnNextResult),
@@ -350,9 +354,23 @@ export class SteppersComponent implements OnInit, AfterContentInit, OnDestroy {
     this.router.navigate(commands, { ...extras, queryParams });
   }
 
+  // Previous button: the step may ask first (SignalStepHandle.confirmPrevious).
+  async goPrevious(): Promise<void> {
+    const index = this.currentIndex();
+    const confirm = this.steps[index]?.signalHandle?.confirmPrevious;
+    if (confirm && !(await confirm())) {
+      return;
+    }
+    // Only if nothing moved the stepper while the question was open.
+    if (this.currentIndex() === index) {
+      this.setActive(index - 1);
+    }
+  }
+
   setActive(index: number): void {
-    if (this.basePreviousRedirect && index < 0) {
-      this.navigate(this.basePreviousRedirect);
+    const basePreviousRedirect = this.basePreviousRedirect();
+    if (basePreviousRedirect && index < 0) {
+      this.navigate(basePreviousRedirect);
     }
     // The first step's initial onEnter is delivered by firstStepEntry.
     if (!this.canGoto(index)) {
@@ -437,7 +455,7 @@ export class SteppersComponent implements OnInit, AfterContentInit, OnDestroy {
   }
 
   canGoto(index: number): boolean {
-    if (index < 0 && this.basePreviousRedirect) {
+    if (index < 0 && this.basePreviousRedirect()) {
       return true;
     }
     const step = this.steps[this.currentIndex()];
@@ -498,11 +516,19 @@ export class SteppersComponent implements OnInit, AfterContentInit, OnDestroy {
   }
 
   onCancel(index: number) {
-    this.steps[index].onLeave(false);
-    if (this.cancelReload && this.cancel) {
+    // invokeLeave, not onLeave: a step driven by a signal handle has its
+    // leave hook there.
+    void this.steps[index].invokeLeave(false);
+    const cancelAction = this.cancelAction();
+    if (cancelAction) {
+      cancelAction();
+      return;
+    }
+    const cancel = this.cancel();
+    if (this.cancelReload() && cancel) {
       // Full page load restarts the wizard from a clean state; the template
       // drops routerLink when cancelReload so this is the only navigation.
-      window.location.assign(this.cancel);
+      window.location.assign(cancel);
     }
   }
   private unsubscribeNext() {
