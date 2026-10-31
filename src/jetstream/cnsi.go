@@ -44,6 +44,17 @@ func isSSLRelatedError(err error) (bool, string) {
 	return false, ""
 }
 
+// endpointClient picks the client an endpoint logs in with. No Client ID means
+// the console's own client. So does the console's Client ID without a secret:
+// the secret is never shown, so a copied or browser-filled ID arrives without
+// one, and storing it so makes every connect fail with "Bad credentials".
+func endpointClient(id, secret, consoleID, consoleSecret string) (string, string) {
+	if id == "" || (id == consoleID && secret == "") {
+		return consoleID, consoleSecret
+	}
+	return id, secret
+}
+
 func (p *portalProxy) RegisterEndpoint(c *echo.Context, fetchInfo api.InfoFunc) error {
 	slog.Debug("registerEndpoint")
 
@@ -66,19 +77,14 @@ func (p *portalProxy) RegisterEndpoint(c *echo.Context, fetchInfo api.InfoFunc) 
 		ssoAllowed = false
 	}
 
-	cnsiClientId := params.CNSIClientID
-	cnsiClientSecret := params.CNSIClientSecret
+	cnsiClientId, cnsiClientSecret := endpointClient(params.CNSIClientID, params.CNSIClientSecret,
+		p.GetConfig().CFClient, p.GetConfig().CFClientSecret)
 	subType := params.SubType
 
 	createSystemEndpoint, err := strconv.ParseBool(params.CreateSystemEndpoint)
 	if err != nil {
 		// default to true
 		createSystemEndpoint = true
-	}
-
-	if cnsiClientId == "" {
-		cnsiClientId = p.GetConfig().CFClient
-		cnsiClientSecret = p.GetConfig().CFClientSecret
 	}
 
 	userID, err := p.GetSessionStringValue(c, "user_id")
@@ -443,10 +449,18 @@ func (p *portalProxy) GetAdminCNSIRecordByEndpoint(endpoint string, cnsiType str
 		return api.CNSIRecord{}, err
 	}
 
-	// search for endpoint created by an admin
+	// search for endpoint created by an admin, preferring one on the console's
+	// client: the login hook links the console's token into it, and only that
+	// client can refresh the token
 	for _, endpoint := range endpointList {
 		if len(endpoint.Creator) == 0 && endpoint.CNSIType == cnsiType {
-			rec = endpoint
+			if endpoint.ClientId == p.GetConfig().CFClient {
+				rec = endpoint
+				break
+			}
+			if rec == nil {
+				rec = endpoint
+			}
 		}
 	}
 
@@ -813,10 +827,8 @@ func (p *portalProxy) updateEndpoint(ec *echo.Context) error {
 	setClientInfo := params.SetClientInfo
 	isSet, err := strconv.ParseBool(setClientInfo)
 	if err == nil && isSet {
-		clientID := params.ClientID
-		clientSecret := params.ClientSecret
-		endpoint.ClientId = clientID
-		endpoint.ClientSecret = clientSecret
+		endpoint.ClientId, endpoint.ClientSecret = endpointClient(params.ClientID, params.ClientSecret,
+			p.GetConfig().CFClient, p.GetConfig().CFClientSecret)
 		updates = true
 	}
 

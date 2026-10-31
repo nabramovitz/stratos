@@ -16,6 +16,7 @@ import (
 	"github.com/cloudfoundry/stratos/src/jetstream/api"
 	"github.com/cloudfoundry/stratos/src/jetstream/api/config"
 	mock_api "github.com/cloudfoundry/stratos/src/jetstream/api/mock"
+	"github.com/cloudfoundry/stratos/src/jetstream/crypto"
 	"github.com/cloudfoundry/stratos/src/jetstream/testutils"
 	"github.com/labstack/echo/v5"
 	. "github.com/smartystreets/goconvey/convey"
@@ -891,5 +892,68 @@ func TestUpdateEndpointBodyIDOverridesPath(t *testing.T) {
 	}
 	if params.ID != "body-id" {
 		t.Errorf("expected body id to override path id, got %q", params.ID)
+	}
+}
+
+func TestEndpointClientFallsBackToTheConsoleClient(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, id, secret, wantID, wantSecret string
+	}{
+		{"left empty", "", "", "stratos_client", "console-secret"},
+		// Copied from another endpoint's review or filled in by the browser:
+		// the secret is never shown, so it arrives without one.
+		{"console client without its secret", "stratos_client", "", "stratos_client", "console-secret"},
+		{"console client with a secret", "stratos_client", "typed", "stratos_client", "typed"},
+		{"public client", "cf", "", "cf", ""},
+		{"other client", "my-client", "my-secret", "my-client", "my-secret"},
+	} {
+		id, secret := endpointClient(tc.id, tc.secret, "stratos_client", "console-secret")
+		if id != tc.wantID || secret != tc.wantSecret {
+			t.Errorf("%s: got (%q, %q), want (%q, %q)", tc.name, id, secret, tc.wantID, tc.wantSecret)
+		}
+	}
+}
+
+// decryptsTo matches an encrypted client secret by its plain text.
+type decryptsTo string
+
+func (d decryptsTo) Match(v driver.Value) bool {
+	b, ok := v.([]byte)
+	if !ok {
+		return false
+	}
+	s, err := crypto.DecryptToken(mockEncryptionKey, b)
+	return err == nil && s == string(d)
+}
+
+// Edit's "Update Client ID and Client Secret" must fall back like
+// registration: the console's Client ID without a secret is the console's
+// client, not an ID stored with an empty secret.
+func TestUpdateEndpointUsesTheConsoleClientForItsIDWithoutASecret(t *testing.T) {
+	t.Parallel()
+
+	req := setupMockReq("POST", "", map[string]string{
+		"setClientInfo": "true",
+		"clientID":      "stratos_client",
+		"clientSecret":  "",
+	})
+	_, _, ctx, pp, db, mock := setupHTTPTest(req)
+	defer db.Close()
+	pp.Config.CFClient = "stratos_client"
+	pp.Config.CFClientSecret = "console-secret"
+	ctx.SetPathValues(echo.PathValues{{Name: "id", Value: mockCFGUID}})
+
+	mock.ExpectQuery(selectAnyFromCNSIs).WillReturnRows(expectCFRow())
+	mock.ExpectExec(`UPDATE cnsis`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), "stratos_client", decryptsTo("console-secret"), sqlmock.AnyArg(), mockCFGUID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	if err := pp.updateEndpoint(ctx); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("update did not store the console's client: %v", err)
 	}
 }

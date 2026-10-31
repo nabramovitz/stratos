@@ -741,7 +741,145 @@ describe('SteppersComponent — Cancel', () => {
   });
 });
 
-// A step can ask before Previous leaves it (e.g. when leaving undoes work).
+// Going back runs the leave hook of every step passed, so each can undo
+// what it started (e.g. close a socket it opened).
+@Component({
+  standalone: true,
+  imports: [SteppersComponent, StepComponent],
+  template: `
+    <app-steppers>
+      <app-step title="One" [signalHandle]="steps[0]"></app-step>
+      <app-step title="Two" [signalHandle]="steps[1]"></app-step>
+      <app-step title="Three" [signalHandle]="steps[2]"></app-step>
+    </app-steppers>
+  `,
+})
+class GoingBackHostComponent {
+  left: [string, boolean | undefined][] = [];
+  steps: SignalStepHandle[] = ['One', 'Two', 'Three'].map(title => ({
+    valid: signal(true),
+    onLeave: (isNext?: boolean) => { this.left.push([title, isNext]); },
+  }));
+}
+
+describe('SteppersComponent — going back', () => {
+  let hostFixture: ComponentFixture<GoingBackHostComponent>;
+  let host: GoingBackHostComponent;
+  let steppers: SteppersComponent;
+
+  beforeEach(async () => {
+    TestBed.configureTestingModule({
+      imports: [GoingBackHostComponent, RouterTestingModule],
+      providers: [provideZonelessChangeDetection(), provideHttpClient(), provideHttpClientTesting()],
+    });
+    await TestBed.compileComponents();
+    hostFixture = TestBed.createComponent(GoingBackHostComponent);
+    host = hostFixture.componentInstance;
+    await hostFixture.whenStable();
+    steppers = hostFixture.debugElement.query(By.directive(SteppersComponent)).componentInstance as SteppersComponent;
+    steppers.setActive(1);
+    steppers.setActive(2);
+    await hostFixture.whenStable();
+    host.left = [];
+  });
+
+  it('Previous leaves the current step', async () => {
+    (hostFixture.nativeElement.querySelector('#stepper_previous') as HTMLButtonElement).click();
+    await hostFixture.whenStable();
+    expect(steppers.currentIndex()).toBe(1);
+    expect(host.left).toEqual([['Three', false]]);
+  });
+
+  it('going back two steps leaves both, nearest first', async () => {
+    steppers.goTo(0);
+    await hostFixture.whenStable();
+    expect(steppers.currentIndex()).toBe(0);
+    expect(host.left).toEqual([['Three', false], ['Two', false]]);
+  });
+
+  it('going forward leaves only the current step', async () => {
+    steppers.goTo(0);
+    await hostFixture.whenStable();
+    host.left = [];
+    steppers.setActive(1);
+    await hostFixture.whenStable();
+    expect(host.left).toEqual([['One', true]]);
+  });
+});
+
+@Component({
+  standalone: true,
+  imports: [SteppersComponent, StepComponent],
+  template: `
+    <app-steppers [basePreviousRedirect]="redirect" [startIndex]="startIndex" [startData]="startData">
+      <app-step title="One" [signalHandle]="first"></app-step>
+      <app-step title="Two" [signalHandle]="second"></app-step>
+    </app-steppers>
+  `,
+})
+class StartIndexHostComponent {
+  redirect: { path: string } | null = null;
+  startIndex = 0;
+  startData: unknown = undefined;
+  firstEnter = vi.fn();
+  secondEnter = vi.fn();
+  first: SignalStepHandle = { valid: signal(true), onEnter: this.firstEnter };
+  second: SignalStepHandle = { valid: signal(true), onEnter: this.secondEnter };
+}
+
+describe('SteppersComponent — first step and start index', () => {
+  const create = async (setup: (host: StartIndexHostComponent) => void = () => undefined) => {
+    TestBed.configureTestingModule({
+      imports: [StartIndexHostComponent, RouterTestingModule],
+      providers: [provideZonelessChangeDetection(), provideHttpClient(), provideHttpClientTesting()],
+    });
+    await TestBed.compileComponents();
+    const fixture = TestBed.createComponent(StartIndexHostComponent);
+    setup(fixture.componentInstance);
+    await fixture.whenStable();
+    const steppers = fixture.debugElement.query(By.directive(SteppersComponent)).componentInstance as SteppersComponent;
+    const previous = () => fixture.nativeElement.querySelector('#stepper_previous') as HTMLButtonElement | null;
+    return { fixture, host: fixture.componentInstance, steppers, previous };
+  };
+
+  it('renders no Previous on step 1 without a base redirect', async () => {
+    const { previous } = await create();
+    expect(previous()).toBeNull();
+  });
+
+  it('keeps Previous on step 1 when a base redirect is set', async () => {
+    const { previous } = await create(h => { h.redirect = { path: '/x' }; });
+    expect(previous()).not.toBeNull();
+    expect(previous()!.disabled).toBe(false);
+  });
+
+  it('shows Previous on step 2', async () => {
+    const { fixture, steppers, previous } = await create();
+    steppers.setActive(1);
+    await fixture.whenStable();
+    expect(previous()).not.toBeNull();
+  });
+
+  it('starts on startIndex with earlier steps complete', async () => {
+    const { host, steppers } = await create(h => { h.startIndex = 1; h.startData = { n: 7 }; });
+    expect(steppers.currentIndex()).toBe(1);
+    expect(steppers.steps[0].complete).toBe(true);
+    expect(host.secondEnter).toHaveBeenCalledWith({ n: 7 });
+    expect(host.firstEnter).not.toHaveBeenCalled();
+  });
+
+  it('goes back to a completed step from its header', async () => {
+    const { fixture, steppers } = await create(h => { h.startIndex = 1; });
+    const header = fixture.nativeElement.querySelector('.steppers-headers button') as HTMLButtonElement;
+    expect(header.getAttribute('aria-label')).toBe('One, completed');
+    header.click();
+    await fixture.whenStable();
+    expect(steppers.currentIndex()).toBe(0);
+  });
+});
+
+// A step nothing can go back from: no Previous, and the completed header
+// before it is not a control that does nothing.
 @Component({
   standalone: true,
   imports: [SteppersComponent, StepComponent],
@@ -752,52 +890,48 @@ describe('SteppersComponent — Cancel', () => {
     </app-steppers>
   `,
 })
-class ConfirmPreviousHostComponent {
-  answer = false;
-  left: (boolean | undefined)[] = [];
+class NoGoingBackHostComponent {
   first: SignalStepHandle = { valid: signal(true) };
-  second: SignalStepHandle = {
-    valid: signal(true),
-    confirmPrevious: () => Promise.resolve(this.answer),
-    onLeave: (isNext) => { this.left.push(isNext); },
-  };
+  disable = signal(false);
+  hide = signal(false);
+  second: SignalStepHandle = { valid: signal(true), disablePrevious: this.disable, hidePrevious: this.hide };
 }
 
-describe('SteppersComponent — Previous with a confirmation', () => {
-  let hostFixture: ComponentFixture<ConfirmPreviousHostComponent>;
-  let host: ConfirmPreviousHostComponent;
-  let steppers: SteppersComponent;
+describe('SteppersComponent — a step with no way back', () => {
+  let hostFixture: ComponentFixture<NoGoingBackHostComponent>;
+  let host: NoGoingBackHostComponent;
 
   beforeEach(async () => {
     TestBed.configureTestingModule({
-      imports: [ConfirmPreviousHostComponent, RouterTestingModule],
+      imports: [NoGoingBackHostComponent, RouterTestingModule],
       providers: [provideZonelessChangeDetection(), provideHttpClient(), provideHttpClientTesting()],
     });
     await TestBed.compileComponents();
-    hostFixture = TestBed.createComponent(ConfirmPreviousHostComponent);
+    hostFixture = TestBed.createComponent(NoGoingBackHostComponent);
     host = hostFixture.componentInstance;
     await hostFixture.whenStable();
-    steppers = hostFixture.debugElement.query(By.directive(SteppersComponent)).componentInstance as SteppersComponent;
+    const steppers = hostFixture.debugElement.query(By.directive(SteppersComponent)).componentInstance as SteppersComponent;
     steppers.setActive(1);
     await hostFixture.whenStable();
   });
 
-  const clickPrevious = async () => {
-    (hostFixture.nativeElement.querySelector('#stepper_previous') as HTMLButtonElement).click();
-    await hostFixture.whenStable();
-  };
+  const q = (sel: string) => (hostFixture.nativeElement as HTMLElement).querySelector(sel);
 
-  it('stays on the step when the user declines', async () => {
-    host.answer = false;
-    await clickPrevious();
-    expect(steppers.currentIndex()).toBe(1);
-    expect(host.left).toEqual([]);
+  it('offers Previous and a header button by default', () => {
+    expect(q('#stepper_previous')).toBeTruthy();
+    expect(q('button.steppers-header-inner')).toBeTruthy();
   });
 
-  it('goes back when the user agrees', async () => {
-    host.answer = true;
-    await clickPrevious();
-    expect(steppers.currentIndex()).toBe(0);
-    expect(host.left).toEqual([false]);
+  it('hidePrevious removes the Previous button', async () => {
+    host.hide.set(true);
+    await hostFixture.whenStable();
+    expect(q('#stepper_previous')).toBeNull();
+  });
+
+  it('a completed header is not a button while Previous is disabled', async () => {
+    host.disable.set(true);
+    await hostFixture.whenStable();
+    expect(q('button.steppers-header-inner')).toBeNull();
+    expect(q('.steppers-header-text--complete')?.textContent).toContain('One');
   });
 });

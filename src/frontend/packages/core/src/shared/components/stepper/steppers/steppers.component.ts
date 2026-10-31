@@ -56,6 +56,11 @@ export class SteppersComponent implements OnInit, AfterContentInit, OnDestroy {
   // stepper whose host is not a route, such as the Register Endpoint dialog.
   readonly cancelAction = input<() => void>();
   readonly nextButtonProgress = input(true);
+  // Step to open on, with the steps before it complete. For a stepper that
+  // resumes mid-flow, e.g. one opened to review work done earlier.
+  readonly startIndex = input(0);
+  // Delivered as the onEnter data of the step at startIndex.
+  readonly startData = input<unknown>(undefined);
   readonly basePreviousRedirect = input<StepperRedirectPayload | null>(this.route.snapshot.queryParams[BASE_REDIRECT_QUERY] ? {
     path: this.route.snapshot.queryParams[BASE_REDIRECT_QUERY]
 } : null);
@@ -104,7 +109,8 @@ export class SteppersComponent implements OnInit, AfterContentInit, OnDestroy {
   // after the one delivery. It replaces a 5 ms setInterval that kept polling
   // for as long as the first step stayed blocked.
   private readonly firstStepEntry = effect(() => {
-    const step = this.visibleSteps()[0];
+    const index = this.startIndex();
+    const step = this.visibleSteps()[index];
     if (!step || step.blocked) {
       return;
     }
@@ -114,6 +120,11 @@ export class SteppersComponent implements OnInit, AfterContentInit, OnDestroy {
       if (this.currentIndex() !== 0) {
         return;
       }
+      if (index > 0) {
+        this.enterData = this.startData();
+        this.enterStep(index);
+        return;
+      }
       step.active = true;
       // Route through pOnEnter so signal-handle consumers receive the enter
       // callback, after the render that shows the step (see setActive).
@@ -121,7 +132,7 @@ export class SteppersComponent implements OnInit, AfterContentInit, OnDestroy {
       this.cdr.markForCheck();
       afterNextRender(() => {
         if (step.active) {
-          step.pOnEnter(this.enterData);
+          step.pOnEnter(this.enterData ?? this.startData());
         }
       }, { injector: this.injector });
     });
@@ -331,6 +342,16 @@ export class SteppersComponent implements OnInit, AfterContentInit, OnDestroy {
     }
   }
 
+  // Next, only when the Next button is shown and enabled. For Enter in a
+  // step's form, which must not do what the disabled button would not.
+  goNextIfAllowed(): void {
+    const index = this.currentIndex();
+    const step = this.steps[index];
+    if (step && !step.hideNextButton && !step.busy && !step.blocked && this.canGoNext(index)) {
+      this.goNext();
+    }
+  }
+
   redirect(redirectPayload?: StepperRedirectPayload): Observable<void> {
     if (redirectPayload) {
       return observableOf(this.navigate(redirectPayload));
@@ -354,17 +375,14 @@ export class SteppersComponent implements OnInit, AfterContentInit, OnDestroy {
     this.router.navigate(commands, { ...extras, queryParams });
   }
 
-  // Previous button: the step may ask first (SignalStepHandle.confirmPrevious).
-  async goPrevious(): Promise<void> {
-    const index = this.currentIndex();
-    const confirm = this.steps[index]?.signalHandle?.confirmPrevious;
-    if (confirm && !(await confirm())) {
-      return;
-    }
-    // Only if nothing moved the stepper while the question was open.
-    if (this.currentIndex() === index) {
-      this.setActive(index - 1);
-    }
+  // Previous button.
+  goPrevious(): void {
+    this.setActive(this.currentIndex() - 1);
+  }
+
+  // Moves to a completed step (or any step canGoto allows), e.g. from its header.
+  goTo(index: number): void {
+    this.setActive(index);
   }
 
   setActive(index: number): void {
@@ -378,8 +396,14 @@ export class SteppersComponent implements OnInit, AfterContentInit, OnDestroy {
     }
 
     // 1) Leave the previous step (with an indication if this is a Next or Previous transition)
-    const isNextDirection = index > this.currentIndex();
-    this.steps[this.currentIndex()].invokeLeave(isNextDirection);
+    const current = this.currentIndex();
+    const isNextDirection = index > current;
+    this.steps[current].invokeLeave(isNextDirection);
+    // Going back over several steps leaves each one passed too, nearest
+    // first, so every leave hook can undo what its step started.
+    for (let i = current - 1; !isNextDirection && i > index; i--) {
+      this.steps[i].invokeLeave(false);
+    }
 
     // 2) Determine if the required step is ok (and if not find the next/previous valid step)
     index = this.findValidStep(index, isNextDirection);

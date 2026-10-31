@@ -1,9 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
 import { defer, of } from 'rxjs';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { CurrentUserRolesDataService, EndpointModel, EntityCatalogHelper, EntityCatalogHelpers } from '@stratosui/store';
-import { seedEndpointsDataService } from '@stratosui/store/testing';
+import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
+import { CurrentUserRolesDataService, EntityCatalogHelper, EntityCatalogHelpers } from '@stratosui/store';
 import { BaseTestModules, STORE_TEST_PROVIDERS } from '@test-framework/core-test.helper';
 import { ConnectEndpointComponent } from './connect-endpoint.component';
 import { ConnectEndpointData, ConnectEndpointService } from '../connect.service';
@@ -102,62 +101,54 @@ describe('ConnectEndpointComponent', () => {
     });
   });
 
-  // The TLS options are an edit of the endpoint, so the form offers them only
-  // to a user who may edit it; the connect then saves them first.
-  describe('TLS options', () => {
+  // TLS options are set on Register; the credentials form carries none.
+  it('offers no TLS options, even to a user who may edit the endpoint', async () => {
+    TestBed.inject(CurrentUserRolesDataService).applySessionScopes({ admin: true, guid: 'me-guid', name: 'me', scopes: [] });
     let sent: ConnectEndpointData | undefined;
+    component.connectService = {
+      config: { name: 'metrics', guid: 'metrics-guid', type: 'metrics', subType: '', ssoAllowed: false },
+      setData: (data: ConnectEndpointData) => { sent = data; },
+    } as unknown as ConnectEndpointService;
+    await fixture.whenStable();
+    expect(fixture.nativeElement.textContent).not.toContain('Skip SSL validation');
+    expect(fixture.nativeElement.querySelector('textarea')).toBeNull();
+    expect(sent).toBeDefined();
+    expect('tls' in sent!).toBe(false);
+  });
 
-    const open = async (admin: boolean) => {
-      TestBed.inject(CurrentUserRolesDataService).applySessionScopes({ admin, guid: 'me-guid', name: 'me', scopes: [] });
-      seedEndpointsDataService([{
-        guid: 'metrics-guid', name: 'metrics', cnsi_type: 'metrics', skip_ssl_validation: true, ca_cert: '',
-        creator: { name: 'System Endpoint', admin: false, system: true },
-      } as unknown as EndpointModel]);
+  // Enter in a filled-in form tells the host, which connects the way its
+  // Connect button does; the form never connects on its own.
+  describe('on Enter', () => {
+    let connected: Mock<() => void>;
+    let submitted: Mock<() => void>;
+
+    beforeEach(async () => {
+      connected = vi.fn<() => void>();
+      submitted = vi.fn<() => void>();
+      component.submitted.subscribe(submitted);
       component.connectService = {
         config: { name: 'metrics', guid: 'metrics-guid', type: 'metrics', subType: '', ssoAllowed: false },
-        setData: (data: ConnectEndpointData) => { sent = data; },
+        setData: () => undefined,
+        submit: () => defer(() => { connected(); return of({ success: true, errorMessage: '' }); }),
       } as unknown as ConnectEndpointService;
+      await fixture.whenStable();
+    });
+
+    const enter = async () => {
+      fixture.nativeElement.querySelector('form').dispatchEvent(new Event('submit'));
       await fixture.whenStable();
     };
 
-    beforeEach(() => {
-      sent = undefined;
+    it('says the form was submitted', async () => {
+      component.endpointForm.get('authValues')?.patchValue({ username: 'u', password: 'p' });
+      await enter();
+      expect(submitted).toHaveBeenCalledTimes(1);
+      expect(connected).not.toHaveBeenCalled();
     });
 
-    it('offers them, filled in from the endpoint, to a user who may edit it', async () => {
-      await open(true);
-      expect(fixture.nativeElement.textContent).toContain('Skip SSL validation for the endpoint');
-      expect(sent?.tls).toEqual({ skipSSL: true, caCert: '' });
+    it('says nothing while the form is incomplete', async () => {
+      await enter();
+      expect(submitted).not.toHaveBeenCalled();
     });
-
-    it('sends the CA certificate in place of skipping validation', async () => {
-      await open(true);
-      component.endpointForm.get('tls')?.patchValue({ useCACert: true, caCert: 'PEM' });
-      await fixture.whenStable();
-      expect(sent?.tls).toEqual({ skipSSL: false, caCert: 'PEM' });
-    });
-
-    it('offers none to a user who may not edit the endpoint', async () => {
-      await open(false);
-      expect(fixture.nativeElement.textContent).not.toContain('Skip SSL validation for the endpoint');
-      expect(sent?.tls).toBeUndefined();
-    });
-  });
-
-  // The Connect dialog submits on Enter (formSubmit). The connect runs only
-  // when its Observable is subscribed.
-  it('connects when the form is submitted with Enter', async () => {
-    const connected = vi.fn();
-    fixture.componentRef.setInput('formSubmit', true);
-    component.connectService = {
-      config: { name: 'metrics', guid: 'metrics-guid', type: 'metrics', subType: '', ssoAllowed: false },
-      setData: () => undefined,
-      submit: () => defer(() => { connected(); return of({ success: true, errorMessage: '' }); }),
-    } as unknown as ConnectEndpointService;
-    await fixture.whenStable();
-    component.endpointForm.get('authValues')?.patchValue({ username: 'u', password: 'p' });
-    fixture.nativeElement.querySelector('form').dispatchEvent(new Event('submit'));
-    await fixture.whenStable();
-    expect(connected).toHaveBeenCalledTimes(1);
   });
 });

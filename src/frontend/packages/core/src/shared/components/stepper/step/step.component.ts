@@ -67,17 +67,14 @@ export interface SignalStepHandle {
   readonly onEnter?: (data?: unknown) => void | Promise<void>;
   /** Fired when the stepper navigates out of this step. Promise awaited. */
   readonly onLeave?: (isNext?: boolean) => void | Promise<void>;
-  /**
-   * Asked before Previous leaves this step; resolve false to stay. For a
-   * step whose leave hook undoes work (e.g. unregisters an endpoint).
-   */
-  readonly confirmPrevious?: () => Promise<boolean>;
   /** UI: marks the step as destructive (red Apply button etc.). */
   readonly destructiveStep?: Signal<boolean>;
   /** UI: enables the Close button (e.g. after applyStarted flips). */
   readonly canClose?: Signal<boolean>;
   /** UI: disables the Previous button. */
   readonly disablePrevious?: Signal<boolean>;
+  /** UI: removes the Previous button, for a step nothing can go back from. */
+  readonly hidePrevious?: Signal<boolean>;
   /** UI: text for the Finish button. */
   readonly finishButtonText?: Signal<string>;
   /** UI: text for the Next button. */
@@ -224,6 +221,10 @@ export class StepComponent {
     return this.signalHandle?.disablePrevious ? this.signalHandle.disablePrevious() : this._disablePrevious;
   }
   readonly disablePreviousChange = output<boolean>();
+
+  get hidePrevious(): boolean {
+    return this.signalHandle?.hidePrevious ? this.signalHandle.hidePrevious() : false;
+  }
 
   // A signal, like signalHandle.blocked, so the stepper's first-step entry
   // effect re-runs when a legacy [blocked] binding clears.

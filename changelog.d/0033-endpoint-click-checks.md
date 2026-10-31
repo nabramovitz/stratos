@@ -9,6 +9,11 @@
   fields were blank lines.
 - Card titles wrap between words, not mid-word, and a second line is no
   longer cut off. Hovering a card's title shows its full name.
+- Debug logs no longer show endpoints' client secrets; the metrics
+  plugin printed every endpoint with its secret on each page load.
+- With SSO set to skip the login page (`nosplash`), the login page says
+  "Signing in…" while the browser goes to the login server; it showed
+  only the logo and looked stuck.
 
 [BugFixes: Endpoints]
 - In Register Endpoint, the Connect step shows the credentials and
@@ -51,8 +56,6 @@
   are marked the same way.
 - Only Stratos admins are offered "Share this endpoint connection",
   which the server refuses for other users.
-- A failed connect puts back the endpoint's previous TLS options (Skip
-  SSL validation, CA certificate) instead of leaving the change saved.
 - A failed Reconnect keeps the Connect dialog open with its error,
   instead of closing as if it had connected.
 - The Register dialog's connect step names what to enter for a
@@ -62,6 +65,26 @@
   Connect and close buttons, and help that cannot be loaded says so.
 - The Artifact Hub registration text no longer shows backticks around
   "Register".
+- When a Cloud Foundry login server turns down the endpoint's client
+  rather than the user, Connect says so: a Client ID or Client Secret
+  it rejected, or a client that cannot log in with a username and
+  password, for which it suggests "Allow SSO login" or Client ID "cf".
+  Both read as a wrong password before.
+- A Cloud Foundry endpoint registered or edited with the console's own
+  Client ID and no Client Secret, as an endpoint's review shows the ID
+  or a browser fills it in, connects like one registered with Client ID
+  left empty. It was saved without the secret, and every connect failed
+  with "Bad credentials".
+- With several Cloud Foundry endpoints at the auto-registered URL,
+  logging in connects one that uses the console's own client, and no
+  longer gives the console's login to an endpoint on another client.
+  That endpoint showed Connected, but renewing its token failed with
+  "Authentication expired", and the failure was recorded against the
+  console's own login.
+- The Cloud Foundry endpoint docs say which client a blank Client ID
+  uses (the console's `CF_CLIENT`, not always `cf`) and what a client
+  needs for password and for SSO connects, and the SSO guide explains
+  "Invalid redirect" when connecting an endpoint.
 
 [BugFixes: Git]
 - The GitHub and GitLab connect help opens again instead of showing an
@@ -83,8 +106,8 @@
   states, and the control is linked to its list.
 - The closed side panel can no longer be reached with Tab or announced
   as a button.
-- Escape closes the Connect and Add API Key dialogs, and answers "Yes"
-  to "Are you still there?"; these dialogs ignored it.
+- Escape closes the Connect and Create an API Key dialogs, and answers
+  "Yes" to "Are you still there?"; these dialogs ignored it.
 - The favorite star on endpoint and other cards is announced as "Add
   to favorites" or "Remove from favorites", as in lists; it read the
   opposite of its state, followed by the icon name "star_border".
@@ -114,11 +137,6 @@
   answered instead.
 
 [BugFixes: API Keys]
-- Create an API Key has room around its title, field and buttons;
-  they ran to the dialog's edges.
-- A new key's secret is hidden until you show it, has a copy button,
-  and leaves the screen when the key is deleted; it stayed on the page
-  after its key was gone.
 - The docs explain API keys: who can create them (API_KEYS_ENABLED),
   the "Authentication: Bearer" header they are sent in and the routes
   that accept them.

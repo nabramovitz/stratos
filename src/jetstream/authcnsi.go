@@ -267,6 +267,12 @@ func (p *portalProxy) DoLoginToCNSI(c *echo.Context, cnsiGUID string, systemShar
 }
 
 func (p *portalProxy) DoLoginToCNSIwithConsoleUAAtoken(c *echo.Context, theCNSIrecord api.CNSIRecord) error {
+	// A refresh sends the linked token with the endpoint's client, and UAA
+	// refreshes a token only for the client it was issued to.
+	if theCNSIrecord.ClientId != p.GetConfig().CFClient {
+		return fmt.Errorf("endpoint %s uses client %q, not the console's client, so it cannot share the console's token",
+			theCNSIrecord.GUID, theCNSIrecord.ClientId)
+	}
 	userID, err := p.GetSessionStringValue(c, "user_id")
 	if err != nil {
 		return errors.New("could not find correct session value")
@@ -341,7 +347,7 @@ func (p *portalProxy) FetchOAuth2Token(cnsiRecord api.CNSIRecord, c *echo.Contex
 			errMessage := ""
 			authError := &api.UAAErrorResponse{}
 			if err := json.Unmarshal([]byte(httpError.Response), authError); err == nil {
-				errMessage = fmt.Sprintf(": %s", authError.ErrorDescription)
+				errMessage = fmt.Sprintf(": %s", authError.ErrorDescription) + clientRejectedHint(authError, cnsiRecord.ClientId)
 			}
 			_, reason, _ := classifyConnectError(err)
 			return nil, nil, nil, api.NewHTTPShadowErrorWithReason(
@@ -576,6 +582,21 @@ func connectFailure(err error) error {
 		reason,
 		"Could not connect to the endpoint: "+why,
 		"Could not connect to the endpoint: %s", err)
+}
+
+// clientRejectedHint says what to change when UAA turns down the endpoint's
+// client rather than the user: "Bad credentials" alone reads like a wrong
+// password.
+func clientRejectedHint(authError *api.UAAErrorResponse, clientID string) string {
+	switch {
+	case strings.HasPrefix(authError.ErrorDescription, "Unauthorized grant type"):
+		return fmt.Sprintf(`. Client %q cannot log in with a username and password: `+
+			`register the endpoint with "Allow SSO login" ticked, or with Client ID "cf"`, clientID)
+	case authError.Error == "invalid_client":
+		return fmt.Sprintf(`. The login server rejected the endpoint's Client ID %q or its Client Secret, `+
+			`not your username and password`, clientID)
+	}
+	return ""
 }
 
 // classifyConnectError says why a connect failed: the response status, a
