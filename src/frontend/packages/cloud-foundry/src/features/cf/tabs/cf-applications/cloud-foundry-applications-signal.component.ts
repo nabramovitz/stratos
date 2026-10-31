@@ -31,6 +31,7 @@ import {
 
 import { applicationEntityType } from '../../../../cf-entity-types';
 import { BulkResult, CfAppsSignalConfigService } from '../../../../shared/signal-list-configs/app/cf-apps-signal-config.service';
+import { appLabelsColumn, appLabelsFilterText } from '../../../../shared/signal-list-configs/app/app-labels';
 import { CfCurrentUserPermissions } from '../../../../user-permissions/cf-user-permissions-checkers';
 import { CloudFoundryEndpointService } from '../../services/cloud-foundry-endpoint.service';
 import { runBulkWithProgress } from '../../../../services/async-jobs/bulk-progress';
@@ -278,6 +279,7 @@ export class CloudFoundryApplicationsSignalComponent implements OnInit {
             widthHint: '14rem',
           },
           ...(withStack ? [stackColumn] : []),
+          appLabelsColumn,
           {
             header: 'Created', key: 'createdAt', sortField: 'createdAt',
             render: (app: StApp) => CloudFoundryApplicationsSignalComponent.formatDate(app.createdAt),
@@ -315,8 +317,8 @@ export class CloudFoundryApplicationsSignalComponent implements OnInit {
         // Name, Status, or the Org/Space column; Stack joins the list
         // (as a checklist, not text) once its column is visible.
         filterColumns: withStack
-          ? ['name', 'state', 'orgSpace', 'stackName', 'lastRefreshedAt']
-          : ['name', 'state', 'orgSpace', 'lastRefreshedAt'],
+          ? ['name', 'state', 'orgSpace', 'stackName', 'labels', 'lastRefreshedAt']
+          : ['name', 'state', 'orgSpace', 'labels', 'lastRefreshedAt'],
         // Status has no visibility gate (always ≥2 possible states) so its
         // entry is unconditional; Stack's is only wired while its column
         // is actually in filterColumns — otherwise a filterField left
@@ -360,6 +362,7 @@ export class CloudFoundryApplicationsSignalComponent implements OnInit {
     this.appsConfig.registerFilterExtractor('name', (app: StApp) => app.name ?? '');
     this.appsConfig.registerFilterExtractor('state', stateLabel);
     this.appsConfig.registerFilterExtractor('orgSpace', orgSpaceText);
+    this.appsConfig.registerFilterExtractor('labels', appLabelsFilterText);
 
     // Default per-CF tab presentation matches per-space: card view at 6/page.
     this.appsConfig.viewMode.set('card');

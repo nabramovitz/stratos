@@ -32,6 +32,7 @@ import {
 import { applicationEntityType } from '../../../cf-entity-types';
 import { CfEndpointsMissingComponent } from '../../../shared/components/cf-endpoints-missing/cf-endpoints-missing.component';
 import { CfAppsSignalConfigService } from '../../../shared/signal-list-configs/app/cf-apps-signal-config.service';
+import { appLabelsColumn, appLabelsFilterText } from '../../../shared/signal-list-configs/app/app-labels';
 import { CloudFoundryService } from '../../../shared/data-services/cloud-foundry.service';
 import { CfCurrentUserPermissions } from '../../../user-permissions/cf-user-permissions-checkers';
 import { goToAppWall } from '../../cf/cf.helpers';
@@ -434,6 +435,7 @@ export class ApplicationWallComponent implements OnInit {
             widthHint: '18rem',
           },
           ...(withStack ? [stackColumn] : []),
+          appLabelsColumn,
           {
             header: 'Created', key: 'createdAt', sortField: 'createdAt',
             render: (app: StApp) => ApplicationWallComponent.formatDate(app.createdAt),
@@ -468,8 +470,8 @@ export class ApplicationWallComponent implements OnInit {
         },
         nameFilter: this.appsConfig.nameFilter,
         filterColumns: withStack
-          ? ['name', 'state', 'cfOrgSpace', 'stackName', 'lastRefreshedAt']
-          : ['name', 'state', 'cfOrgSpace', 'lastRefreshedAt'],
+          ? ['name', 'state', 'cfOrgSpace', 'stackName', 'labels', 'lastRefreshedAt']
+          : ['name', 'state', 'cfOrgSpace', 'labels', 'lastRefreshedAt'],
         // Status has no visibility gate (always ≥2 possible states) so its
         // entry is unconditional; Stack's is only wired while its column
         // is actually in filterColumns — otherwise a filterField left
@@ -512,6 +514,7 @@ export class ApplicationWallComponent implements OnInit {
     this.appsConfig.registerFilterExtractor('name', (app: StApp) => app.name ?? '');
     this.appsConfig.registerFilterExtractor('state', stateLabel);
     this.appsConfig.registerFilterExtractor('cfOrgSpace', renderCfOrgSpace);
+    this.appsConfig.registerFilterExtractor('labels', appLabelsFilterText);
     if (cnsiGuids.length > 0) {
       void this.appsConfig.loadAll();
     }

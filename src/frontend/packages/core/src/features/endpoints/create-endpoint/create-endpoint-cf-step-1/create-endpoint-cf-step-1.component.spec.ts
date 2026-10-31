@@ -97,6 +97,21 @@ describe('CreateEndpointCfStep1Component', () => {
     expect(root.querySelector(`label[for="${box!.id}"]`)?.textContent?.trim()).toBe('Specify CA Certificate:');
   });
 
+  // A collapsed section is only 0 px tall: without inert its fields stay in
+  // the tab order and the accessibility tree.
+  it('keeps the fields of a collapsed section out of reach', async () => {
+    const root: HTMLElement = fixture.nativeElement;
+    const inert = (id: string) => root.querySelector(id)!.closest('.create-endpoint__advanced')!.hasAttribute('inert');
+    expect(inert('#client_id')).toBe(true);
+    expect(inert('#ca-cert')).toBe(true);
+
+    component.toggleAdvancedOptions();
+    component.toggleCACertField();
+    await fixture.whenStable();
+    expect(inert('#client_id')).toBe(false);
+    expect(inert('#ca-cert')).toBe(false);
+  });
+
   // The hidden Advanced Options sit under the Name field, so a browser
   // with a saved console login filled it in as Client ID and Client Secret.
   it('keeps the browser from filling the console login into the client credentials', () => {
@@ -462,6 +477,37 @@ describe('CreateEndpointCfStep1Component', () => {
       expect(component.registerForm.controls.nameField.enabled).toBe(true);
       expect(component.registerForm.controls.nameField.value).toBe('my-cf');
       expect(emitted).toHaveBeenCalled();
+    });
+
+    // Advanced Options come back as they were at registration
+    describe('Advanced Options after Unregister', () => {
+      const advanced = () => q('#client_id')!.closest('.create-endpoint__advanced')!;
+      const shown = () => advanced().classList.contains('create-endpoint__shown');
+      const showBox = () => q('#showAdvanced .custom-checkbox')?.getAttribute('aria-checked');
+
+      async function registerThenUnregister(clientId = '') {
+        component.registerForm.controls.nameField.setValue('my-cf');
+        component.registerForm.controls.urlField.setValue('api.example.com');
+        component.registerForm.controls.clientIDField.setValue(clientId);
+        if (clientId) component.toggleAdvancedOptions();
+        stubSignalConfig.register.mockResolvedValue({ busy: false, error: false, message: '', guid: 'g1' });
+        await new Promise(resolve => component.onNext(0, {} as never).subscribe(resolve));
+        await fixture.whenStable();
+        await component.unregister();
+        await fixture.whenStable();
+      }
+
+      it('stay collapsed when none were entered', async () => {
+        await registerThenUnregister();
+        expect(shown()).toBe(false);
+        expect(showBox()).toBe('false');
+      });
+
+      it('stay open when a Client ID was entered', async () => {
+        await registerThenUnregister('my-client');
+        expect(shown()).toBe(true);
+        expect(showBox()).toBe('true');
+      });
     });
 
     // Git hosts take no CA certificate, so their review has no TLS to edit or show.

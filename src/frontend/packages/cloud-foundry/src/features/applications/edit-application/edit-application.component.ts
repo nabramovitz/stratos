@@ -13,6 +13,7 @@ import { CustomSlideToggleComponent } from '../../../../../core/src/shared/compo
 import { CfAppsSignalConfigService } from '../../../shared/signal-list-configs/app/cf-apps-signal-config.service';
 import { CreateAppStateService } from '../../../shared/data-services/create-app-state.service';
 import { AppDetailDataService } from '../app-detail-data.service';
+import { labelError } from '../../../shared/signal-list-configs/app/app-labels';
 import { StatefulIconComponent } from '../../../../../core/src/core/stateful-icon/stateful-icon.component';
 import { FocusDirective } from '../../../../../core/src/shared/components/focus.directive';
 import { PageHeaderComponent } from '../../../../../core/src/shared/components/page-header/page-header.component';
@@ -32,6 +33,8 @@ interface EditApplicationForm {
   disk_quota: FormControl<number>;
   memory: FormControl<number>;
   enable_ssh: FormControl<boolean>;
+  labels: FormControl<Record<string, string>>;
+  labelInput: FormControl<string>;
 }
 
 @Component({
@@ -99,7 +102,12 @@ export class EditApplicationComponent implements OnInit, OnDestroy {
         nonNullable: true,
         validators: [Validators.required, Validators.min(1)]
       }),
-      enable_ssh: new FormControl(false, { nonNullable: true })
+      enable_ssh: new FormControl(false, { nonNullable: true }),
+      labels: new FormControl<Record<string, string>>({}, { nonNullable: true }),
+      labelInput: new FormControl('', {
+        nonNullable: true,
+        validators: [control => control.value.trim() ? { pendingLabel: true } : null],
+      }),
     });
 
     // Track form valid+dirty as a signal so signalHandle.valid is reactive
@@ -149,6 +157,43 @@ export class EditApplicationComponent implements OnInit, OnDestroy {
   private sub?: Subscription;
 
   private error = false;
+  private originalLabels: Record<string, string> = {};
+
+  addLabel(event: Event): void {
+    // The Enter that confirms an IME composition is not "add this label".
+    if ((event as KeyboardEvent).isComposing) return;
+    event.preventDefault();
+    const input = this.editAppForm.controls.labelInput;
+    const text = input.value.trim();
+    if (!text) return;
+    const separator = text.indexOf('=');
+    const key = separator < 0 ? text : text.slice(0, separator);
+    const value = separator < 0 ? '' : text.slice(separator + 1);
+    const invalid = labelError(key, value);
+    if (invalid) {
+      input.setErrors({ invalidLabel: invalid });
+      return;
+    }
+    const labels = this.editAppForm.controls.labels;
+    if (Object.hasOwn(labels.value, key)) {
+      input.setErrors({ duplicateLabel: true });
+      return;
+    }
+    labels.markAsDirty();
+    labels.setValue({ ...labels.value, [key]: value });
+    input.setValue('');
+  }
+
+  removeLabel(key: string): void {
+    const labels = this.editAppForm.controls.labels;
+    const next = { ...labels.value };
+    delete next[key];
+    labels.markAsDirty();
+    labels.setValue(next);
+    // A duplicateLabel error on the pending input is stale once its key is
+    // gone; setErrors() results are only cleared by re-running validators.
+    this.editAppForm.controls.labelInput.updateValueAndValidity();
+  }
 
   ngOnInit() {
     this.sub = this.applicationService.application$.pipe(
@@ -164,12 +209,15 @@ export class EditApplicationComponent implements OnInit, OnDestroy {
       });
 
       this.createAppState.setName(this.app.name);
+      this.originalLabels = { ...this.detail.appDetail()?.app.labels };
       this.editAppForm.setValue({
         name: this.app.name,
         instances: this.app.instances,
         memory: this.app.memory,
         disk_quota: this.app.disk_quota,
         enable_ssh: this.app.enable_ssh,
+        labels: { ...this.originalLabels },
+        labelInput: '',
       });
       // Don't want the values to change while the user is editing
       this.clearSub();
@@ -185,6 +233,7 @@ export class EditApplicationComponent implements OnInit, OnDestroy {
     const otherUpdates: { [key: string]: any } = {};
     const formValue = this.editAppForm.value;
     for (const key of Object.keys(formValue)) {
+      if (key === 'labels' || key === 'labelInput') continue;
       const control = (this.editAppForm.controls as any)[key];
       if (!control || control.pristine) continue;
       const value = (formValue as any)[key];
@@ -195,6 +244,18 @@ export class EditApplicationComponent implements OnInit, OnDestroy {
       }
     }
 
+    const currentLabels = this.editAppForm.controls.labels.value;
+    const labelDelta: Record<string, string | null> = Object.create(null);
+    for (const key of Object.keys(this.originalLabels)) {
+      if (!Object.hasOwn(currentLabels, key)) labelDelta[key] = null;
+    }
+    for (const [key, value] of Object.entries(currentLabels)) {
+      if (!Object.hasOwn(this.originalLabels, key) || this.originalLabels[key] !== value) labelDelta[key] = value;
+    }
+    if (Object.keys(labelDelta).length > 0) {
+      // Labels ride the same PATCH as the name, so CF applies both or neither.
+      otherUpdates['labels'] = labelDelta;
+    }
     const hasScale = Object.keys(scaleUpdate).length > 0;
     const hasOther = Object.keys(otherUpdates).length > 0;
     if (!hasScale && !hasOther) {
@@ -217,14 +278,14 @@ export class EditApplicationComponent implements OnInit, OnDestroy {
       : observableOf({ success: true });
 
     const other$: Observable<{ success: boolean; message?: string }> = hasOther
-      ? defer(() => from(this.detail.update(otherUpdates as { name?: string; enable_ssh?: boolean }))).pipe(
+      ? defer(() => from(this.detail.update(otherUpdates))).pipe(
           map(() => ({ success: true })),
         )
       : observableOf({ success: true });
 
     return scale$.pipe(
       take(1),
-      // After scale resolves, run the name/ssh PATCH (if any). A scale
+      // After scale resolves, run the name/ssh/labels PATCH (if any). A scale
       // failure short-circuits the other update so we don't half-persist.
       switchMap(scaleRes => {
         if (!scaleRes.success) return observableOf(scaleRes);

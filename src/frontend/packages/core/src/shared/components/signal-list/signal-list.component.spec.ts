@@ -116,6 +116,19 @@ describe('SignalListComponent', () => {
     const escape = (target: EventTarget) =>
       target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
+    // The checklist popup listens for the same document click; a second
+    // listener for one host event was dropped, so only Escape closed the menu.
+    it('closes the open menu on a click outside it', async () => {
+      const fixture = await withActions();
+      (fixture.nativeElement.querySelector('[data-test="row-actions"]') as HTMLButtonElement).click();
+      await fixture.whenStable();
+      expect(menu(fixture.nativeElement)).not.toBeNull();
+
+      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await fixture.whenStable();
+      expect(menu(fixture.nativeElement)).toBeNull();
+    });
+
     it('closes the open menu and returns focus to its kebab button', async () => {
       const fixture = await withActions();
       const kebab = fixture.nativeElement.querySelector('[data-test="row-actions"]') as HTMLButtonElement;
@@ -330,6 +343,7 @@ describe('SignalListComponent', () => {
 
     it('appends All (-1) to card-mode options and labels it', async () => {
       const fixture = TestBed.createComponent(Host);
+      fixture.componentInstance.pageSize.set(6);
       fixture.componentInstance.config = {
         ...fixture.componentInstance.config,
         viewMode: signal<'table' | 'card'>('card'),
@@ -340,6 +354,27 @@ describe('SignalListComponent', () => {
       expect(component.pageSizeOptions()).toEqual([6, 12, -1]);
       expect(component.pageSizeLabel(-1)).toBe('All');
       expect(component.pageSizeLabel(12)).toBe('12');
+    });
+
+    // A list whose size is not one of the choices (API Keys: 10 of
+    // 5/20/50/80) showed "5" while paging by 10.
+    it('offers the current page size when it is not one of the choices', async () => {
+      const fixture = TestBed.createComponent(Host);
+      await fixture.whenStable();
+      expect(componentWith(fixture).pageSizeOptions()).toEqual([5, 10, 20, 50, 80]);
+      const select = fixture.nativeElement.querySelector('select[aria-label="Items per page"]') as HTMLSelectElement;
+      expect(select.selectedOptions[0].textContent?.trim()).toBe('10');
+    });
+
+    it('keeps All last when adding the current size', async () => {
+      const fixture = TestBed.createComponent(Host);
+      fixture.componentInstance.config = {
+        ...fixture.componentInstance.config,
+        viewMode: signal<'table' | 'card'>('card'),
+        pageSizeOptions: { table: [10, 25], card: [6, 12] },
+      };
+      await fixture.whenStable();
+      expect(componentWith(fixture).pageSizeOptions()).toEqual([6, 10, 12, -1]);
     });
 
     it('does not add All to table-mode options', async () => {

@@ -30,6 +30,37 @@
       <app-form-field>
         <input class="w-full placeholder:!text-transparent focus:outline-none" appInput placeholder="Memory Quota (MB)" formControlName="memory" type="number" min="1">
       </app-form-field>
+      <div>
+        @let labelErrors = editAppForm.controls.labelInput.errors;
+        @let labelProblem = labelErrors?.invalidLabel || (labelErrors?.duplicateLabel ? 'A label with this key already exists.' : null);
+        <label for="app-label-input" class="block mb-1 text-sm text-content-muted">Labels</label>
+        <div class="flex flex-wrap gap-2 p-2 border rounded-md min-h-[42px] bg-content-bg focus-within:ring-2 focus-within:ring-brand-500"
+          [class.border-content-border]="!labelProblem" [class.border-danger]="labelProblem">
+          @for (label of editAppForm.controls.labels.value | keyvalue; track label.key) {
+            <span class="inline-flex items-center px-3 py-1 text-sm font-medium text-content-text bg-content-secondary rounded-full hover:bg-content-border">
+              {{ label.key }}={{ label.value }}
+              <button type="button" class="ml-2 text-content-muted hover:text-content-text"
+                [attr.aria-label]="'Remove label ' + label.key" (click)="removeLabel(label.key)">
+                <span class="material-icons text-sm" aria-hidden="true">cancel</span>
+              </button>
+            </span>
+          }
+          <input id="app-label-input" type="text" formControlName="labelInput"
+            class="flex-1 min-w-[120px] outline-none bg-transparent text-sm"
+            placeholder="key=value" autocomplete="off"
+            aria-describedby="app-label-hint app-label-message"
+            [attr.aria-invalid]="labelProblem ? 'true' : null"
+            (keydown.enter)="addLabel($event)">
+        </div>
+        <p id="app-label-hint" class="mt-1 text-xs text-content-muted">Type a label as key=value and press Enter. Values may be empty.</p>
+        <p id="app-label-message" class="mt-1 text-xs" aria-live="polite" [class.text-danger]="labelProblem">
+          @if (labelProblem) {
+            {{ labelProblem }}
+          } @else if (labelErrors?.pendingLabel) {
+            Press Enter to add this label.
+          }
+        </p>
+      </div>
       <app-slide-toggle class="mt-2" formControlName="enable_ssh">Enable SSH to Application Instances</app-slide-toggle>
     </form>
   </app-step>

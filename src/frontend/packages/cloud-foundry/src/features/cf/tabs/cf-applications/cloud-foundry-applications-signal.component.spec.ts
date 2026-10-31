@@ -5,6 +5,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { appLabelsFilterText } from '../../../../shared/signal-list-configs/app/app-labels';
 
 import { ConfirmationDialogService, CurrentUserPermissionsService, TabNavService, TailwindSnackBarService } from '@stratosui/core';
 import { STORE_TEST_PROVIDERS } from '@stratosui/store/testing';
@@ -242,6 +243,14 @@ describe('CloudFoundryApplicationsSignalComponent (component)', () => {
     expect(lastRefreshedCol!.render(app({ lastRefreshedAt: '2026-07-15T12:00:00Z' })))
       .toBe(Cmp.formatDate('2026-07-15T12:00:00Z'));
     expect(lastRefreshedCol!.render(app({ lastRefreshedAt: undefined }))).toBe('—');
+  });
+
+  it('exposes labels for display and filtering', async () => {
+    await component.ngOnInit();
+    const cfg = component.listConfig()!;
+    expect(cfg.filterColumns).toContain('labels');
+    expect(stubAppsConfig.registerFilterExtractor).toHaveBeenCalledWith('labels', appLabelsFilterText);
+    expect(cfg.columns.find(c => c.key === 'labels')!.render({ labels: { team: 'platform' } } as any)).toBe('team=platform');
   });
 
   it('includes lastRefreshedAt in filterColumns and wires filterRanges to appsConfig.lastRefreshedRange', async () => {

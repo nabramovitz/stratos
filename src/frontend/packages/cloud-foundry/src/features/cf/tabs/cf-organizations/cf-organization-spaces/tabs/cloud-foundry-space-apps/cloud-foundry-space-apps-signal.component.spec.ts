@@ -4,6 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { appLabelsFilterText } from '../../../../../../../shared/signal-list-configs/app/app-labels';
 
 import { ConfirmationDialogService, CurrentUserPermissionsService, TabNavService, TailwindSnackBarService } from '@stratosui/core';
 import { of } from 'rxjs';
@@ -154,7 +155,7 @@ describe('CloudFoundrySpaceAppsSignalComponent', () => {
     const cfg = component.listConfig();
     expect(cfg).toBeDefined();
     expect(cfg!.columns.map(c => c.header)).toEqual([
-      '', 'Name', 'Status', 'Instances', 'Memory', 'Disk', 'Created', 'Last Refreshed', '', '',
+      '', 'Name', 'Status', 'Instances', 'Memory', 'Disk', 'Labels', 'Created', 'Last Refreshed', '', '',
     ]);
     // No filter dropdowns — single-CNSI single-space tab.
     expect(cfg!.filterDropdowns).toBeUndefined();
@@ -181,6 +182,14 @@ describe('CloudFoundrySpaceAppsSignalComponent', () => {
       .toBe(CloudFoundrySpaceAppsSignalComponent.formatDate('2026-07-15T12:00:00Z'));
     const withoutRefresh: any = { ...withRefresh, lastRefreshedAt: undefined };
     expect(lastRefreshedCol!.render(withoutRefresh)).toBe('—');
+  });
+
+  it('exposes labels for display and filtering', async () => {
+    await component.ngOnInit();
+    const cfg = component.listConfig()!;
+    expect(cfg.filterColumns).toContain('labels');
+    expect(stubAppsConfig.registerFilterExtractor).toHaveBeenCalledWith('labels', appLabelsFilterText);
+    expect(cfg.columns.find(c => c.key === 'labels')!.render({ labels: { team: 'platform' } } as any)).toBe('team=platform');
   });
 
   it('includes lastRefreshedAt in filterColumns and wires filterRanges to appsConfig.lastRefreshedRange', async () => {

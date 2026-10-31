@@ -29,6 +29,7 @@ import {
 
 import { applicationEntityType } from '../../../../../../../cf-entity-types';
 import { BulkResult, CfAppsSignalConfigService } from '../../../../../../../shared/signal-list-configs/app/cf-apps-signal-config.service';
+import { appLabelsColumn, appLabelsFilterText } from '../../../../../../../shared/signal-list-configs/app/app-labels';
 import { CfCurrentUserPermissions } from '../../../../../../../user-permissions/cf-user-permissions-checkers';
 import { CloudFoundryEndpointService } from '../../../../../services/cloud-foundry-endpoint.service';
 import { CloudFoundrySpaceService } from '../../../../../services/cloud-foundry-space.service';
@@ -242,6 +243,7 @@ export class CloudFoundrySpaceAppsSignalComponent implements OnInit {
             widthHint: '7rem',
           },
           ...(withStack ? [stackColumn] : []),
+          appLabelsColumn,
           {
             header: 'Created', key: 'createdAt', sortField: 'createdAt',
             render: (app: StApp) => CloudFoundrySpaceAppsSignalComponent.formatDate(app.createdAt),
@@ -283,8 +285,8 @@ export class CloudFoundrySpaceAppsSignalComponent implements OnInit {
         // once this CF has 2+ installed stacks, and picking any of them
         // swaps in the corresponding checklist popup.
         filterColumns: withStack
-          ? ['name', 'state', 'stackName', 'lastRefreshedAt']
-          : ['name', 'state', 'lastRefreshedAt'],
+          ? ['name', 'state', 'stackName', 'labels', 'lastRefreshedAt']
+          : ['name', 'state', 'labels', 'lastRefreshedAt'],
         // Status is unconditional (no visibility gate); Stack's entry is
         // only wired while its column is actually in filterColumns —
         // otherwise a filterField left over at 'stackName' from a
@@ -320,6 +322,7 @@ export class CloudFoundrySpaceAppsSignalComponent implements OnInit {
     // registered function instead of a second state→label mapping.
     this.appsConfig.registerFilterExtractor('name', (app: StApp) => app.name ?? '');
     this.appsConfig.registerFilterExtractor('state', stateLabel);
+    this.appsConfig.registerFilterExtractor('labels', appLabelsFilterText);
 
     // Default per-space tab presentation: card view at 6 per page. The
     // service's writable signals carry user toggles within a session; we

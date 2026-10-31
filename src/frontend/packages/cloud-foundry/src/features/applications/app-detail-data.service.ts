@@ -7,7 +7,7 @@ import { AppLifecycleStateService } from './app-lifecycle-state.service';
 import { ApplicationStateService, ApplicationStateData } from '../../shared/services/application-state.service';
 import { IApp, IAppSummary } from '../../cf-api.types';
 import { APIResource, extractHttpErrorMessage } from '@stratosui/store';
-import { CnsiAppsSource } from '../../services/data-sources/cnsi-apps-source';
+import { CnsiAppsSource, PatchAppBody } from '../../services/data-sources/cnsi-apps-source';
 import { EndpointDataRegistry } from '../../services/endpoint-data/endpoint-data.registry';
 import { EnvVarStratosProject } from './application/application-tabs-base/tabs/build-tab/application-env-vars.service';
 import {
@@ -397,33 +397,35 @@ export class AppDetailDataService {
   /**
    * Stratos-shape PATCH on the app. Wraps PATCH /pp/v1/cf/apps/:cnsi/:guid
    * which fans the body's optional fields out to the corresponding CAPI v3
-   * sub-calls (name, enable_ssh, scale, env vars). Flips `updating` for the
+   * sub-calls (name and labels, enable_ssh, scale, env vars). Flips `updating` for the
    * duration; the summary card dims itself off this signal. Refreshes the
-   * app entity on success so callers don't have to.
+   * app entity afterwards so callers don't have to, also when the call
+   * rejects: patchApp reports each failed sub-call in _meta.errors while
+   * the others still apply, and the rejection carries the CF detail.
    *
    * Body fields are the native PATCH shape: name?, enable_ssh?, memory?,
-   * disk_quota?, instances?, environment_json?.
+   * disk_quota?, instances?, environment_json?, labels? (a delta: null
+   * removes a key, omitted keys stay).
    */
-  async update(body: {
-    name?: string;
-    enable_ssh?: boolean;
-    memory?: number;
-    disk_quota?: number;
-    instances?: number;
-    environment_json?: Record<string, unknown>;
-  }): Promise<void> {
+  async update(body: PatchAppBody): Promise<void> {
     this._updating.set(true);
-    // Route the PATCH through CnsiAppsSource so the canonical
-    // EDS._apps row updates immediately + the app.update cascade fires.
-    // The local refresh() below still re-fetches the rich detail
-    // (stats/env/routes) that the per-app cache doesn't track.
-    const eds = this.endpointDataRegistry.acquire(this.cnsiGuid);
     try {
-      const source = new CnsiAppsSource(this.cnsiGuid, this.http, eds);
-      await source.update(this.appGuid, body);
-      await this.refresh('app');
+      // Route the PATCH through CnsiAppsSource so the canonical
+      // EDS._apps row updates immediately + the app.update cascade fires.
+      // The local refresh() below still re-fetches the rich detail
+      // (stats/env/routes) that the per-app cache doesn't track.
+      const eds = this.endpointDataRegistry.acquire(this.cnsiGuid);
+      try {
+        const source = new CnsiAppsSource(this.cnsiGuid, this.http, eds);
+        try {
+          await source.update(this.appGuid, body);
+        } finally {
+          await this.refresh('app');
+        }
+      } finally {
+        this.endpointDataRegistry.release(this.cnsiGuid);
+      }
     } finally {
-      this.endpointDataRegistry.release(this.cnsiGuid);
       this._updating.set(false);
     }
   }
