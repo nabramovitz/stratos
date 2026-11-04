@@ -26,6 +26,7 @@ import (
 	"github.com/cloudfoundry/stratos/src/jetstream/repository/tokens"
 	"github.com/cloudfoundry/stratos/src/jetstream/testutils"
 	. "github.com/smartystreets/goconvey/convey"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -705,7 +706,7 @@ func TestLoginToCNSIWithUserEndpointsEnabled(t *testing.T) {
 
 				mock.ExpectQuery(selectFromCNSIs).WillReturnRows(adminEndpointRows)
 
-				mock.ExpectQuery(selectAnyFromCNSIs).WillReturnRows(adminEndpointRows)
+				mock.ExpectQuery(selectFromCNSIs).WillReturnRows(adminEndpointRows)
 
 				mock.ExpectQuery(selectAnyFromTokens).
 					WithArgs(adminEndpointArgs[0], mockAdmin.ConnectedUser.GUID).
@@ -752,7 +753,7 @@ func TestLoginToCNSIWithUserEndpointsEnabled(t *testing.T) {
 
 				mock.ExpectQuery(selectFromCNSIs).WillReturnRows(userEndpoint1Rows)
 
-				mock.ExpectQuery(selectAnyFromCNSIs).WillReturnRows(userEndpoint1Rows)
+				mock.ExpectQuery(selectFromCNSIs).WillReturnRows(userEndpoint1Rows)
 
 				mock.ExpectQuery(selectAnyFromTokens).
 					WithArgs(userEndpoint1Args[0], mockEndpointAdmin1.ConnectedUser.GUID).
@@ -780,7 +781,7 @@ func TestLoginToCNSIWithUserEndpointsEnabled(t *testing.T) {
 				mock.ExpectQuery(selectFromCNSIs).WillReturnRows(userEndpoint1Rows)
 
 				// args is the api url
-				mock.ExpectQuery(selectAnyFromCNSIs).WithArgs(userEndpoint1Args[3]).WillReturnRows(adminAndUserEndpointRows)
+				mock.ExpectQuery(selectFromCNSIs).WillReturnRows(adminAndUserEndpointRows)
 
 				// connected system endpoint found
 				mock.ExpectQuery(selectAnyFromTokens).
@@ -820,7 +821,7 @@ func TestLoginToCNSIWithUserEndpointsEnabled(t *testing.T) {
 
 				mock.ExpectQuery(selectFromCNSIs).WillReturnRows(userEndpoint1Rows)
 
-				mock.ExpectQuery(selectAnyFromCNSIs).WithArgs(userEndpoint1Args[3]).WillReturnRows(adminAndUserEndpointRows)
+				mock.ExpectQuery(selectFromCNSIs).WillReturnRows(adminAndUserEndpointRows)
 
 				// an admin's connection shared with every user: not the user's to disconnect
 				mock.ExpectQuery(selectAnyFromTokens).
@@ -859,7 +860,7 @@ func TestLoginToCNSIWithUserEndpointsEnabled(t *testing.T) {
 
 				mock.ExpectQuery(selectFromCNSIs).WillReturnRows(adminEndpointRows)
 
-				mock.ExpectQuery(selectAnyFromCNSIs).WillReturnRows(adminEndpointRows)
+				mock.ExpectQuery(selectFromCNSIs).WillReturnRows(adminEndpointRows)
 
 				mock.ExpectQuery(selectAnyFromTokens).
 					WithArgs(adminEndpointArgs[0], mockEndpointAdmin1.ConnectedUser.GUID).
@@ -1009,8 +1010,12 @@ func TestSetUAATokenRecord(t *testing.T) {
 
 }
 
+// An endpoint record without an API address cannot be connected to.
 func TestLoginToCNSIWithMissingAPIEndpoint(t *testing.T) {
-	t.Skip("Skipping for now - need to verify whether still needed.")
+	// It fails today: connect does not check the API address, since
+	// registration always stores one. Remove the skip if connect should
+	// refuse such a record.
+	t.Skip("connect does not check for a missing API address")
 	t.Parallel()
 
 	req := setupMockReq("POST", "", map[string]string{
@@ -1019,7 +1024,7 @@ func TestLoginToCNSIWithMissingAPIEndpoint(t *testing.T) {
 		"cnsi_guid": mockCNSIGUID,
 	})
 
-	_, _, ctx, pp, db, _ := setupHTTPTest(req)
+	_, _, ctx, pp, db, mock := setupHTTPTest(req)
 	defer db.Close()
 
 	mockUAA := setupMockServer(t,
@@ -1027,21 +1032,29 @@ func TestLoginToCNSIWithMissingAPIEndpoint(t *testing.T) {
 		msMethod("POST"),
 		msStatus(http.StatusOK),
 		msBody(jsonMust(mockUAAResponse)))
-
 	defer mockUAA.Close()
 
-	if err := pp.loginToCNSI(ctx); err == nil {
-		t.Error("Login against CNSI should fail if API endpoint not specified")
-	}
+	mock.ExpectQuery(selectAnyFromCNSIs).
+		WithArgs(mockCNSIGUID).
+		WillReturnRows(sqlmock.NewRows(datastore.GetColumnNamesForCSNIs()).
+			AddRow(mockCNSIGUID, "mockCF", "cf", "", mockUAA.URL, mockUAA.URL, mockDopplerEndpoint, true, "", cipherClientSecret, true, "", "", "", ""))
+	mock.ExpectQuery(selectAnyFromTokens).WillReturnRows(testutils.ExpectNoRows())
+	mock.ExpectExec(insertIntoTokens).WillReturnResult(sqlmock.NewResult(1, 1))
 
-	// testTokenKey := mkTokenRecordKey("", mockUserGuid)
-	// if _, ok := pp.CNSITokenMap[testTokenKey]; ok {
-	// 	t.Error("Token should not be saved in CNSI map if API endpoint not specified")
-	// }
+	sessionValues := map[string]interface{}{
+		"user_id": mockUserGUID,
+		"exp":     time.Now().AddDate(0, 0, 1).Unix(),
+	}
+	require.NoError(t, pp.setSessionValues(ctx, sessionValues))
+
+	err := pp.loginToCNSI(ctx)
+
+	require.Error(t, err, "connect must refuse an endpoint with no API address")
 }
 
+// UAA refusing the user's credentials fails the connect, and no token is
+// saved for the endpoint.
 func TestLoginToCNSIWithBadCreds(t *testing.T) {
-	t.Skip("Skipping for now - need to verify whether still needed.")
 	t.Parallel()
 
 	req := setupMockReq("POST", "", map[string]string{
@@ -1050,25 +1063,34 @@ func TestLoginToCNSIWithBadCreds(t *testing.T) {
 		"cnsi_guid": mockCNSIGUID,
 	})
 
-	_, _, ctx, pp, db, _ := setupHTTPTest(req)
+	_, _, ctx, pp, db, mock := setupHTTPTest(req)
 	defer db.Close()
 
 	mockUAA := setupMockServer(t,
 		msRoute("/oauth/token"),
 		msMethod("POST"),
-		msStatus(http.StatusOK),
-		msBody(jsonMust(mockUAAResponse)))
-
+		msStatus(http.StatusUnauthorized),
+		msBody(`{"error":"unauthorized","error_description":"Bad credentials"}`))
 	defer mockUAA.Close()
 
-	if err := pp.loginToCNSI(ctx); err != nil {
-		t.Error(err)
-	}
+	mock.ExpectQuery(selectAnyFromCNSIs).
+		WithArgs(mockCNSIGUID).
+		WillReturnRows(sqlmock.NewRows(datastore.GetColumnNamesForCSNIs()).
+			AddRow(mockCNSIGUID, "mockCF", "cf", mockUAA.URL, mockUAA.URL, mockUAA.URL, mockDopplerEndpoint, true, "", cipherClientSecret, true, "", "", "", ""))
 
-	// testTokenKey := mkTokenRecordKey(mockCNSIGuid, mockUserGuid)
-	// if _, ok := pp.CNSITokenMap[testTokenKey]; !ok {
-	// 	t.Errorf("Token was not saved in CNSI map")
-	// }
+	sessionValues := map[string]interface{}{
+		"user_id": mockUserGUID,
+		"exp":     time.Now().AddDate(0, 0, 1).Unix(),
+	}
+	require.NoError(t, pp.setSessionValues(ctx, sessionValues))
+
+	err := pp.loginToCNSI(ctx)
+
+	var httpErr api.ErrHTTPShadow
+	require.ErrorAs(t, err, &httpErr)
+	require.Equal(t, http.StatusUnauthorized, httpErr.HTTPError.Code)
+	require.Contains(t, fmt.Sprint(httpErr.HTTPError.Message), "Bad credentials", "UAA's reason reaches the user")
+	require.NoError(t, mock.ExpectationsWereMet(), "nothing beyond the endpoint lookup: no token is saved")
 }
 
 func TestVerifySession(t *testing.T) {

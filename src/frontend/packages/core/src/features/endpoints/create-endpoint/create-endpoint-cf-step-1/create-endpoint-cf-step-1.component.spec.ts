@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { afterEach, describe, it, expect, beforeEach, vi } from 'vitest';
 import { ActivatedRoute } from '@angular/router';
 import { EndpointModel, EndpointsDataService, entityCatalog, generateStratosEntities, EntityCatalogHelper, EntityCatalogHelpers, StratosCatalogEndpointEntity } from '@stratosui/store';
 import { createBasicStoreModule, STORE_TEST_PROVIDERS } from '@stratosui/store/testing';
@@ -88,6 +88,12 @@ describe('CreateEndpointCfStep1Component', () => {
 
   it('should be created', () => {
     expect(component).toBeTruthy();
+  });
+
+  it('asks for no linked Cloud Foundry when registering a Cloud Foundry', async () => {
+    component.registerForm.controls.urlField.setValue('https://api.sys.example.com');
+    await fixture.whenStable();
+    expect((fixture.nativeElement as HTMLElement).querySelector('#linked-cf')).toBeNull();
   });
 
   it('labels the CA certificate box with its caption', () => {
@@ -295,6 +301,73 @@ describe('CreateEndpointCfStep1Component', () => {
       expect(errorFor(url)).toBe(
         'Invalid API URL. Enter a valid hostname or URL (e.g., api.example.com or https://api.example.com)'
       );
+    });
+  });
+
+  // A page that knows the address can link here with it, as the autoscaler
+  // tab's "Register it" does. The address is checked like a typed one.
+  describe('an address in the link', () => {
+    const open = async (url: string) => {
+      TestBed.inject(ActivatedRoute).snapshot.queryParams = { url };
+      fixture = TestBed.createComponent(CreateEndpointCfStep1Component);
+      component = fixture.componentInstance;
+      await fixture.whenStable();
+    };
+
+    afterEach(() => {
+      TestBed.inject(ActivatedRoute).snapshot.queryParams = {};
+    });
+
+    it('starts the form with it, and leaves the name to the user', async () => {
+      await open('https://autoscaler.sys.x.com');
+      expect(component.registerForm.value.urlField).toBe('https://autoscaler.sys.x.com');
+      expect(component.registerForm.value.nameField).toBe('');
+      expect(component.urlDomain()).toBeTruthy();
+    });
+
+    it('marks an invalid address as it would a typed one', async () => {
+      await open('not a url');
+      expect(component.registerForm.controls.urlField.errors?.invalidUrl).toBeTruthy();
+    });
+  });
+
+  describe('already registered', () => {
+    async function withRegistered(host: string) {
+      const registered = {
+        guid: 'reg', name: 'reg', cnsi_type: 'cf',
+        api_endpoint: { Scheme: 'https', Host: host, Path: '' },
+        creator: { name: 'admin', admin: true, system: true },
+      } as EndpointModel;
+      (TestBed.inject(EndpointsDataService) as any)._endpoints.set(new Map([['reg', registered]]));
+      fixture = TestBed.createComponent(CreateEndpointCfStep1Component);
+      component = fixture.componentInstance;
+      // The scope (system or personal) comes from permissions this test
+      // does not set up; the address comparison is the same in each.
+      component.customEndpoints = component.existingEndpoints;
+      await fixture.whenStable();
+    }
+
+    async function typeUrl(value: string): Promise<string> {
+      const url = fixture.nativeElement.querySelector('#url') as HTMLInputElement;
+      url.value = value;
+      url.dispatchEvent(new Event('input', { bubbles: true }));
+      await fixture.whenStable();
+      return (fixture.nativeElement as HTMLElement).textContent!.replace(/\s+/g, ' ');
+    }
+
+    it('warns when the address is the one registered', async () => {
+      await withRegistered('API.example.com:443');
+      expect(await typeUrl('https://API.example.com:443')).toContain('An endpoint at this address is already registered. You can register it again.');
+    });
+
+    it('warns when the same address is written differently', async () => {
+      await withRegistered('API.example.com:443');
+      expect(await typeUrl('api.example.com/')).toContain('An endpoint at this address is already registered. You can register it again.');
+    });
+
+    it('does not warn for another port', async () => {
+      await withRegistered('api.example.com');
+      expect(await typeUrl('api.example.com:8443')).not.toContain('An endpoint at this address is already registered. You can register it again.');
     });
   });
 

@@ -1,6 +1,7 @@
 package autoscaler
 
 import (
+	"context"
 	"errors"
 
 	"github.com/cloudfoundry/stratos/src/jetstream/api"
@@ -15,6 +16,9 @@ func init() {
 // Autoscaler is a plugin to allow applications to be pushed to Cloud Foundry from Stratos
 type Autoscaler struct {
 	portalProxy api.PortalProxy
+	// brokersForApp replaces capiBrokersForApp in tests.
+	brokersForApp func(ctx context.Context, cfGUID, userGUID, appGUID string) (map[string]string, error)
+	cache         brokerCache
 }
 
 // Init creates a new Autoscaler
@@ -29,7 +33,7 @@ func (a *Autoscaler) GetMiddlewarePlugin() (api.MiddlewarePlugin, error) {
 
 // GetEndpointPlugin gets the endpoint plugin for this plugin
 func (a *Autoscaler) GetEndpointPlugin() (api.EndpointPlugin, error) {
-	return nil, errors.New("Not implemented")
+	return a, nil
 }
 
 // GetRoutePlugin gets the route plugin for this plugin
@@ -46,6 +50,7 @@ func (a *Autoscaler) AddAdminGroupRoutes(echoGroup *echo.Group) {
 func (a *Autoscaler) AddSessionGroupRoutes(echoGroup *echo.Group) {
 	echoGroup.GET("/autoscaler/info", a.getAutoscalerInfo)
 	echoGroup.GET("/autoscaler/health", a.getAutoscalerHealth)
+	echoGroup.GET("/autoscaler/apps/:appId/target", a.getAutoscalerTarget)
 	echoGroup.GET("/autoscaler/apps/:appId/policy", a.getAutoscalerPolicy)
 	echoGroup.PUT("/autoscaler/apps/:appId/policy", a.attachAutoscalerPolicy)
 	echoGroup.DELETE("/autoscaler/apps/:appId/policy", a.detachAutoscalerPolicy)

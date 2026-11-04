@@ -343,7 +343,7 @@ func TestRegisterEndpointStartsRefreshRoutine(t *testing.T) {
 				)
 
 			mock.
-				ExpectQuery(selectAnyFromCNSIs).
+				ExpectQuery(selectFromCNSIs).
 				WillReturnRows(
 					sqlmock.NewRows(
 						[]string{"guid", "name", "cnsi_type", "api_endpoint", "auth_endpoint", "token_endpoint", "doppler_logging_endpoint", "skip_ssl_validation", "client_id", "client_secret", "sso_allowed", "sub_type", "meta_data", "creator", "ca_cert"},
@@ -955,5 +955,82 @@ func TestUpdateEndpointUsesTheConsoleClientForItsIDWithoutASecret(t *testing.T) 
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("update did not store the console's client: %v", err)
+	}
+}
+
+// A partial update (an API client sending only the name) must leave the
+// stored CA alone; only a ca_cert that is sent changes it, and an empty
+// one clears it, which is how the edit form removes a CA.
+func TestUpdateEndpointCACert(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		form   map[string]string
+		wantCA string
+	}{
+		{"name only keeps the CA", map[string]string{"name": "renamed"}, "STORED-CA"},
+		{"empty ca_cert clears the CA", map[string]string{"name": "renamed", "ca_cert": ""}, ""},
+		{"sent ca_cert replaces the CA", map[string]string{"ca_cert": "NEW-CA"}, "NEW-CA"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := setupMockReq("POST", "", tc.form)
+			_, _, ctx, pp, db, mock := setupHTTPTest(req)
+			defer db.Close()
+			ctx.SetPathValues(echo.PathValues{{Name: "id", Value: mockCFGUID}})
+
+			mock.ExpectQuery(selectAnyFromCNSIs).WillReturnRows(expectCFRowWithCA("STORED-CA"))
+			mock.ExpectExec(`UPDATE cnsis`).
+				WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), tc.wantCA, mockCFGUID).
+				WillReturnResult(sqlmock.NewResult(0, 1))
+
+			if err := pp.updateEndpoint(ctx); err != nil {
+				t.Fatalf("update failed: %v", err)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Errorf("stored CA is not %q after the update: %v", tc.wantCA, err)
+			}
+		})
+	}
+}
+
+// Registering a type with no register route (first seen with the
+// Autoscaler tile, before the backend had an autoscaler endpoint type)
+// returned a plain error, which the user saw as a bare "Internal Server
+// Error (500)".
+func TestPluginRegisterRouterRefusesUnknownTypesClearly(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct{ endpointType, want string }{
+		{"nosuchtype", `"nosuchtype"`},
+		{"", "endpoint type"},
+	} {
+		req := setupMockReq("POST", "", map[string]string{
+			"cnsi_name":     "Some endpoint",
+			"api_endpoint":  "https://nosuchtype.example.com",
+			"endpoint_type": tc.endpointType,
+		})
+		_, _, ctx, pp, db, _ := setupHTTPTest(req)
+
+		err := pp.pluginRegisterRouter(ctx)
+		db.Close()
+
+		// api.NewHTTPError puts the message in the body's "error" field,
+		// which is what the register form shows.
+		var shadow api.ErrHTTPShadow
+		if !errors.As(err, &shadow) {
+			t.Fatalf("type %q: want a user-facing HTTP error, got %v", tc.endpointType, err)
+		}
+		if shadow.HTTPError.Code != http.StatusBadRequest {
+			t.Errorf("type %q: want 400, got %d", tc.endpointType, shadow.HTTPError.Code)
+		}
+		if !strings.Contains(shadow.UserFacingError, tc.want) {
+			t.Errorf("type %q: message %q does not name %s", tc.endpointType, shadow.UserFacingError, tc.want)
+		}
+		// The register form shows this message alone (no "check the
+		// address" lead-in) when it sees the reason.
+		if !strings.Contains(shadow.HTTPError.Message, `"reason":"unknown_endpoint_type"`) {
+			t.Errorf("type %q: body %s lacks the unknown_endpoint_type reason", tc.endpointType, shadow.HTTPError.Message)
+		}
 	}
 }

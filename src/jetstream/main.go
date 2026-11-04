@@ -1170,6 +1170,10 @@ func (p *portalProxy) GetEndpointTypeSpec(typeName string) (api.EndpointPlugin, 
 // @Failure 401 {object} api.ErrorResponseBody "Error response"
 // @Security ApiKeyAuth
 // @Router /endpoints [post]
+// unknownEndpointTypeReason marks a register request for a type this server
+// has no register route for.
+const unknownEndpointTypeReason = "unknown_endpoint_type"
+
 func (p *portalProxy) pluginRegisterRouter(c *echo.Context) error {
 	slog.Debug("pluginRegisterRouter")
 
@@ -1179,8 +1183,12 @@ func (p *portalProxy) pluginRegisterRouter(c *echo.Context) error {
 		return err
 	}
 
+	// A request error, not a server one: a plain error reaches the user as a
+	// bare "Internal Server Error (500)". The reason tells the register form
+	// that the address is not at fault.
 	if params.EndpointType == "" {
-		return errors.New("endpoint_type parameter is missing")
+		return api.NewHTTPShadowErrorWithReason(http.StatusBadRequest, unknownEndpointTypeReason,
+			"No endpoint type given", "")
 	}
 
 	if val, ok := p.PluginRegisterRoutes[params.EndpointType]; ok {
@@ -1188,7 +1196,8 @@ func (p *portalProxy) pluginRegisterRouter(c *echo.Context) error {
 		return val(c)
 	}
 
-	return fmt.Errorf("unknown endpoint_type %s", params.EndpointType)
+	return api.NewHTTPShadowErrorWithReason(http.StatusBadRequest, unknownEndpointTypeReason,
+		fmt.Sprintf("This Stratos server cannot register endpoints of type %q yet", params.EndpointType), "")
 }
 
 func (p *portalProxy) registerRoutes(e *echo.Echo, needSetupMiddleware bool) {

@@ -516,6 +516,15 @@ func (c *PortalConfig) SetCanPerformMigrations(value bool) {
 	c.CanMigrateDatabaseSchema = c.CanMigrateDatabaseSchema && value
 }
 
+// AutoRegisterName is the name the login hook gives the endpoint it
+// registers at AUTO_REG_CF_URL: AUTO_REG_CF_NAME, or "Cloud Foundry".
+func (c *PortalConfig) AutoRegisterName() string {
+	if c.AutoRegisterCFName == "" {
+		return "Cloud Foundry"
+	}
+	return c.AutoRegisterCFName
+}
+
 type LoginToCNSIParams struct {
 	CNSIGUID     string `json:"cnsi_guid" form:"cnsi_guid" query:"cnsi_guid"`
 	SystemShared string `json:"system_shared" form:"system_shared" query:"system_shared"`
@@ -550,7 +559,9 @@ type UpdateEndpointParams struct {
 	ClientID      string `json:"clientID" form:"clientID" query:"clientID"`
 	ClientSecret  string `json:"clientSecret" form:"clientSecret" query:"clientSecret"`
 	AllowSSO      string `json:"allowSSO" form:"allowSSO" query:"allowSSO"`
-	CACert        string `json:"ca_cert" form:"ca_cert" query:"ca_cert"`
+	// CACert is a pointer so an absent ca_cert (leave the stored CA alone)
+	// differs from an empty one (clear it).
+	CACert *string `json:"ca_cert" form:"ca_cert" query:"ca_cert"`
 }
 
 // BindOnce -- allows to call *echo.Context.Bind() multiple times on the same request

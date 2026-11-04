@@ -205,6 +205,67 @@ describe('EndpointsDataService', () => {
     expect(state.error).toBe(false);
   });
 
+  // The register form prefixed every failure with "Please ensure the endpoint
+  // address is correct". For a type the server cannot register (the
+  // Autoscaler tile) the address is not at fault, so the server's message
+  // stands alone.
+  it('register() shows an unknown-type refusal without the address hint', async () => {
+    const message = 'This Stratos server cannot register endpoints of type "autoscaler" yet';
+    const registerPromise = svc.register({
+      endpointType: 'autoscaler', name: 'as', endpoint: 'https://autoscaler.example.com',
+      skipSslValidation: false, ssoAllowed: false, createSystemEndpoint: true,
+    });
+    httpMock.expectOne('/api/v1/endpoints').flush(
+      { status: 'error', error: message, reason: 'unknown_endpoint_type' },
+      { status: 400, statusText: 'Bad Request' });
+    const state = await registerPromise;
+
+    expect(state.error).toBe(true);
+    expect(state.message).toBe(message);
+  });
+
+  it('register() sends the Cloud Foundry and broker an autoscaler is linked to', async () => {
+    const registerPromise = svc.register({
+      endpointType: 'autoscaler', name: 'as', endpoint: 'https://autoscaler.sys.example.com',
+      skipSslValidation: false, ssoAllowed: false, createSystemEndpoint: true,
+      cfGuid: 'cf-1', brokerGuid: 'b1', brokerName: 'autoscaler',
+    });
+    const req = httpMock.expectOne('/api/v1/endpoints');
+    const body = req.request.body as FormData;
+    expect(body.get('cf_guid')).toBe('cf-1');
+    expect(body.get('broker_guid')).toBe('b1');
+    expect(body.get('broker_name')).toBe('autoscaler');
+    req.flush({ status: 'error', error: 'stop here' }, { status: 400, statusText: 'Bad Request' });
+    await registerPromise;
+  });
+
+  it('register() sends no link fields when none are given', async () => {
+    const registerPromise = svc.register({
+      endpointType: 'cf', name: 'cf', endpoint: 'https://api.sys.example.com',
+      skipSslValidation: false, ssoAllowed: false, createSystemEndpoint: true,
+    });
+    const req = httpMock.expectOne('/api/v1/endpoints');
+    const body = req.request.body as FormData;
+    expect(body.has('cf_guid')).toBe(false);
+    expect(body.has('broker_guid')).toBe(false);
+    expect(body.has('broker_name')).toBe(false);
+    req.flush({ status: 'error', error: 'stop here' }, { status: 400, statusText: 'Bad Request' });
+    await registerPromise;
+  });
+
+  it('register() keeps the address hint for other refusals', async () => {
+    const registerPromise = svc.register({
+      endpointType: 'cf', name: 'cf', endpoint: 'not a url',
+      skipSslValidation: false, ssoAllowed: false, createSystemEndpoint: true,
+    });
+    httpMock.expectOne('/api/v1/endpoints').flush(
+      { status: 'error', error: 'Failed to get API Endpoint' },
+      { status: 400, statusText: 'Bad Request' });
+    const state = await registerPromise;
+
+    expect(state.message).toContain('Please ensure the endpoint address is correct');
+  });
+
   it('clearDisconnected resets the delta queue', async () => {
     const p = svc.getAll();
     httpMock.expectOne(SYSTEM_INFO_URL).flush(makeSystemInfo());

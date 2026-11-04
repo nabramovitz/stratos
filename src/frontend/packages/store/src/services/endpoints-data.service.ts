@@ -104,6 +104,11 @@ export interface EndpointRegisterOptions {
   ssoAllowed: boolean;
   createSystemEndpoint: boolean;
   caCert?: string;
+  // A type linked to a Cloud Foundry (linkedToCf): the Cloud Foundry
+  // endpoint and, when known, its service broker.
+  cfGuid?: string;
+  brokerGuid?: string;
+  brokerName?: string;
 }
 
 export interface EndpointUpdateOptions {
@@ -331,10 +336,21 @@ export class EndpointsDataService {
     if (opts.endpointSubType) {
       body.set('sub_type', opts.endpointSubType);
     }
+    if (opts.cfGuid) {
+      body.set('cf_guid', opts.cfGuid);
+    }
+    if (opts.brokerGuid) {
+      body.set('broker_guid', opts.brokerGuid);
+      body.set('broker_name', opts.brokerName || '');
+    }
 
     const stagingGuid = '<New Endpoint>' + opts.name;
     let registeredGuid = '';
     const result = await this.runMutation(stagingGuid, 'POST', ENDPOINTS_URL, body, e => {
+      // A type this server cannot register: the address is not at fault.
+      if (e?.status === 400 && e?.error?.reason === 'unknown_endpoint_type' && e?.error?.error) {
+        return e.error.error;
+      }
       const message = 'There was a problem creating the endpoint. Please ensure the endpoint address is correct and try again. ' +
         httpErrorResponseToSafeString(e);
       if (e?.status === 403) {

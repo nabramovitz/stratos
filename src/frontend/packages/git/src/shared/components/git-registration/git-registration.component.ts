@@ -37,7 +37,7 @@ import { SessionService } from '../../../../../core/src/shared/services/session.
 import { CurrentUserPermissionsService } from '../../../../../core/src/core/permissions/current-user-permissions.service';
 import { UserProfileService } from '../../../../../core/src/core/user-profile.service';
 import { TailwindSnackBarService } from '../../../../../core/src/shared/services/tailwind-snackbar.service';
-import { getFullEndpointApiUrl } from '../../../../../store/src/endpoint-utils';
+import { endpointUrlKey, getFullEndpointApiUrl } from '../../../../../store/src/endpoint-utils';
 import { entityCatalog, EndpointsDataService } from '../../../../../store/src/public-api';
 import { GIT_ENDPOINT_SUB_TYPES, GIT_ENDPOINT_TYPE } from '../../../store/git-entity-factory';
 import { GitSCMService } from '../../scm/scm.service';
@@ -199,10 +199,10 @@ export class GitRegistrationComponent extends CreateEndpointHelperComponent impl
     },
     submit: async () => {
       const result = await firstValueFrom(this._connect()!.onNext());
-      // A failure is shown under the form, so the stepper adds no message
-      // of its own.
+      // The stepper gives the reason, in view: the dialog's body scrolls
+      // under its button row.
       if (!result.success) {
-        return { success: false };
+        return { success: false, message: result.message };
       }
       // Connect's legacy onNext returns redirect:true on success: the
       // form is done.
@@ -308,9 +308,9 @@ export class GitRegistrationComponent extends CreateEndpointHelperComponent impl
         }
         if (isAdminWithUserEndpoints) {
           // Admin has two slots: system + personal. Grey only when both filled.
-          type.exists = systemEps.urls.includes(type.url) && personalEps.urls.includes(type.url);
+          type.exists = systemEps.urls.includes(endpointUrlKey(type.url)) && personalEps.urls.includes(endpointUrlKey(type.url));
         } else {
-          type.exists = !!Object.values(eps).find(ep => type.url === getFullEndpointApiUrl(ep));
+          type.exists = !!Object.values(eps).find(ep => endpointUrlKey(type.url) === endpointUrlKey(getFullEndpointApiUrl(ep)));
         }
       });
       this.init();
