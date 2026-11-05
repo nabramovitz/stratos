@@ -1,6 +1,8 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { describe, expect, it } from 'vitest';
-import { extractHttpErrorMessage, extractHttpErrorPieces, leadError, leadPieces, stripMarkup } from './jetstream';
+import {
+  extractHttpErrorMessage, extractHttpErrorPieces, httpErrorResponseToSafeString, leadError, leadPieces, stripMarkup,
+} from './jetstream';
 import { ErrorPiece, piecesToText } from './upstream-error-text';
 
 const t = (s: string): ErrorPiece => ({ text: s, style: 'text' });
@@ -58,6 +60,22 @@ describe('extractHttpErrorPieces', () => {
     expect(extractHttpErrorMessage(httpError('a < b\n<i>c</i>  d'))).toBe('a < b\n<i>c</i>  d');
   });
 
+  // A Jetstream handler's own error on the wire (api/jetstream_error.go).
+  it('reads the message of Jetstream\'s own wrapped error', () => {
+    const body = {
+      error: { statusCode: 400, status: 'Bad Request', message: 'A Release with that name already exists', method: 'POST' },
+      errorResponse: { method: '' },
+    };
+    expect(extractHttpErrorMessage(httpError(body, 400, 'Bad Request'))).toBe('A Release with that name already exists');
+  });
+
+  // The same wrapper with no message: the proxy's entry for a failed endpoint.
+  it('reads a wrapped error with no message as its status line and the endpoint\'s words', () => {
+    const body = { error: { statusCode: 500, status: 'Error proxying request' }, errorResponse: 'connection refused' };
+    expect(extractHttpErrorMessage(httpError(body, 500, 'Internal Server Error')))
+      .toBe('Error proxying request: connection refused');
+  });
+
   it('names the HTTP status when an HTML body has no readable text', () => {
     expect(extractHttpErrorMessage(httpError('<html><body><div></div></body></html>'))).toBe('HTTP 502 Bad Gateway');
   });
@@ -100,5 +118,41 @@ describe('extractHttpErrorMessage (non-HTTP errors)', () => {
     expect(extractHttpErrorMessage(new Error('boom'))).toBe('boom');
     expect(extractHttpErrorMessage('plain text')).toBe('plain text');
     expect(extractHttpErrorMessage(undefined)).toBe('unknown error');
+  });
+});
+
+describe('httpErrorResponseToSafeString', () => {
+  it('names the status after the message of a Jetstream error', () => {
+    expect(httpErrorResponseToSafeString(httpError({ error: 'Service key not found' }, 404, 'Not Found')))
+      .toBe('Service key not found (404)');
+  });
+
+  it('keeps a plain text body', () => {
+    expect(httpErrorResponseToSafeString(httpError('upstream down', 503, 'Service Unavailable')))
+      .toBe('upstream down (503)');
+  });
+
+  it('reads an HTML error page as its message, with no markup', () => {
+    expect(httpErrorResponseToSafeString(httpError(nginx502))).toBe('502 Bad Gateway\nnginx (502)');
+  });
+
+  it('reads a Cloud Foundry error body', () => {
+    expect(httpErrorResponseToSafeString(httpError({ errors: [{ detail: 'Quota exceeded' }] }, 422, 'Unprocessable Content')))
+      .toBe('Quota exceeded (422)');
+  });
+
+  it('names the status once when the response has no body', () => {
+    expect(httpErrorResponseToSafeString(httpError(null))).toBe('HTTP 502 Bad Gateway');
+  });
+
+  it('keeps a thrown string and an Error message', () => {
+    expect(httpErrorResponseToSafeString('Backup service returned no response')).toBe('Backup service returned no response');
+    expect(httpErrorResponseToSafeString(new Error('boom'))).toBe('boom');
+  });
+
+  // Callers fall back with `||`, or leave the reason out.
+  it('gives no text when there is nothing to read', () => {
+    expect(httpErrorResponseToSafeString(undefined)).toBe('');
+    expect(httpErrorResponseToSafeString({})).toBe('');
   });
 });
