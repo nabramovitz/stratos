@@ -1,4 +1,5 @@
-<nav class="page-side-nav" [ngClass]="{'page-side-nav__desktop': (isMobile$ | async) === false}">
+<nav class="page-side-nav" [ngClass]="{'page-side-nav__desktop': (isMobile$ | async) === false}"
+  [attr.aria-label]="header() || null">
   <div class="page-side-nav__items-header">
     {{ header() }}
   </div>
@@ -9,16 +10,18 @@
   </div>
   <ul class="page-side-nav__items">
     @for (tab of shownTabs(); track tab.link || tab.label) {
-      <li tabindex="1">
-        @if (tab && !tab.link) {
+      @if (tab && !tab.link) {
+        <li>
           <div class="page-side-nav__item-sep">{{ tab?.label }}</div>
-        }
-        <!-- null = the gate has not answered yet; keep the tab out until it does. -->
-        @if (tab && tab.link && (tab.hidden$ | async) === false) {
+        </li>
+      }
+      <!-- null = the gate has not answered yet; keep the tab out until it does. -->
+      @if (tab && tab.link && (tab.hidden$ | async) === false) {
+        <li>
           <a class="page-side-nav__item"
             [attr.data-test]="'page-tab-' + tab.label"
             [routerLink]="[tab.link]" queryParamsHandling="preserve"
-            [routerLinkActive]="['page-side-nav__item--active']">
+            [routerLinkActive]="['page-side-nav__item--active']" ariaCurrentWhenActive="page">
             @if (tab.icon) {
               <app-custom-icon class="page-side-nav__icon" [fontSet]="tab.iconFont">{{ tab.icon }}
               </app-custom-icon>
@@ -28,8 +31,8 @@
             }
             <span>{{ tab?.label }}</span>
           </a>
-        }
-      </li>
+        </li>
+      }
     }
   </ul>
 </nav>

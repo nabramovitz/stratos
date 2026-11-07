@@ -34,8 +34,6 @@ export class CompactAppCardComponent {
 
   readonly showDate = input(true);
   readonly dateMode = input<string>();
-  // Show the status from whatever stats are already cached; fetch none.
-  readonly noStats = input(false);
 
   // The org/space summary pages don't pass an endpoint; take it from the route.
   readonly endpointGuid = computed(() => this.endpoint() || this.activeRouteCfOrgSpace?.cfGuid);
@@ -62,12 +60,19 @@ export class CompactAppCardComponent {
 
   readonly appStatus = computed(() => this.applicationState().indicator);
 
+  // A started app's state is not known until its stats arrive; until then
+  // the card shows that it is loading rather than a guess.
+  readonly statsLoading = computed(() => {
+    const stats = this.stats();
+    return !!stats && this.app()?.entity?.state === 'STARTED' && stats.lastFetched() === null;
+  });
+
   constructor() {
     // Only a started app has instance stats. Re-runs when a refresh hands
     // the card a newly started app.
     effect(() => {
       const stats = this.stats();
-      if (stats && !this.noStats() && this.app().entity.state === 'STARTED') {
+      if (stats && this.app().entity.state === 'STARTED') {
         untracked(() => stats.load().subscribe());
       }
     });
