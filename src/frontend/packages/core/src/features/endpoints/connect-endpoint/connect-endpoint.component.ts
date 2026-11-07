@@ -1,5 +1,5 @@
 
-import { ChangeDetectionStrategy, Component, ComponentRef, Input, OnDestroy, OnInit, ViewChild, ViewContainerRef, inject, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ComponentRef, OnDestroy, OnInit, ViewContainerRef, effect, inject, input, output, untracked, viewChild } from '@angular/core';
 import { ReactiveFormsModule, Validators, FormBuilder, FormControl, FormGroup, AbstractControl } from '@angular/forms';
 import { CustomFormFieldComponent } from '../../../shared/components/custom-form-field/custom-form-field.component';
 import { CustomCheckboxComponent } from '../../../shared/components/custom-checkbox/custom-checkbox.component';
@@ -40,13 +40,36 @@ export class ConnectEndpointComponent implements OnInit, OnDestroy {
   private fb = inject(FormBuilder);
   private permissions = inject(EndpointPermissionsService);
 
-  private pDisabled = false;
-  private pConnectService!: ConnectEndpointService;
   // A host may bind this before its own service exists (create-endpoint's
-  // connect step); the setter ignores the unset value and waits for the real one.
+  // connect step); the unset value is ignored and the form waits for the real one.
   // The host makes a new service each time its step is entered; the form
   // outlives it when the step keeps this component (the connect dialog).
-  @Input() set connectService(service: ConnectEndpointService | undefined) {
+  readonly connectService = input<ConnectEndpointService>();
+  // The service the form was last built for or handed to.
+  private pConnectService!: ConnectEndpointService;
+
+  readonly disabled = input(false);
+
+  constructor() {
+    // Declared first: a form built by the effect below reads `disabled`
+    // itself, so this one only has to follow later changes.
+    effect(() => {
+      this.disabled();
+      untracked(() => {
+        if (this.endpointForm) {
+          this.setFormEnabled();
+        }
+      });
+    });
+    // Building the form creates the auth form component and tells the host
+    // about it, so the work stays out of this effect's dependencies.
+    effect(() => {
+      const service = this.connectService();
+      untracked(() => this.useService(service));
+    });
+  }
+
+  private useService(service: ConnectEndpointService | undefined) {
     if (!service || service === this.pConnectService) {
       return;
     }
@@ -63,16 +86,6 @@ export class ConnectEndpointComponent implements OnInit, OnDestroy {
     }
     this.init(service.config);
   }
-  get connectService(): ConnectEndpointService {
-    return this.pConnectService;
-  }
-
-  @Input() set disabled(disabled: boolean) {
-    this.pDisabled = disabled;
-    if (this.endpointForm) {
-      this.setFormEnabled();
-    }
-  }
 
   /**
    * Enter in the filled-in form. The host connects the way its Connect
@@ -84,8 +97,7 @@ export class ConnectEndpointComponent implements OnInit, OnDestroy {
   readonly authType = output<EndpointAuthTypeConfig>();
 
   // Component reference for the dynamically created auth form
-  @ViewChild('authForm', { read: ViewContainerRef, static: true })
-  public container!: ViewContainerRef;
+  public readonly container = viewChild('authForm', { read: ViewContainerRef });
 
   public endpointForm!: FormGroup<EndpointForm>;
 
@@ -110,7 +122,7 @@ export class ConnectEndpointComponent implements OnInit, OnDestroy {
     safeUnsubscribe(...this.subs);
     this.subs = [];
     this.authFormComponentRef?.destroy();
-    this.container?.clear();
+    this.container()?.clear();
   }
 
   private init(config: ConnectEndpointConfig) {
@@ -215,7 +227,8 @@ export class ConnectEndpointComponent implements OnInit, OnDestroy {
 
   // Dynamically create the component for the selected auth type
   createComponent(authType: EndpointAuthTypeConfig) {
-    if (!authType.component || !this.container) {
+    const container = this.container();
+    if (!authType.component || !container) {
       return;
     }
 
@@ -223,17 +236,20 @@ export class ConnectEndpointComponent implements OnInit, OnDestroy {
       this.authFormComponentRef.destroy();
     }
 
-    this.authFormComponentRef = this.container.createComponent<IAuthForm>(authType.component);
-    this.authFormComponentRef.instance.formGroup = this.endpointForm;
-    // Auth types without a config (e.g. the generic Bearer/Token entries)
-    // must not overwrite the form component's `config = {}` default with
-    // undefined — templates read fields like config.helpText unguarded.
-    this.authFormComponentRef.instance.config = authType.config ?? {};
+    this.authFormComponentRef = container.createComponent<IAuthForm>(authType.component);
+    this.authFormComponentRef.setInput('formGroup', this.endpointForm);
+    // Only some auth forms have a `config` input. Auth types without a config
+    // (e.g. the generic Bearer/Token entries) must not replace its `{}`
+    // default with undefined: templates read fields like config().helpText
+    // unguarded.
+    if (this.authFormComponentRef.instance.config) {
+      this.authFormComponentRef.setInput('config', authType.config ?? {});
+    }
     this.setFormEnabled();
   }
 
   private setFormEnabled() {
-    if (this.pDisabled) {
+    if (this.disabled()) {
       this.endpointForm.disable();
       return;
     }
@@ -277,10 +293,10 @@ export class ConnectEndpointComponent implements OnInit, OnDestroy {
   }
 
   setData() {
-    if (this.connectService) {
+    if (this.pConnectService) {
       // Push data into service such that it's ready to go on submit. This removes a lot of plumbing of data outside of component to parent
       // and then back in to service
-      this.connectService.setData(this.getData());
+      this.pConnectService.setData(this.getData());
     }
   }
 

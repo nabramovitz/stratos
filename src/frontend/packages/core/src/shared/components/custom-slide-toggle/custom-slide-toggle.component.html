@@ -1,10 +1,10 @@
 <div class="custom-slide-toggle-wrapper">
   <div class="custom-slide-toggle"
-    [class.disabled]="disabled"
-    [class.checked]="checked"
+    [class.disabled]="disabled()"
+    [class.checked]="checked()"
     [class.invalid]="invalid()"
     [attr.aria-invalid]="invalid() || null"
-    [attr.aria-describedby]="invalid() && errorMessage ? 'error-' + (id() || name()) : null">
+    [attr.aria-describedby]="invalid() && errorMessage() ? 'error-' + (id() || name()) : null">
 
     <label class="slide-toggle-label"
       [attr.for]="id()"
@@ -18,15 +18,15 @@
       }
 
       <div class="slide-toggle-bar" role="switch" tabindex="0"
-        [attr.aria-checked]="checked"
+        [attr.aria-checked]="checked()"
         (click)="toggle()"
         (keydown.enter)="toggle()"
         (keydown.space)="toggle(); $event.preventDefault()">
         <input
           type="checkbox"
           class="slide-toggle-input"
-          [checked]="checked"
-          [disabled]="disabled"
+          [checked]="checked()"
+          [disabled]="disabled()"
           [attr.name]="name() ?? null"
           [attr.id]="id() ?? null"
           [required]="required()"
@@ -45,10 +45,10 @@
     </label>
   </div>
 
-  @if (invalid() && errorMessage) {
+  @if (invalid() && errorMessage()) {
     <div class="slide-toggle-error">
       <div [id]="'error-' + (id() || name())" role="alert" aria-live="polite">
-        {{ errorMessage }}
+        {{ errorMessage() }}
       </div>
     </div>
   }

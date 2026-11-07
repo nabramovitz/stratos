@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import {AfterViewInit, Component, ElementRef, Input, OnDestroy, OnInit, Renderer2, ViewChild, signal, inject, ChangeDetectionStrategy } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, OnDestroy, OnInit, Renderer2, effect, input, signal, inject, untracked, ChangeDetectionStrategy, viewChild } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import * as yaml from 'js-yaml';
@@ -53,13 +53,21 @@ enum EditorMode {
 })
 export class ChartValuesEditorComponent implements OnInit, OnDestroy, AfterViewInit {
 
-  @Input() set config(config: ChartValuesConfig | undefined) {
-    if (config) {
-      this.schemaUrl = config.schemaUrl;
-      this.valuesUrl = config.valuesUrl;
-      this.releaseValues = config.releaseValues;
-      this.init();
-    }
+  readonly config = input<ChartValuesConfig>();
+
+  constructor() {
+    // Start loading the chart's schema and values for each config given.
+    effect(() => {
+      const config = this.config();
+      if (config) {
+        untracked(() => {
+          this.schemaUrl = config.schemaUrl;
+          this.valuesUrl = config.valuesUrl;
+          this.releaseValues = config.releaseValues;
+          this.init();
+        });
+      }
+    });
   }
 
   schemaUrl: string | null = null;
@@ -111,7 +119,7 @@ export class ChartValuesEditorComponent implements OnInit, OnDestroy, AfterViewI
   public editor: MonacoEditorComponent | undefined;
 
   // Observable - are we still loading resources? Assigned in init() once a
-  // config is provided via the @Input setter.
+  // config is provided via the `config` input.
   public loading$!: Observable<boolean>;
 
   public initing = true;
@@ -119,7 +127,7 @@ export class ChartValuesEditorComponent implements OnInit, OnDestroy, AfterViewI
   // Signal for tracking if the Monaco editor has loaded
   private monacoLoaded = signal<boolean>(false);
   // Built here, in a field initializer, because init() runs from the `config`
-  // input setter - outside any injection context - where toObservable() throws.
+  // effect - outside any injection context - where toObservable() throws.
   private readonly monacoLoaded$ = toObservable(this.monacoLoaded);
 
   private resizeSub?: Subscription;
@@ -128,9 +136,9 @@ export class ChartValuesEditorComponent implements OnInit, OnDestroy, AfterViewI
   private codeOnEnter!: string;
 
   // Reference to the editor, so we can adjust its size to fit
-  @ViewChild('monacoEditor', { read: ElementRef, static: false }) monacoEditor!: ElementRef; // strict: @ViewChild populated by Angular after view init
+  readonly monacoEditor = viewChild.required('monacoEditor', { read: ElementRef }); // strict: @ViewChild populated by Angular after view init
 
-  @ViewChild('schemaForm', { static: false }) schemaForm: any;
+  readonly schemaForm = viewChild<any>('schemaForm');
 
   // Confirmation dialog - copy values
   overwriteValuesConfirmation = new ConfirmationDialogConfig(
@@ -335,8 +343,9 @@ export class ChartValuesEditorComponent implements OnInit, OnDestroy, AfterViewI
     h = h - TOOLBAR_HEIGHT;
 
     // Set the Monaco editor to the same size as the container
-    this.renderer.setStyle(this.monacoEditor.nativeElement, 'width', `${w}px`);
-    this.renderer.setStyle(this.monacoEditor.nativeElement, 'height', `${h}px`);
+    const monacoEditor = this.monacoEditor();
+    this.renderer.setStyle(monacoEditor.nativeElement, 'width', `${w}px`);
+    this.renderer.setStyle(monacoEditor.nativeElement, 'height', `${h}px`);
 
     // Ask Monaco to layout again with its new size
     this.editor.layout();

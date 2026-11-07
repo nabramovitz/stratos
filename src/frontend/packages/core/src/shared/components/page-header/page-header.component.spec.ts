@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideZonelessChangeDetection } from '@angular/core';
+import { EmbeddedViewRef, provideZonelessChangeDetection } from '@angular/core';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -7,6 +7,7 @@ import { ActivatedRoute } from '@angular/router';
 import { RouterTestingModule } from '@angular/router/testing';
 import { CommonModule } from '@angular/common';
 
+import { RecentlyVisitedDataService } from '@stratosui/store';
 import { CoreTestingModule } from '@test-framework';
 import { EndpointsService } from '../../../core/endpoints.service';
 import { CurrentUserPermissionsService } from '../../../core/permissions/current-user-permissions.service';
@@ -48,18 +49,22 @@ describe('PageHeaderComponent', () => {
     }).compileComponents();
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     fixture = TestBed.createComponent(PageHeaderComponent);
     component = fixture.componentInstance;
-    fixture.detectChanges();
+    await fixture.whenStable();
   });
 
   it('should be created', () => {
     expect(component).toBeTruthy();
   });
 
+  it('has no breadcrumbs element while none are bound', () => {
+    expect(component.breadcrumbDefinitions()).toBeNull();
+  });
+
   it('should have 3 breadcrumbs', () => {
-    component.breadcrumbs = [
+    fixture.componentRef.setInput('breadcrumbs', [
       {
         breadcrumbs: [
           {
@@ -81,15 +86,12 @@ describe('PageHeaderComponent', () => {
           }
         ]
       }
-    ];
-    const breadcrumbDefinitions = component.breadcrumbDefinitions;
-    expect(breadcrumbDefinitions).toBeDefined();
-    // strict: asserted defined above; setting breadcrumbs populates breadcrumbDefinitions
-    expect(breadcrumbDefinitions!.length).toEqual(3);
+    ]);
+    expect(component.breadcrumbDefinitions()?.length).toEqual(3);
   });
 
   it('should have 2 breadcrumb', () => {
-    component.breadcrumbs = [
+    fixture.componentRef.setInput('breadcrumbs', [
       {
         breadcrumbs: [
           {
@@ -114,11 +116,86 @@ describe('PageHeaderComponent', () => {
           }
         ]
       }
-    ];
-    const breadcrumbDefinitions = component.breadcrumbDefinitions;
-    expect(breadcrumbDefinitions).toBeDefined();
-    // strict: asserted defined above; setting breadcrumbs populates breadcrumbDefinitions
-    expect(breadcrumbDefinitions!.length).toEqual(2);
+    ]);
+    expect(component.breadcrumbDefinitions()?.length).toEqual(2);
+  });
+
+  it('publishes its tabs, with resolved links, and their header to the side navigation', async () => {
+    fixture.componentRef.setInput('tabs', [
+      { link: '/applications/summary', label: 'Summary' },
+      { link: '-', label: 'Section' },
+    ]);
+    fixture.componentRef.setInput('tabsHeader', 'Application');
+    await fixture.whenStable();
+
+    const tabNav = TestBed.inject(TabNavService);
+    expect(tabNav.tabNavs()?.map(tab => tab.link)).toEqual(['/applications/summary', TabNavService.TabsNoLinkValue]);
+    expect(tabNav.tabHeader()).toBe('Application');
+  });
+
+  it('hides the history when told to, and always in the logout-only menu', () => {
+    expect(component.historyVisible()).toBe(true);
+
+    fixture.componentRef.setInput('showHistory', false);
+    expect(component.historyVisible()).toBe(false);
+
+    fixture.componentRef.setInput('showHistory', true);
+    fixture.componentRef.setInput('logoutOnly', true);
+    expect(component.historyVisible()).toBe(false);
+  });
+
+  describe('favorite', () => {
+    const favorite = (guid: string, canFavorite = true) => ({
+      guid,
+      entityId: guid,
+      entityType: 'application',
+      endpointType: 'cf',
+      endpointId: 'endpoint',
+      metadata: { name: `name of ${guid}` },
+      canFavorite: () => canFavorite,
+      getLink: () => `/applications/${guid}`,
+      getPrettyTypeName: () => 'Application',
+    });
+    let add: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      add = vi.spyOn(TestBed.inject(RecentlyVisitedDataService), 'add').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it('shows the star for a favorite and records it as recently visited', async () => {
+      fixture.componentRef.setInput('favorite', favorite('a'));
+      await fixture.whenStable();
+
+      expect(component.shownFavorite()?.guid).toBe('a');
+      expect(add).toHaveBeenCalledTimes(1);
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({
+        guid: 'a', entityId: 'a', name: 'name of a', routerLink: '/applications/a', prettyType: 'Application',
+      }));
+    });
+
+    it('keeps the favorite it shows when the same entity, or none, is bound again', async () => {
+      const first = favorite('a');
+      fixture.componentRef.setInput('favorite', first);
+      await fixture.whenStable();
+
+      fixture.componentRef.setInput('favorite', favorite('a'));
+      await fixture.whenStable();
+      fixture.componentRef.setInput('favorite', null);
+      await fixture.whenStable();
+
+      expect(component.shownFavorite()).toBe(first);
+      expect(add).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores a favorite that cannot be favorited', async () => {
+      fixture.componentRef.setInput('favorite', favorite('a', false));
+      await fixture.whenStable();
+
+      expect(component.shownFavorite()).toBeUndefined();
+      expect(add).not.toHaveBeenCalled();
+    });
   });
 
   describe('copyToken (UAA token menu)', () => {
@@ -222,6 +299,55 @@ describe('PageHeaderComponent', () => {
 
       expect(writeTextMock).toHaveBeenCalledWith('auth-123');
       expect(snackSpy).toHaveBeenCalledWith('Failed to copy Auth token', 'Close');
+    });
+  });
+
+  // The user menu is a disclosure (#4170, WCAG 4.1.2): a named button that
+  // says whether its panel is open, and Escape closes the panel.
+  describe('user menu', () => {
+    let host: HTMLElement;
+    let view: EmbeddedViewRef<unknown>;
+
+    const button = () => host.querySelector('#userMenu') as HTMLButtonElement;
+    const panel = () => host.querySelector('#userMenuPanel');
+
+    beforeEach(() => {
+      // The header renders through a portal; instantiate its template directly.
+      view = component.pageHeaderTmpl().createEmbeddedView({});
+      view.detectChanges();
+      host = document.createElement('div');
+      view.rootNodes.forEach((node: Node) => host.appendChild(node));
+      document.body.appendChild(host);
+    });
+
+    afterEach(() => {
+      view.destroy();
+      host.remove();
+      TestBed.inject(HttpTestingController).match(() => true);
+    });
+
+    it('is a named button that reports its closed panel', () => {
+      expect(button().getAttribute('aria-label')).toBe('User menu');
+      expect(button().getAttribute('aria-expanded')).toBe('false');
+      expect(button().getAttribute('aria-controls')).toBe('userMenuPanel');
+      expect(panel()).toBeNull();
+    });
+
+    it('reports the panel open once toggled', () => {
+      button().click();
+      view.detectChanges();
+      expect(button().getAttribute('aria-expanded')).toBe('true');
+      expect(panel()).toBeTruthy();
+    });
+
+    it('closes the panel on Escape and puts focus back on the button', () => {
+      button().click();
+      view.detectChanges();
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      view.detectChanges();
+      expect(button().getAttribute('aria-expanded')).toBe('false');
+      expect(panel()).toBeNull();
+      expect(document.activeElement).toBe(button());
     });
   });
 });

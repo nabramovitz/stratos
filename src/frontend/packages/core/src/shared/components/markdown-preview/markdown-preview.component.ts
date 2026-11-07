@@ -1,6 +1,6 @@
 
 import { HttpClient, HttpResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, ElementRef, Input, ViewChild, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 
 import { PreviewableComponent } from '../../previewable-component';
@@ -32,8 +32,18 @@ export class MarkdownPreviewComponent implements PreviewableComponent {
   readonly title = signal<string | null>('');
   readonly unavailable = signal(false);
 
-  @Input()
-  set documentUrl(value: string) {
+  // For a host that binds the document. The side panel passes it to
+  // setProps() instead.
+  readonly documentUrl = input<string>();
+
+  constructor() {
+    effect(() => {
+      const url = this.documentUrl();
+      untracked(() => this.showDocument(url));
+    });
+  }
+
+  private showDocument(value: string | undefined) {
     if (value && this._documentUrl !== value) {
       this._documentUrl = value;
       this.title.set(null);
@@ -42,8 +52,9 @@ export class MarkdownPreviewComponent implements PreviewableComponent {
     }
   }
 
-  // strict: static @ViewChild is available from ngOnInit onward
-  @ViewChild('markdown', { static: true }) public markdown!: ElementRef;
+  // strict: the target is in the component's own template, so the query is
+  // resolved from ngOnInit onward
+  public readonly markdown = viewChild.required<ElementRef>('markdown');
 
   private parseInline(tokens: any[]): string {
     return tokens.map((token: any) => {
@@ -55,7 +66,7 @@ export class MarkdownPreviewComponent implements PreviewableComponent {
   }
 
   setProps(props: { [key: string]: any, }) {
-    this.documentUrl = props.documentUrl;
+    this.showDocument(props.documentUrl);
   }
 
   private loadDocument() {
@@ -98,7 +109,7 @@ export class MarkdownPreviewComponent implements PreviewableComponent {
 
   public markdownRendered() {
     // Find the page title and move it to the header
-    const h1 = this.markdown.nativeElement.getElementsByTagName('h1');
+    const h1 = this.markdown().nativeElement.getElementsByTagName('h1');
     if (this.title() === null) {
       if (h1.length > 0) {
         window.setTimeout(() => {

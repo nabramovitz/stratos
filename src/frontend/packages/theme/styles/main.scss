@@ -18,6 +18,22 @@
   h4 { @apply text-base font-semibold; }
 }
 
+/* Keyboard focus. One default for every element the keyboard reaches. It is
+ * in @layer base so an element that draws its own ring (`focus:outline-none
+ * focus:ring-*`) keeps it: utilities win over base. `--focus-ring` lets a
+ * surface pick an outline color that contrasts with it; the header and the
+ * side nav set it through the same classes that paint their background.
+ * 2px solid with a 2px offset satisfies WCAG 2.4.7 and the 2.4.11 minimum
+ * area and contrast against the surfaces the tokens cover. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--focus-ring, var(--color-primary));
+    outline-offset: 2px;
+  }
+  .bg-header-bg { --focus-ring: var(--header-text); }
+  .bg-nav-bg { --focus-ring: var(--nav-text); }
+}
+
 /* Icon font styles - supports both material-icons and custom icon fonts.
  * In @layer base so text-size utilities (@layer utilities) can override
  * the default 24px glyph size; unlayered these rules would beat every
@@ -94,7 +110,7 @@
   --input-bg: oklch(100% 0 none);
   --input-border: oklch(87.168% 0.0093 258.34);
   --input-text: oklch(27.95% 0.0368 260.03);
-  --input-placeholder: oklch(71.366% 0.0192 261.32);
+  --input-placeholder: oklch(55.439% 0.0407 257.42);
   --input-focus-border: var(--color-primary);
   --input-disabled-bg: oklch(96.696% 0.0029 264.54);
 
@@ -119,7 +135,7 @@
   --step-inactive-bg: oklch(92.758% 0.0058 264.53);
   --step-inactive-text: oklch(44.611% 0.0263 256.8);
   --step-skip-bg: oklch(96.696% 0.0029 264.54);
-  --step-skip-text: oklch(71.366% 0.0192 261.32);
+  --step-skip-text: oklch(44.611% 0.0263 256.8);
 
   /* Status and state colors */
   --success-bg: oklch(96.241% 0.0434 156.74);
@@ -155,6 +171,7 @@
   --color-warning: oklch(83.686% 0.1644 84.43);
   --color-danger: oklch(71.063% 0.1661 22.22);
   --color-info: oklch(71.374% 0.1434 254.62);
+  --color-on-primary: oklch(20.768% 0.0398 265.75);
 
   /* Navigation colors - dark theme */
   --nav-bg: oklch(20.768% 0.0398 265.75);
@@ -191,7 +208,7 @@
   --input-bg: oklch(27.95% 0.0368 260.03);
   --input-border: oklch(44.553% 0.0374 257.28);
   --input-text: oklch(96.826% 0.0069 247.9);
-  --input-placeholder: oklch(55.439% 0.0407 257.42);
+  --input-placeholder: oklch(71.067% 0.0351 256.79);
   --input-focus-border: var(--color-primary);
   --input-disabled-bg: oklch(20.768% 0.0398 265.75);
 
@@ -216,7 +233,7 @@
   --step-inactive-bg: oklch(37.17% 0.0392 257.29);
   --step-inactive-text: oklch(86.898% 0.0198 252.89);
   --step-skip-bg: oklch(27.95% 0.0368 260.03);
-  --step-skip-text: oklch(55.439% 0.0407 257.42);
+  --step-skip-text: oklch(71.067% 0.0351 256.79);
 
   /* Status and state colors - dark theme with WCAG AA compliance */
   --success-bg: oklch(39.253% 0.0896 152.54);
@@ -316,7 +333,8 @@ router-outlet + * {
 
   /* Primary Button */
   .btn-primary {
-    @apply text-white shadow-sm;
+    @apply shadow-sm;
+    color: var(--color-on-primary);
     background-color: var(--color-primary);
 
     &:hover:not(:disabled) {
@@ -445,7 +463,8 @@ router-outlet + * {
 
     &:hover:not(:disabled) {
       background-color: var(--color-primary);
-      @apply text-white shadow-sm;
+      color: var(--color-on-primary);
+      @apply shadow-sm;
     }
   }
 
@@ -523,8 +542,7 @@ router-outlet + * {
     color: var(--input-text);
 
     &::placeholder {
-      color: var(--content-muted);
-      opacity: 0.7;
+      color: var(--input-placeholder);
     }
 
     &:focus {
@@ -824,6 +842,27 @@ body.modal-open {
 
   .text-secondary {
     color: var(--color-secondary);
+  }
+
+  /* Status colors as text: the brand success/warning/danger/info values are
+     tuned for badges and buttons and fall short of 4.5:1 as text (green
+     2.3:1, amber 2.2:1, red 3.8:1 on white). The status text tokens pass in
+     both modes, so the text utilities use those; bg-*, border-* keep the
+     brand values. */
+  .text-success {
+    color: var(--success-text);
+  }
+
+  .text-warning {
+    color: var(--warning-text);
+  }
+
+  .text-danger {
+    color: var(--danger-text);
+  }
+
+  .text-info {
+    color: var(--info-text);
   }
 
   .bg-primary {

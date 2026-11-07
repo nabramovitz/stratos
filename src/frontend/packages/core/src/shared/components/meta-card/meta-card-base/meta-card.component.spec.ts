@@ -2,8 +2,8 @@ import { Component, ViewChild, provideZonelessChangeDetection, CUSTOM_ELEMENTS_S
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
-import { of } from 'rxjs';
-import { IFavoriteMetadata, StratosStatus, UserFavorite, UserFavoriteManager, entityCatalog, TestEntityCatalog } from '@stratosui/store';
+import { Observable, of } from 'rxjs';
+import { IFavoriteMetadata, MenuItem, StratosStatus, UserFavorite, UserFavoriteManager, entityCatalog, TestEntityCatalog } from '@stratosui/store';
 import { createBasicStoreModule, CoreTestingModule } from '@test-framework';
 import { generateGenericMockEntities } from '@test-framework/mock-catalog-entities';
 import { MetaCardComponent } from './meta-card.component';
@@ -15,13 +15,16 @@ import { MetaCardValueComponent } from '../meta-card-value/meta-card-value.compo
 @Component({
   imports: [MetaCardComponent, MetaCardTitleComponent],
   template: `
-    <app-meta-card>
+    <app-meta-card [favorite]="favorite()" [status$]="status$()" [actionMenu]="actionMenu()">
       <app-meta-card-title>Title</app-meta-card-title>
     </app-meta-card>`
 })
 class WrapperComponent {
   @ViewChild(MetaCardComponent, { static: true })
   metaCard!: MetaCardComponent;
+  readonly actionMenu = signal<MenuItem[] | null | undefined>(undefined);
+  readonly favorite = signal<UserFavorite<IFavoriteMetadata> | undefined>(undefined);
+  readonly status$ = signal<Observable<StratosStatus> | undefined>(undefined);
 }
 
 // An item behind an @if that turns on after the first render, the way
@@ -97,7 +100,7 @@ describe('MetaCardComponent', () => {
     fixture = TestBed.createComponent(WrapperComponent);
     component = fixture.componentInstance.metaCard;
     element = fixture.debugElement.nativeElement;
-    // Don't call detectChanges here - let each test control when it happens
+    // No render here: each test sets its state first, then waits for the view
   });
 
   it('should create', () => {
@@ -111,8 +114,8 @@ describe('MetaCardComponent', () => {
     expect((component as unknown as { entityMonitorFactory?: unknown }).entityMonitorFactory).toBeUndefined();
   });
 
-  it('should show action menu', () => {
-    component.actionMenu = [
+  it('should show action menu', async () => {
+    fixture.componentInstance.actionMenu.set([
       {
         label: 'Action1',
         action: () => {},
@@ -122,8 +125,8 @@ describe('MetaCardComponent', () => {
         label: 'Action2',
         action: () => {},
       },
-    ];
-    fixture.detectChanges();
+    ]);
+    await fixture.whenStable();
 
     // The menu button should be visible when actionMenu is set and showMenu$ is true
     const menuButton = element.querySelector('button.meta-card__header__button');
@@ -133,8 +136,7 @@ describe('MetaCardComponent', () => {
   // Material icon ligatures are text: the kebab was named "more_vert" and
   // each item read as glyph plus label ("link Connect").
   it('names the action menu button and hides item glyphs', async () => {
-    component.actionMenu = [{ label: 'Connect', icon: 'link', action: () => {}, can: of(true) }];
-    fixture.detectChanges();
+    fixture.componentInstance.actionMenu.set([{ label: 'Connect', icon: 'link', action: () => {}, can: of(true) }]);
     await fixture.whenStable();
 
     const menuButton = element.querySelector('button.meta-card__header__button') as HTMLButtonElement;
@@ -150,33 +152,52 @@ describe('MetaCardComponent', () => {
     expect(item.getAttribute('role')).toBe('menuitem');
   });
 
-  it('should hide actions without permission', () => {
-    component.actionMenu = [
+  it('should hide actions without permission', async () => {
+    fixture.componentInstance.actionMenu.set([
       {
         label: 'Action1',
         action: () => {},
         can: of(false),
       },
-    ];
-    fixture.detectChanges();
+    ]);
+    await fixture.whenStable();
 
     // The menu button should not be visible when all actions have can: false
     const menuButton = element.querySelector('button.meta-card__header__button');
     expect(menuButton).toBeFalsy();
   });
 
-  it('should show star if favoritable', () => {
-    component.favorite = favorite;
-    fixture.detectChanges();
+  // Binding null keeps the menu the card already shows.
+  it('keeps the last menu when the menu is set to null', async () => {
+    fixture.componentInstance.actionMenu.set([{ label: 'Action1', action: () => {} }]);
+    await fixture.whenStable();
+    fixture.componentInstance.actionMenu.set(null);
+    await fixture.whenStable();
+
+    expect(element.querySelector('button.meta-card__header__button')).toBeTruthy();
+  });
+
+  it('should show star if favoritable', async () => {
+    fixture.componentInstance.favorite.set(favorite);
+    await fixture.whenStable();
 
     expect(element.querySelector('app-entity-favorite-star')).toBeTruthy();
   });
 
-  it('should show app state icon if status', () => {
+  // The card title looked like a heading but was a div (WCAG 1.3.1); it is a
+  // heading at the level of the other card titles.
+  it('renders its title as a heading', async () => {
+    await fixture.whenStable();
+    const title = element.querySelector('.meta-card__title') as HTMLElement;
+    expect(title.tagName).toBe('H3');
+    expect(title.textContent?.trim()).toBe('Title');
+  });
+
+  it('should show app state icon if status', async () => {
     expect(element.querySelector('app-application-state-icon')).toBeFalsy();
 
-    component.status$ = of(StratosStatus.TENTATIVE);
-    fixture.detectChanges();
+    fixture.componentInstance.status$.set(of(StratosStatus.TENTATIVE));
+    await fixture.whenStable();
 
     expect(element.querySelector('app-application-state-icon')).toBeTruthy();
   });

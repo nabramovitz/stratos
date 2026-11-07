@@ -3,14 +3,13 @@ import {
   ChangeDetectionStrategy, AfterContentInit,
   Component,
   ElementRef,
-  Input,
   OnDestroy,
   OnInit,
-  ViewChild,
   computed,
   input,
   signal,
-  output
+  output,
+  viewChild
 } from '@angular/core';
 import { ReactiveFormsModule, Validators, FormControl, AbstractControl } from '@angular/forms';
 import { CustomFormFieldComponent, AppErrorComponent, AppInputDirective } from '../../../components/custom-form-field/custom-form-field.component';
@@ -74,7 +73,7 @@ export class StackedInputActionComponent implements OnInit, OnDestroy, AfterCont
       uniqueError: 'Email is not unique'
     }
   };
-  @Input() stateIn$!: Observable<StackedInputActionsState | null>;
+  readonly stateIn$ = input.required<Observable<StackedInputActionsState | null>>();
   readonly position = input<number>(0);
   readonly showRemove = input(false);
   readonly key = input<number>(0);
@@ -84,7 +83,7 @@ export class StackedInputActionComponent implements OnInit, OnDestroy, AfterCont
   readonly stateOut = output<StackedInputActionUpdate>();
   readonly remove = output<void>();
 
-  @ViewChild('inputElement', { static: true }) inputElement!: ElementRef;
+  readonly inputElement = viewChild.required<ElementRef>('inputElement');
 
   public result = StackedInputActionResult;
   public textFormControl = new FormControl<string | null>('', [Validators.required, this.uniqueValidator.bind(this)]);
@@ -112,7 +111,7 @@ export class StackedInputActionComponent implements OnInit, OnDestroy, AfterCont
     }));
 
     // Handle change of state from outside
-    this.subs.push(this.stateIn$.subscribe(this.handleStateIn.bind(this)));
+    this.subs.push(this.stateIn$().subscribe(this.handleStateIn.bind(this)));
   }
 
   ngOnDestroy(): void {
@@ -120,7 +119,7 @@ export class StackedInputActionComponent implements OnInit, OnDestroy, AfterCont
   }
 
   ngAfterContentInit() {
-    this.inputElement.nativeElement.focus();
+    this.inputElement().nativeElement.focus();
   }
 
   uniqueValidator(control: AbstractControl) {

@@ -1,19 +1,19 @@
 <div>
 
-  @if (currentVersion) {
-    <app-chart-details-usage [chart]=chart [currentVersion]=currentVersion.attributes.version>
+  @if (currentVersion(); as currentVersion) {
+    <app-chart-details-usage [chart]=chart() [currentVersion]=currentVersion.attributes.version>
     </app-chart-details-usage>
   }
 
   <app-card class="overflow-auto block mb-8 max-w-[260px]">
     <div>
-      <app-chart-details-versions [versions]="versions()" [currentVersion]=currentVersion></app-chart-details-versions>
+      <app-chart-details-versions [versions]="versions()" [currentVersion]=currentVersion()></app-chart-details-versions>
     </div>
-    @if (chart.attributes.home) {
+    @if (chart().attributes.home) {
       <div>
         <h1 class="text-base">Home</h1>
         <div>
-          <a class="text-sm wrap-anywhere" href="{{ chart.attributes.home }}" target="_blank">@for (part of chart.attributes.home | urlParts; track $index) {{{ part }}<wbr>}</a>
+          <a class="text-sm wrap-anywhere" href="{{ chart().attributes.home }}" target="_blank">@for (part of chart().attributes.home | urlParts; track $index) {{{ part }}<wbr>}</a>
         </div>
       </div>
     }
@@ -43,7 +43,7 @@
         <div class="text-sm">This chart contains a values schema</div>
       </div>
     }
-    @if (currentVersion) {
+    @if (currentVersion(); as currentVersion) {
       <div>
         <h1 class="text-base">Chart</h1>
         @for (url of currentVersion.attributes.urls; track url) {

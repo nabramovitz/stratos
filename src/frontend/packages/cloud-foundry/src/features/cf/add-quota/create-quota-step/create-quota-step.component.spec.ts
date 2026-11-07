@@ -62,7 +62,7 @@ describe('CreateQuotaStepComponent', () => {
   // app-form-field shows a field's <app-error> text as its error line.
   it('says a taken quota name exists', async () => {
     await fixture.whenStable();
-    component.form.allQuotas = ['taken'];
+    component.form().allQuotas = ['taken'];
     const host: HTMLElement = fixture.nativeElement;
     const input = host.querySelector<HTMLInputElement>('input[formcontrolname="name"]')!;
     input.value = 'taken';
@@ -81,8 +81,9 @@ describe('CreateQuotaStepComponent', () => {
     const page = readFileSync(join(import.meta.dirname, '../../../../../../store/src/testdata/upstream-errors/nginx-502.body'), 'utf8');
     vi.spyOn(TestBed.inject(QuotaDataService), 'createOrgQuota')
       .mockReturnValue(throwError(() => new HttpErrorResponse({ error: page, status: 502, statusText: 'Bad Gateway' })));
-    const step = TestBed.createComponent(StepComponent).componentInstance;
-    step.signalHandle = component.signalHandle;
+    const stepRef = TestBed.createComponent(StepComponent).componentRef;
+    stepRef.setInput('signalHandle', component.signalHandle);
+    const step = stepRef.instance;
 
     const result = await firstValueFrom(step.invokeNext(0));
 

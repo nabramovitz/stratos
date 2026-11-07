@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { AfterContentInit, Component, Input, OnInit, Signal, ViewChild, ChangeDetectionStrategy, computed, inject, input } from '@angular/core';
+import { AfterContentInit, Component, OnInit, Signal, ChangeDetectionStrategy, computed, inject, input, viewChild } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { FormsModule, NgForm } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
@@ -44,8 +44,7 @@ export class CreateApplicationStep1Component implements OnInit, AfterContentInit
   // Template reads as `hasOrgs()`.
   public hasOrgs: Signal<boolean> = computed(() => this.cfOrgSpaceService.org.list().length > 0);
 
-  @ViewChild('cfForm', { static: true })
-  cfForm!: NgForm;
+  readonly cfForm = viewChild.required<NgForm>('cfForm');
 
   readonly isRedeploy = input(false);
 
@@ -58,8 +57,19 @@ export class CreateApplicationStep1Component implements OnInit, AfterContentInit
 
   validate!: Observable<boolean>;
 
-  @Input()
-  stepperText = 'Select a Cloud Foundry instance, organization and space for the app.';
+  readonly stepperText = input('Select a Cloud Foundry instance, organization and space for the app.');
+
+  // The heading shown. A redeploy and the marketplace flow have their own
+  // text, which replaces the bound one.
+  protected readonly heading = computed(() => {
+    if (this.isMarketplaceMode()) {
+      return 'Select an organization and space for the service instance.';
+    }
+    if (this.isRedeploy()) {
+      return 'Review the Cloud Foundry instance, organization and space for the app.';
+    }
+    return this.stepperText();
+  });
 
   /**
    * Cascade clears: selecting "None" on CF should also clear the Org
@@ -78,7 +88,7 @@ export class CreateApplicationStep1Component implements OnInit, AfterContentInit
    * `dirty`). markAsPristine alone does not emit statusChanges.
    */
   private resetControlPristine(name: string) {
-    const control = this.cfForm?.control?.get(name);
+    const control = this.cfForm()?.control?.get(name);
     if (control) {
       control.markAsPristine();
       control.markAsUntouched();
@@ -139,21 +149,14 @@ export class CreateApplicationStep1Component implements OnInit, AfterContentInit
     this.hasSpaces$ = this.spaces$.pipe(
       map(spaces => !!spaces.length)
     );
-    if (this.isRedeploy()) {
-      this.stepperText = 'Review the Cloud Foundry instance, organization and space for the app.';
-    }
-
-    if (this.isMarketplaceMode()) {
-      this.stepperText = 'Select an organization and space for the service instance.';
-    }
   }
 
   ngAfterContentInit() {
     // strict: cfForm is a `static: true` ViewChild, so the NgForm and its
     // statusChanges stream are initialised by the time ngAfterContentInit runs.
-    this.validate = this.cfForm.statusChanges!.pipe(
-      startWith(this.cfForm.valid || this.isRedeploy()),
-      map(() => this.cfForm.valid || this.isRedeploy()),
+    this.validate = this.cfForm().statusChanges!.pipe(
+      startWith(this.cfForm().valid || this.isRedeploy()),
+      map(() => this.cfForm().valid || this.isRedeploy()),
       observeOn(asapScheduler)
     );
   }

@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, ElementRef, Input, ViewChild, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, input, linkedSignal, viewChild } from '@angular/core';
 import { CustomTooltipDirective } from '../custom-tooltip/custom-tooltip.directive';
 import { BaseChartDirective } from 'ng2-charts';
 
@@ -22,7 +22,8 @@ import { CustomIconComponent } from '../custom-material/custom-material.componen
 export class SimpleUsageChartComponent {
   static BASE_COLOR_SELECTOR = 'simple-usage-graph-color';
   static BASE_BACKGROUND_COLOR_SELECTOR = 'background';
-  public chartData: IChartData = {
+  // Shown until the first data arrives.
+  private static readonly EMPTY_CHART: IChartData = {
     colors: {
       domain: ['#94949440', '#94949440', '#94949440']
     },
@@ -62,7 +63,7 @@ export class SimpleUsageChartComponent {
     }
   };
 
-  @ViewChild('colors', { static: true }) colorsElement!: ElementRef;
+  readonly colorsElement = viewChild.required<ElementRef>('colors');
 
   readonly chartTitle = input('Usage');
 
@@ -73,46 +74,54 @@ export class SimpleUsageChartComponent {
     warning: 70
 });
 
-  @Input() set data(usageData: ISimpleUsageChartData) {
-    if (usageData) {
-      const {
-        total,
-        used = 0,
-        unknown = 0,
-        usedLabel = 'Used',
-        remainingLabel = 'Remaining',
-        unknownLabel = 'Unknown',
-        warningText = 'Unknown data found'
-      } = usageData;
-      const remaining = total - (used + unknown);
-      const colors = this.getColors(total, used);
-      this.chartData = {
-        colors,
-        total,
-        used,
-        unknown,
-        warningText,
-        results: [{
-          name: usedLabel,
-          value: used
-        },
-        {
-          name: unknownLabel,
-          value: unknown
-        },
-        {
-          name: remainingLabel,
-          value: remaining
-        }],
-        chartJsData: {
-          labels: [usedLabel, unknownLabel, remainingLabel],
-          datasets: [{
-            data: [used, unknown, remaining],
-            backgroundColor: colors?.domain || ['#94949440', '#94949440', '#94949440']
-          }]
-        }
-      };
-    }
+  readonly data = input<ISimpleUsageChartData>();
+
+  // What the chart shows. Data that goes back to empty keeps the last chart.
+  readonly chartData = linkedSignal<ISimpleUsageChartData | undefined, IChartData>({
+    source: this.data,
+    computation: (usageData, previous) => usageData
+      ? this.toChartData(usageData)
+      : previous?.value ?? SimpleUsageChartComponent.EMPTY_CHART,
+  });
+
+  private toChartData(usageData: ISimpleUsageChartData): IChartData {
+    const {
+      total,
+      used = 0,
+      unknown = 0,
+      usedLabel = 'Used',
+      remainingLabel = 'Remaining',
+      unknownLabel = 'Unknown',
+      warningText = 'Unknown data found'
+    } = usageData;
+    const remaining = total - (used + unknown);
+    const colors = this.getColors(total, used);
+    return {
+      colors,
+      total,
+      used,
+      unknown,
+      warningText,
+      results: [{
+        name: usedLabel,
+        value: used
+      },
+      {
+        name: unknownLabel,
+        value: unknown
+      },
+      {
+        name: remainingLabel,
+        value: remaining
+      }],
+      chartJsData: {
+        labels: [usedLabel, unknownLabel, remainingLabel],
+        datasets: [{
+          data: [used, unknown, remaining],
+          backgroundColor: colors?.domain || ['#94949440', '#94949440', '#94949440']
+        }]
+      }
+    };
   }
 
   private getColorScheme = (() => {
@@ -138,7 +147,7 @@ export class SimpleUsageChartComponent {
 
   private getColor(classSelector: string) {
     return window.getComputedStyle(
-      this.colorsElement.nativeElement.getElementsByClassName(
+      this.colorsElement().nativeElement.getElementsByClassName(
         classSelector
       )[0]
     ).backgroundColor;

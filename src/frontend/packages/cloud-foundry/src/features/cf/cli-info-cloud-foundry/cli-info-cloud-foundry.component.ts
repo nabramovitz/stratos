@@ -6,7 +6,7 @@ import { Router } from '@angular/router';
 import { CustomTooltipDirective } from '@stratosui/core';
 import { RoutingHistoryService } from '@stratosui/store';
 import { BehaviorSubject, combineLatest, Observable, of as observableOf } from 'rxjs';
-import { take, map } from 'rxjs/operators';
+import { filter, take, map } from 'rxjs/operators';
 
 import { PageHeaderComponent } from '../../../../../core/src/shared/components/page-header/page-header.component';
 import { IHeaderBreadcrumb } from '../../../../../core/src/shared/components/page-header/page-header.types';
@@ -14,13 +14,15 @@ import { getFullEndpointApiUrl } from '../../../../../store/src/endpoint-utils';
 import { EntityInfo } from '../../../../../store/src/types/api.types';
 import { EndpointModel } from '../../../../../store/src/types/endpoint.types';
 import { StOrgDetail, StSpace } from '../../../services/endpoint-data/stratos-types';
-import { CliCommandComponent } from '../../../shared/components/cli-info/cli-command/cli-command.component';
+import {
+  CLOUD_FOUNDRY_CLI_COMMANDS,
+  ORGANIZATION_CLI_COMMANDS,
+  SPACE_CLI_COMMANDS,
+} from '../../../shared/components/cli-info/cli-commands';
 import { CFAppCLIInfoContext, CliInfoComponent } from '../../../shared/components/cli-info/cli-info.component';
-import { CfUserPermissionDirective } from '../../../shared/directives/cf-user-permission/cf-user-permission.directive';
 import {
   CloudFoundryUserProvidedServicesService,
 } from '../../../shared/services/cloud-foundry-user-provided-services.service';
-import { CfCurrentUserPermissions, CfUserPermissionsChecker } from '../../../user-permissions/cf-user-permissions-checkers';
 import { ActiveRouteCfOrgSpace } from '../cf-page.types';
 import { getActiveRouteCfOrgSpaceProvider } from '../cf.helpers';
 import { CloudFoundryEndpointService } from '../services/cloud-foundry-endpoint.service';
@@ -38,8 +40,6 @@ import { CloudFoundrySpaceService } from '../services/cloud-foundry-space.servic
     CustomTooltipDirective,
     PageHeaderComponent,
     CliInfoComponent,
-    CliCommandComponent,
-    CfUserPermissionDirective
   ],
   providers: [
     getActiveRouteCfOrgSpaceProvider,
@@ -54,16 +54,17 @@ export class CliInfoCloudFoundryComponent implements OnInit {
   private routingHistory = inject(RoutingHistoryService);
   activeRouteCfOrgSpace = inject(ActiveRouteCfOrgSpace);
   private cfEndpointService = inject(CloudFoundryEndpointService);
-  private cfOrgService = inject(CloudFoundryOrganizationService, { optional: true });
-  private cfSpaceService = inject(CloudFoundrySpaceService, { optional: true });
+  // Both services request their organization or space when they are built,
+  // so each is asked for only on a route that names one.
+  private cfOrgService = this.activeRouteCfOrgSpace.orgGuid ? inject(CloudFoundryOrganizationService) : null;
+  private cfSpaceService = this.activeRouteCfOrgSpace.spaceGuid ? inject(CloudFoundrySpaceService) : null;
   private injector = inject(Injector);
 
-
-  permsOrgEdit = CfCurrentUserPermissions.ORGANIZATION_EDIT;
-  permsSpaceEdit = CfCurrentUserPermissions.SPACE_EDIT;
-
-  orgGuid!: string;
-  spaceGuid!: string;
+  // The commands of this level: the page serves a Cloud Foundry, an
+  // organization or a space, by what the route names.
+  readonly sections = this.activeRouteCfOrgSpace.spaceGuid ? SPACE_CLI_COMMANDS
+    : this.activeRouteCfOrgSpace.orgGuid ? ORGANIZATION_CLI_COMMANDS
+    : CLOUD_FOUNDRY_CLI_COMMANDS;
 
   cfEndpointEntityService: any;
   public previousUrl!: string;
@@ -82,13 +83,7 @@ export class CliInfoCloudFoundryComponent implements OnInit {
   ]>;
 
   constructor() {
-    const activeRouteCfOrgSpace = this.activeRouteCfOrgSpace;
-
     this.breadcrumbs$ = new BehaviorSubject<IHeaderBreadcrumb[]>([]);
-    if (activeRouteCfOrgSpace.orgGuid) {
-      this.orgGuid = activeRouteCfOrgSpace.orgGuid;
-      this.spaceGuid = activeRouteCfOrgSpace.spaceGuid || CfUserPermissionsChecker.ALL_SPACES;
-    }
   }
 
   ngOnInit() {
@@ -107,9 +102,9 @@ export class CliInfoCloudFoundryComponent implements OnInit {
     const { cfGuid, orgGuid, spaceGuid } = this.activeRouteCfOrgSpace;
     let backLink = `/cloud-foundry/${cfGuid}`;
     if (orgGuid) {
-      backLink = `${backLink}/${orgGuid}`;
+      backLink = `${backLink}/organizations/${orgGuid}`;
       if (spaceGuid) {
-        backLink = `${backLink}/${spaceGuid}`;
+        backLink = `${backLink}/spaces/${spaceGuid}`;
       }
     }
     return backLink;
@@ -129,12 +124,15 @@ export class CliInfoCloudFoundryComponent implements OnInit {
   private setupObservables() {
     const { orgGuid, spaceGuid } = this.activeRouteCfOrgSpace;
     // V3-native org + space snapshots from the OrgDataService /
-    // SpaceDataService signals.
+    // SpaceDataService signals. Each signal is empty until its request
+    // returns, and the context below is taken once, so wait for the value:
+    // otherwise a page opened by its address shows placeholders for names
+    // the route has.
     const org$ = orgGuid && this.cfOrgService
-      ? toObservable(this.cfOrgService.orgDataService.org, { injector: this.injector })
+      ? toObservable(this.cfOrgService.orgDataService.org, { injector: this.injector }).pipe(filter(org => !!org))
       : observableOf(null);
     const space$ = spaceGuid && this.cfSpaceService
-      ? toObservable(this.cfSpaceService.spaceDataService.space, { injector: this.injector })
+      ? toObservable(this.cfSpaceService.spaceDataService.space, { injector: this.injector }).pipe(filter(space => !!space))
       : observableOf(null);
     this.endpointOrgSpace$ = combineLatest([
       this.cfEndpointService.endpoint$,
@@ -151,7 +149,9 @@ export class CliInfoCloudFoundryComponent implements OnInit {
           orgName: org ? org.name : '',
           spaceName: space ? space.name : '',
           apiEndpoint: getFullEndpointApiUrl(cf.entity),
-          username: cf.entity.user ? cf.entity.user.name : ''
+          username: cf.entity.user ? cf.entity.user.name : '',
+          skipSslValidation: !!cf.entity.skip_ssl_validation,
+          ssoAllowed: !!cf.entity.sso_allowed
         };
       }),
       take(1)

@@ -25,13 +25,13 @@ const defaultCompanyConfig: CompanyConfig = {
     loginBackground: '/core/assets/login-bg.webp',
   },
   theme: {
-    primary: '#3b82f6',
-    secondary: '#60a5fa',
-    accent: '#60a5fa',
+    primary: '#2563eb',
+    secondary: '#2563eb',
+    accent: '#2563eb',
     success: '#22c55e',
     warning: '#f59e0b',
     danger: '#ef4444',
-    info: '#3b82f6',
+    info: '#2563eb',
   },
   navigation: {
     background: '#1e293b',
@@ -199,6 +199,7 @@ export class StratosBrandingService {
       const config = await firstValueFrom(this.http.get<CompanyConfig>('/assets/company-config.json'));
       if (config) {
         this.setCompanyConfig(config);
+        console.info('[StratosBrandingService] Company config loaded from /assets/company-config.json');
         return;
       }
     } catch (_error) {
@@ -210,6 +211,7 @@ export class StratosBrandingService {
       const envConfig = await firstValueFrom(this.http.get<CompanyConfig>('/assets/config/company.json'));
       if (envConfig) {
         this.setCompanyConfig(envConfig);
+        console.info('[StratosBrandingService] Company config loaded from /assets/config/company.json');
         return;
       }
     } catch (_error) {
@@ -219,6 +221,7 @@ export class StratosBrandingService {
     // Fallback to default
     this._config.set(defaultCompanyConfig);
     this.applyConfigToTheme(defaultCompanyConfig);
+    console.info('[StratosBrandingService] Company config: using the built-in defaults');
   }
 
   setCompanyConfig(config: Partial<CompanyConfig>) {
@@ -232,45 +235,30 @@ export class StratosBrandingService {
     return this._config();
   }
 
-  /**
-   * Map a CompanyConfig onto the theme fields it can override.
-   *
-   * Single source for the mapping so applyConfigToTheme() and applyThemeMode()
-   * cannot drift — applyThemeMode() rebuilds the theme from a base theme and
-   * has to re-apply these, or config theming is lost on every mode change.
-   */
-  private configThemeOverrides(config: CompanyConfig) {
-    const navigation: Partial<StratosTheme['navigation']> = {};
-    if (config.navigation?.background) navigation.background = config.navigation.background;
-    if (config.navigation?.text) navigation.text = config.navigation.text;
-    if (config.navigation?.hover) navigation.hover = config.navigation.hover;
-    if (config.navigation?.active) navigation.active = config.navigation.active;
-
-    const layout: Partial<StratosTheme['layout']> = {};
-    if (config.layout?.background) layout.background = config.layout.background;
-    if (config.layout?.text) layout.text = config.layout.text;
-    if (config.layout?.headerBackground) layout.headerBackground = config.layout.headerBackground;
-    if (config.layout?.headerText) layout.headerText = config.layout.headerText;
-
-    return { colors: config.theme ?? {}, navigation, layout };
-  }
-
   private applyConfigToTheme(config: CompanyConfig) {
-    const { colors, navigation, layout } = this.configThemeOverrides(config);
-
     // Map CompanyConfig colors → StratosTheme colors
-    this.setColors(colors);
+    this.setColors(config.theme);
 
     // Apply navigation — map config nav fields to theme nav fields
-    if (Object.keys(navigation).length) {
+    const navOverride: Partial<StratosTheme['navigation']> = {};
+    if (config.navigation.background) navOverride.background = config.navigation.background;
+    if (config.navigation.text) navOverride.text = config.navigation.text;
+    if (config.navigation.hover) navOverride.hover = config.navigation.hover;
+    if (config.navigation.active) navOverride.active = config.navigation.active;
+    if (Object.keys(navOverride).length) {
       const currentTheme = this._theme();
-      this.setTheme({ navigation: { ...currentTheme.navigation, ...navigation } });
+      this.setTheme({ navigation: { ...currentTheme.navigation, ...navOverride } });
     }
 
     // Apply layout — map config layout fields to theme layout fields
-    if (Object.keys(layout).length) {
+    const layoutOverride: Partial<StratosTheme['layout']> = {};
+    if (config.layout.background) layoutOverride.background = config.layout.background;
+    if (config.layout.text) layoutOverride.text = config.layout.text;
+    if (config.layout.headerBackground) layoutOverride.headerBackground = config.layout.headerBackground;
+    if (config.layout.headerText) layoutOverride.headerText = config.layout.headerText;
+    if (Object.keys(layoutOverride).length) {
       const currentTheme = this._theme();
-      this.setTheme({ layout: { ...currentTheme.layout, ...layout } });
+      this.setTheme({ layout: { ...currentTheme.layout, ...layoutOverride } });
     }
 
     // Apply branding — only include defined values to avoid overwriting theme defaults
@@ -325,7 +313,7 @@ export class StratosBrandingService {
   }
 
   private applyTheme(theme: StratosTheme) {
-    console.log('[StratosBrandingService] Applying theme:', theme);
+    this.debugLog('Applying theme:', theme);
     const root = document.documentElement;
 
     // Apply brand colors
@@ -381,7 +369,7 @@ export class StratosBrandingService {
     root.style.setProperty('--input-bg', isDark ? '#1e293b' : '#ffffff');
     root.style.setProperty('--input-border', isDark ? '#475569' : '#d1d5db');
     root.style.setProperty('--input-text', isDark ? '#f1f5f9' : '#1e293b');
-    root.style.setProperty('--input-placeholder', isDark ? '#64748b' : '#9ca3af');
+    root.style.setProperty('--input-placeholder', isDark ? '#94a3b8' : '#64748b');
     root.style.setProperty('--input-disabled-bg', isDark ? '#0f172a' : '#f3f4f6');
     root.style.setProperty('--shadow-sm', isDark ? '0 1px 2px 0 rgba(0,0,0,0.3)' : '0 1px 2px 0 rgba(0,0,0,0.05)');
     root.style.setProperty('--shadow-md', isDark ? '0 4px 6px -1px rgba(0,0,0,0.4)' : '0 4px 6px -1px rgba(0,0,0,0.1)');
@@ -411,7 +399,7 @@ export class StratosBrandingService {
   // =========================================================================
 
   setThemeMode(mode: ThemeMode) {
-    console.log('[StratosBrandingService] Setting theme mode to:', mode);
+    this.debugLog('Setting theme mode to:', mode);
     this._themeMode.set(mode);
     this.saveThemeModeToStorage(mode);
     this.applyThemeMode(mode);
@@ -443,27 +431,10 @@ export class StratosBrandingService {
     // Start with the correct base theme for the mode
     const baseTheme = isDark ? darkTheme : defaultTheme;
 
-    // Re-apply company-config theming. Without this the rebuild below drops
-    // whatever applyConfigToTheme() applied, so operator colours revert at
-    // login and on every mode toggle.
-    const config = this.configThemeOverrides(this._config());
-
     // Merge custom branding/login overrides (these persist across mode switches)
     const theme: StratosTheme = {
       ...baseTheme,
-      // Brand and status colours are mode-independent — an operator's palette
-      // is their palette in light and dark alike.
-      colors: { ...baseTheme.colors, ...config.colors },
-      // Navigation and layout are surface colours, and CompanyConfig has no
-      // light/dark split — its values describe light. Applying them in dark
-      // mode would put light chrome under the `dark` class, so dark mode keeps
-      // its own surfaces until the config surface grows a mode dimension.
-      navigation: isDark
-        ? baseTheme.navigation
-        : { ...baseTheme.navigation, ...config.navigation },
-      layout: isDark
-        ? baseTheme.layout
-        : { ...baseTheme.layout, ...config.layout },
+      colors: { ...baseTheme.colors, ...this.configuredColors('theme') },
       branding: this._customBranding
         ? { ...baseTheme.branding, ...this._customBranding }
         : baseTheme.branding,
@@ -471,9 +442,34 @@ export class StratosBrandingService {
         ? { ...baseTheme.login, ...this._customLogin }
         : baseTheme.login,
     };
+    // The config has one set of navigation and layout colors and no dark
+    // variants, so they apply in light mode only; the brand colors above
+    // apply in both.
+    if (!isDark) {
+      theme.navigation = { ...baseTheme.navigation, ...this.configuredColors('navigation') };
+      theme.layout = { ...baseTheme.layout, ...this.configuredColors('layout') };
+    }
 
     this._theme.set(theme);
     this.applyTheme(theme);
+  }
+
+  // The colors of one config section that the operator set: those that differ
+  // from the default config, whose values are the light theme's.
+  private configuredColors(section: 'theme' | 'navigation' | 'layout'): Record<string, string> {
+    const configured: Record<string, string | undefined> = this._config()[section] ?? {};
+    const defaults: Record<string, string | undefined> = defaultCompanyConfig[section];
+    return Object.fromEntries(
+      Object.entries(configured).filter(([key, value]) => value && value !== defaults[key])
+    ) as Record<string, string>;
+  }
+
+  // Theme and mode changes are logged only when the config's debug.logThemeChanges
+  // is set, so an operator can follow their colors without a dev build.
+  private debugLog(message: string, detail: unknown) {
+    if (this._config().debug?.logThemeChanges) {
+      console.log(`[StratosBrandingService] ${message}`, detail);
+    }
   }
 
   private resolveThemeMode(mode: ThemeMode): boolean {
@@ -488,7 +484,7 @@ export class StratosBrandingService {
   }
 
   private onSystemThemeChange(event: MediaQueryListEvent) {
-    console.log('[StratosBrandingService] System theme changed to:', event.matches ? 'dark' : 'light');
+    this.debugLog('System theme changed to:', event.matches ? 'dark' : 'light');
     // Only update if current mode is 'system'
     if (this._themeMode() === 'system') {
       this.applyThemeMode('system');

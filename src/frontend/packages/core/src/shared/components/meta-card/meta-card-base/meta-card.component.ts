@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, ContentChild, Input, HostListener, contentChildren, signal, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, computed, contentChild, contentChildren, signal, input, linkedSignal } from '@angular/core';
 import { combineLatest, Observable, of as observableOf, of } from 'rxjs';
 import { map } from 'rxjs/operators';
 
@@ -42,14 +42,12 @@ export class MetaCardComponent {
   // @if waiting on async data) re-render this OnPush view.
   readonly metaItems = contentChildren(MetaCardItemComponent);
 
-  @ContentChild(MetaCardTitleComponent, { static: true })
-  title!: MetaCardTitleComponent;
+  // Optional: a card without a title renders no header.
+  readonly title = contentChild(MetaCardTitleComponent);
 
-  @Input()
-  status$?: Observable<StratosStatus>;
+  readonly status$ = input<Observable<StratosStatus>>();
 
-  @Input()
-  favorite?: UserFavorite<IFavoriteMetadata> | null;
+  readonly favorite = input<UserFavorite<IFavoriteMetadata> | null>();
 
   // Vestigial no-op input. The legacy ngrx favorite-star fallback (entity
   // monitor -> UserFavoriteManager.getFavorite) was removed with the rest of
@@ -70,13 +68,17 @@ export class MetaCardComponent {
 
   readonly mode = input<string>();
 
-  @Input()
-  clickAction?: () => void;
+  readonly clickAction = input<() => void>();
 
-  @Input()
-  set actionMenu(actionMenu: MenuItem[] | null) {
-    if (actionMenu) {
-      this.pActionMenu = actionMenu.map(menuItem => {
+  readonly actionMenu = input<MenuItem[] | null>();
+
+  // The menu to show: the last one bound, since binding null or undefined
+  // keeps the previous menu. The defaults are filled in on the caller's own
+  // items, so the items shown are the ones the caller passed.
+  readonly menuItems = linkedSignal<MenuItem[] | null | undefined, MenuItem[] | undefined>({
+    source: this.actionMenu,
+    computation: (actionMenu, previous) => actionMenu
+      ? actionMenu.map(menuItem => {
         if (!menuItem.can) {
           menuItem.separator = menuItem.label === '-';
           menuItem.can = of(true);
@@ -85,23 +87,25 @@ export class MetaCardComponent {
           menuItem.disabled = observableOf(false);
         }
         return menuItem;
-      });
+      })
+      : previous?.value,
+  });
 
-      const nonSeparators = actionMenu
-        .filter(menuItem => !menuItem.separator)
-        .map(menuItem => menuItem.can ?? of(true));
-      this.showMenu$ = combineLatest(nonSeparators).pipe(
-        map(cans => cans.some(can => can))
-      );
+  // True when the user may run at least one of the actions.
+  readonly showMenu$ = computed(() => {
+    const menuItems = this.menuItems();
+    if (!menuItems) {
+      return undefined;
     }
-  }
-  get actionMenu(): MenuItem[] {
-    return this.pActionMenu;
-  }
+    const nonSeparators = menuItems
+      .filter(menuItem => !menuItem.separator)
+      .map(menuItem => menuItem.can ?? of(true));
+    return combineLatest(nonSeparators).pipe(
+      map(cans => cans.some(can => can))
+    );
+  });
 
-  public showMenu$!: Observable<boolean>;
   public isDeleting$: Observable<boolean> = observableOf(false);
-  private pActionMenu!: MenuItem[];
 
   toggleMenu(): void {
     this.menuOpen.update(open => !open);

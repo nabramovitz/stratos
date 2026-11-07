@@ -31,7 +31,7 @@
     font-size: 14px;
     letter-spacing: 0.01em;
     line-height: 18px;
-    outline: 0;
+    // Keyboard focus shows the global :focus-visible outline.
     padding: 10px;
     padding-left: $item-header-padding;
     text-decoration: none;
@@ -39,7 +39,9 @@
       background-color: var(--table-row-hover);
     }
     &--active {
-      background-color: color-mix(in srgb, var(--color-primary) 10%, transparent);
+      // 6 %: the primary text stays above 4.5:1 on the tint in both modes
+      // (10 % measured exactly 4.5 in light mode).
+      background-color: color-mix(in srgb, var(--color-primary) 6%, transparent);
       color: var(--color-primary);
       font-weight: 500;
     }
