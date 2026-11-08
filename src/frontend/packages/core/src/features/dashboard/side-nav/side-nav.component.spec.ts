@@ -45,6 +45,35 @@ describe('SideNavComponent', () => {
     expect(component).toBeTruthy();
   });
 
+  // Pages also have a named page-tab nav; each landmark needs its own name.
+  it('names its navigation landmark', () => {
+    const nav = (fixture.nativeElement as HTMLElement).querySelector('nav')!;
+    expect(nav.getAttribute('aria-label')).toBe('Main');
+  });
+
+  // An icon's ligature text ("home") is not part of a name.
+  const nameText = (el: Element): string => {
+    const copy = el.cloneNode(true) as Element;
+    copy.querySelectorAll('[aria-hidden="true"], .hidden').forEach(e => e.remove());
+    return copy.textContent!.replace(/\s+/g, ' ').trim();
+  };
+
+  it('names its items without their icon text', async () => {
+    fixture.componentRef.setInput('tabs', [{ link: '/home', label: 'Home', matIcon: 'home' }]);
+    fixture.componentRef.setInput('iconMode', false);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(nameText(el.querySelector('a.nav-item')!)).toBe('Home');
+    expect(el.querySelector('.nav-toggle')!.getAttribute('aria-label')).toBe('Collapse sidebar');
+    // The logo's name is the text beside it, said once.
+    expect(el.querySelector('.nav-logo-img')!.getAttribute('alt')).toBe('');
+
+    fixture.componentRef.setInput('iconMode', true);
+    await fixture.whenStable();
+    expect(el.querySelector('.nav-logo-img')!.getAttribute('alt')).not.toBe('');
+  });
+
   it('shows icons only until told otherwise, and says when the mode changes', async () => {
     const changedMode = vi.fn();
     component.changedMode.subscribe(changedMode);

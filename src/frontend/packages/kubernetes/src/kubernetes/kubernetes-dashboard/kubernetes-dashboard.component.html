@@ -3,13 +3,13 @@
   <div class="page-header-right" [ngClass]="{'hidden': (isLoading$ | async) }">
     <span>
       @if (expanded) {
-        <button (click)="toggle()" class="btn-icon" title="Collapse">
-          <span class="material-icons">expand_less</span>
+        <button aria-label="Collapse" (click)="toggle()" class="btn-icon" title="Collapse">
+          <span aria-hidden="true" class="material-icons">expand_less</span>
         </button>
       }
       @if (!expanded) {
-        <button (click)="toggle()" class="btn-icon" title="Expand">
-          <span class="material-icons">expand_more</span>
+        <button aria-label="Expand" (click)="toggle()" class="btn-icon" title="Expand">
+          <span aria-hidden="true" class="material-icons">expand_more</span>
         </button>
       }
     </span>

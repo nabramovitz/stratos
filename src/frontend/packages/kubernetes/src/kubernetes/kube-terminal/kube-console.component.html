@@ -3,17 +3,17 @@
   <div class="page-header-right">
     <span>
       @if (sshViewer.isConnected()) {
-        <button class="btn btn-icon" matTooltip="Disconnect" name="stop" (click)="sshViewer.disconnect()" [disabled]="sshViewer.attemptingConnection()">
-          <span class="material-icons">stop</span>
+        <button aria-label="Disconnect" class="btn btn-icon" matTooltip="Disconnect" name="stop" (click)="sshViewer.disconnect()" [disabled]="sshViewer.attemptingConnection()">
+          <span aria-hidden="true" class="material-icons">stop</span>
         </button>
       }
       @if (!sshViewer.isConnected()) {
-        <button class="btn btn-icon" matTooltip="Connect" name="start" (click)="sshViewer.reconnect()" [disabled]="sshViewer.attemptingConnection()">
-          <span class="material-icons">play_arrow</span>
+        <button aria-label="Connect" class="btn btn-icon" matTooltip="Connect" name="start" (click)="sshViewer.reconnect()" [disabled]="sshViewer.attemptingConnection()">
+          <span aria-hidden="true" class="material-icons">play_arrow</span>
         </button>
       }
-      <button class="btn btn-icon" matTooltip="Back" [routerLink]="kubeSummaryLink">
-        <span class="material-icons">close</span>
+      <button aria-label="Back" class="btn btn-icon" matTooltip="Back" [routerLink]="kubeSummaryLink">
+        <span aria-hidden="true" class="material-icons">close</span>
       </button>
     </span>
   </div>
