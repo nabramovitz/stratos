@@ -14,6 +14,7 @@ vi.mock('xterm', () => ({
   Terminal: class {
     loadAddon() { }
     open() { }
+    attachCustomKeyEventHandler() { }
     onKey() { }
     onResize() { }
     focus() { }
@@ -107,6 +108,16 @@ describe('SshApplicationComponent', () => {
     lastSocket().error(new Error('connection refused'));
     await fixture.whenStable();
     expect(text()).toContain('Error connecting to web socket');
+  });
+
+  // `exit` in the shell closes the socket without a normal closure.
+  it('shows no web socket error when an open session ends', async () => {
+    open();
+    await fixture.whenStable();
+    lastSocket().error(new Error('closed'));
+    await fixture.whenStable();
+    expect(text()).not.toContain('Error connecting to web socket');
+    expect(button('start')).not.toBeNull();
   });
 
   it('clears the error on reconnect and shows it again when the retry fails', async () => {
