@@ -112,8 +112,8 @@
             @if (!steps[currentIndex()].effectiveHideCloseButton && (cancel() || cancelAction())) {
               <button id="stepper_cancel"
                 class="btn btn-secondary"
-                [routerLink]="cancelReload() || cancelAction() ? null : (cancel$ | async)"
-                [queryParams]="cancelReload() || cancelAction() ? null : (cancelQueryParams$ | async)"
+                [routerLink]="cancelReload() || cancelAction() ? null : cancelLink()"
+                [queryParams]="cancelReload() || cancelAction() ? null : cancelQueryParams()"
                 [disabled]="!canCancel(currentIndex())"
                 (click)="onCancel(currentIndex())">
                 {{ this.getCancelButtonText(currentIndex()) }}
@@ -126,14 +126,15 @@
                 [attr.aria-describedby]="stepError() ? 'stepper_error' : null"
                   [ngClass]="{
                     'btn-danger': steps[currentIndex()].effectiveDestructiveStep,
-                    'btn-primary': !steps[currentIndex()].effectiveDestructiveStep
+                    'btn-warning': !steps[currentIndex()].effectiveDestructiveStep && steps[currentIndex()].effectiveWarningStep,
+                    'btn-primary': !steps[currentIndex()].effectiveDestructiveStep && !steps[currentIndex()].effectiveWarningStep
                   }"
                 type="submit"
                 (click)="goNext()"
                 [disabled]="steps[currentIndex()].busy || steps[currentIndex()].effectiveBlocked || !canGoNext(currentIndex())">
                 <!-- Loading spinner -->
                 @if (showNextButtonProgress) {
-                  <app-busy class="text-white" size="1.25rem" context="stepper-next"></app-busy>
+                  <app-busy size="1.25rem" context="stepper-next"></app-busy>
                 } @else {
                   <span>{{ this.getNextButtonText(currentIndex()) }}</span>
                 }
