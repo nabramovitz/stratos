@@ -99,7 +99,6 @@ describe('GitRegistrationComponent', () => {
   it('groups the type radios under the step heading', async () => {
     // The form is built once the endpoint lists arrive.
     component['init']();
-    component['cdr'].markForCheck();
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
     const radios = Array.from(el.querySelectorAll('input[type="radio"]')) as HTMLInputElement[];
@@ -115,6 +114,17 @@ describe('GitRegistrationComponent', () => {
     expect(label?.textContent).toContain('Select the type of');
   });
 
+  // A type whose URL is already registered is skipped, and the note says why.
+  it('notes the type it skipped because its URL is already registered', async () => {
+    const types = component.gitTypes[component.epSubType].types;
+    const skipped = Object.values(types).find(t => !!t.url)!;
+    skipped.exists = true;
+    component['init']();
+    await fixture.whenStable();
+
+    expect(fixture.nativeElement.textContent).toContain(`An endpoint at ${skipped.url} is already registered`);
+  });
+
   // Inside the Register Endpoint dialog the form closes the dialog through
   // its handle instead of navigating to the page under it.
   it('closes the dialog on Cancel', async () => {
@@ -126,7 +136,7 @@ describe('GitRegistrationComponent', () => {
   it('closes the dialog, reporting the registration, when the Connect step finishes', async () => {
     // Stands in for the `connect` view query, which the handle reads.
     (component as unknown as { _connect: () => unknown })._connect =
-      () => ({ onNext: () => of({ success: true, redirect: true }) });
+      () => ({ onNext: async () => ({ success: true, redirect: true }) });
     await component.connectStepHandle.submit!();
     expect(registerHandle.close).toHaveBeenCalledWith(true);
   });
@@ -135,8 +145,7 @@ describe('GitRegistrationComponent', () => {
     beforeEach(async () => {
       stubSignalConfig.register.mockResolvedValue({ busy: false, error: false, message: '', guid: 'new-guid' });
       component['init']();
-      component['cdr'].markForCheck();
-      await fixture.whenStable();
+        await fixture.whenStable();
       await component.registerStepHandle.submit!();
       await fixture.whenStable();
     });

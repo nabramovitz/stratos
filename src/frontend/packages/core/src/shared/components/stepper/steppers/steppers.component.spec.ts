@@ -1,12 +1,12 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectorRef, Component, Directive, Input, OnChanges, signal } from '@angular/core';
+import { Component, Directive, Input, OnChanges, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideZonelessChangeDetection } from '@angular/core';
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vitest';
-import { NEVER, of, Subject } from 'rxjs';
+
 import { provideRouter, Router } from '@angular/router';
 import { RoutingHistoryService } from '@stratosui/store';
 import { RouterTestingModule } from '@angular/router/testing';
@@ -69,22 +69,25 @@ describe('SteppersComponent', () => {
   // zoneless-CD bug: a [hidden] change → filterSteps reassigns this.steps but
   // without markForCheck the template kept rendering the step list from
   // the initial filter. Routes step would never appear even after routes
-  // loaded. This test pins the filter path to mark for check.
-  it('re-filters visible steps and marks for check when a step unhides', () => {
-    const refA = makeStep('A', { hidden: true });
+  // loaded. This test pins the step bar to the re-filtered list.
+  it('re-filters visible steps and renders a step that unhides', async () => {
+    const refA = makeStep('Alpha', { hidden: true });
     const stepA = refA.instance;
-    const stepB = makeStep('B', { hidden: false }).instance;
-    const stepC = makeStep('C', { hidden: false }).instance;
+    const stepB = makeStep('Bravo', { hidden: false }).instance;
+    const stepC = makeStep('Charlie', { hidden: false }).instance;
     (component as any).allSteps = [stepA, stepB, stepC];
     (component as any).filterSteps();
+    await fixture.whenStable();
     expect(component.steps).toEqual([stepB, stepC]);
+    const text = () => (fixture.nativeElement as HTMLElement).textContent;
+    expect(text()).toContain('Bravo');
+    expect(text()).not.toContain('Alpha');
 
-    const cdr = (component as any).cdr as ChangeDetectorRef;
-    const markForCheck = vi.spyOn(cdr, 'markForCheck');
     refA.setInput('hidden', false);
     (component as any).filterSteps();
+    await fixture.whenStable();
     expect(component.steps).toEqual([stepA, stepB, stepC]);
-    expect(markForCheck).toHaveBeenCalled();
+    expect(text()).toContain('Alpha');
   });
 
   // Regression: step content is instantiated lazily (the ngTemplateOutlet
@@ -471,8 +474,8 @@ describe('SteppersComponent — current step across re-filters', () => {
     await hostFixture.whenStable();
     expect(steppers().steps.map(step => step.title())).toEqual(['One', 'Two']);
     expect(current().title()).toBe('Two');
-    expect(current().active).toBe(true);
-    expect(steppers().steps[0].active).toBe(false);
+    expect(current().active()).toBe(true);
+    expect(steppers().steps[0].active()).toBe(false);
     // Showing a step is not a transition: no extra onEnter.
     expect(host.entered).toEqual(['two']);
   });
@@ -488,7 +491,7 @@ describe('SteppersComponent — current step across re-filters', () => {
     await hostFixture.whenStable();
     expect(steppers().steps.map(step => step.title())).toEqual(['Two']);
     expect(current().title()).toBe('Two');
-    expect(current().active).toBe(true);
+    expect(current().active()).toBe(true);
   });
 
   it('enters the step shown in place of a current step that is hidden', async () => {
@@ -503,7 +506,7 @@ describe('SteppersComponent — current step across re-filters', () => {
     await hostFixture.whenStable();
     expect(steppers().steps.map(step => step.title())).toEqual(['One']);
     expect(current().title()).toBe('One');
-    expect(current().active).toBe(true);
+    expect(current().active()).toBe(true);
     expect(host.entered).toEqual(['one', 'two', 'one']);
   });
 });
@@ -551,7 +554,7 @@ describe('SteppersComponent — all steps hidden, then shown', () => {
     await settle();
     expect(steppers().steps.map(step => step.title())).toEqual(['Two']);
     expect(current().title()).toBe('Two');
-    expect(current().active).toBe(true);
+    expect(current().active()).toBe(true);
     expect(host.entered).toEqual(['one', 'two']);
   });
 
@@ -560,8 +563,8 @@ describe('SteppersComponent — all steps hidden, then shown', () => {
     host.secondHidden.set(false);
     await settle();
     expect(current().title()).toBe('Two');
-    expect(current().active).toBe(true);
-    expect(steppers().steps[0].active).toBe(false);
+    expect(current().active()).toBe(true);
+    expect(steppers().steps[0].active()).toBe(false);
     expect(host.entered).toEqual(['one', 'two']);
   });
 
@@ -570,8 +573,8 @@ describe('SteppersComponent — all steps hidden, then shown', () => {
     await settle();
     expect(steppers().steps.map(step => step.title())).toEqual(['One']);
     expect(current().title()).toBe('One');
-    expect(current().active).toBe(true);
-    expect(steppers().allSteps[1].active).toBe(false);
+    expect(current().active()).toBe(true);
+    expect(steppers().allSteps[1].active()).toBe(false);
     expect(host.entered).toEqual(['one', 'two', 'one']);
   });
 });
@@ -619,7 +622,7 @@ describe('SteppersComponent — failed step', () => {
     const reason = () => root.querySelector('[role="alert"] p');
     return { hostFixture, steppers, root, reason };
   };
-  const failed = (message: string) => of({ success: false, message, data: {}, redirect: false, ignoreSuccess: false });
+  const failed = (message: string) => Promise.resolve<StepOnNextResult>({ success: false, message, data: {}, redirect: false, ignoreSuccess: false });
 
   it('shows an HTML error page as its heading and message', async () => {
     const { hostFixture, steppers, reason } = await setUp();
@@ -648,12 +651,12 @@ describe('SteppersComponent — failed step', () => {
 
   it('shows what a step threw, and lets the user retry', async () => {
     const { hostFixture, steppers, reason } = await setUp();
-    steppers.steps[0].invokeNext = () => { throw new Error('boom'); };
+    steppers.steps[0].invokeNext = () => Promise.reject(new Error('boom'));
     steppers.goNext();
     await hostFixture.whenStable();
 
     expect(reason()!.textContent).toContain('An error occurred: boom');
-    expect(steppers.steps[0].busy).toBe(false);
+    expect(steppers.steps[0].busy()).toBe(false);
   });
 
   it('clears the reason before the next try', async () => {
@@ -664,15 +667,49 @@ describe('SteppersComponent — failed step', () => {
     await hostFixture.whenStable();
     expect(reason()).not.toBeNull();
 
-    invokeNext.mockReturnValue(NEVER as never);
+    invokeNext.mockReturnValue(new Promise<StepOnNextResult>(() => { }));
     steppers.goNext();
     await hostFixture.whenStable();
     expect(reason()).toBeNull();
   });
 
+  it('drops the result of a try that a later try superseded', async () => {
+    const { hostFixture, steppers, reason } = await setUp();
+    let settleFirst!: (r: StepOnNextResult) => void;
+    const first = new Promise<StepOnNextResult>(r => settleFirst = r);
+    const invokeNext = vi.fn(() => first);
+    steppers.steps[0].invokeNext = invokeNext;
+    steppers.goNext();
+    invokeNext.mockReturnValue(failed('second'));
+    steppers.goNext();
+    await vi.waitFor(() => expect(steppers.stepError()).not.toBeNull());
+
+    settleFirst({ success: true });
+    await first;
+    await hostFixture.whenStable();
+    expect(steppers.currentIndex()).toBe(0);
+    expect(reason()!.textContent).toContain('second');
+    expect(steppers.steps[0].busy()).toBe(false);
+  });
+
+  it('drops a result that arrives after the stepper is destroyed', async () => {
+    const { hostFixture, steppers } = await setUp();
+    let settle!: (r: StepOnNextResult) => void;
+    const pending = new Promise<StepOnNextResult>(r => settle = r);
+    steppers.steps[0].invokeNext = () => pending;
+    const setActive = vi.spyOn(steppers, 'setActive');
+    steppers.goNext();
+    hostFixture.destroy();
+
+    settle({ success: true });
+    await pending;
+    await Promise.resolve();
+    expect(setActive).not.toHaveBeenCalled();
+  });
+
   it('clears the reason on going back from the step', async () => {
     const { hostFixture, steppers, reason } = await setUp();
-    steppers.steps[0].invokeNext = () => of({ success: true, message: '', data: {}, redirect: false, ignoreSuccess: false });
+    steppers.steps[0].invokeNext = () => Promise.resolve<StepOnNextResult>({ success: true, message: '', data: {}, redirect: false, ignoreSuccess: false });
     steppers.goNext();
     await hostFixture.whenStable();
     expect(steppers.currentIndex()).toBe(1);
@@ -714,7 +751,7 @@ describe('SteppersComponent — failed step', () => {
     expect(region.id).toBeTruthy();
     expect(next.getAttribute('aria-describedby')).toBe(region.id);
 
-    invokeNext.mockReturnValue(NEVER as never);
+    invokeNext.mockReturnValue(new Promise<StepOnNextResult>(() => { }));
     steppers.goNext();
     await hostFixture.whenStable();
     expect(next.hasAttribute('aria-describedby')).toBe(false);
@@ -726,7 +763,8 @@ describe('SteppersComponent — failed step', () => {
   it('gives focus back to Next when a step fails', async () => {
     const { hostFixture, steppers, root } = await setUp();
     const next = root.querySelector<HTMLButtonElement>('#stepper_next')!;
-    const result = new Subject<StepOnNextResult>();
+    let settle!: (r: StepOnNextResult) => void;
+    const result = new Promise<StepOnNextResult>(r => settle = r);
     steppers.steps[0].invokeNext = () => result;
     next.focus();
     steppers.goNext();
@@ -735,7 +773,8 @@ describe('SteppersComponent — failed step', () => {
     expect(next.disabled).toBe(true);
     expect(document.activeElement).toBe(document.body);
 
-    result.next({ success: false, message: 'nope', data: {}, redirect: false, ignoreSuccess: false });
+    settle({ success: false, message: 'nope', data: {}, redirect: false, ignoreSuccess: false });
+    await vi.waitFor(() => expect(steppers.steps[0].busy()).toBe(false));
     await hostFixture.whenStable();
 
     expect(next.disabled).toBe(false);
@@ -747,14 +786,16 @@ describe('SteppersComponent — failed step', () => {
     const next = root.querySelector<HTMLButtonElement>('#stepper_next')!;
     const field = document.createElement('input');
     root.appendChild(field);
-    const result = new Subject<StepOnNextResult>();
+    let settle!: (r: StepOnNextResult) => void;
+    const result = new Promise<StepOnNextResult>(r => settle = r);
     steppers.steps[0].invokeNext = () => result;
     next.focus();
     steppers.goNext();
     field.focus();
     await hostFixture.whenStable();
 
-    result.next({ success: false, message: 'nope', data: {}, redirect: false, ignoreSuccess: false });
+    settle({ success: false, message: 'nope', data: {}, redirect: false, ignoreSuccess: false });
+    await vi.waitFor(() => expect(steppers.steps[0].busy()).toBe(false));
     await hostFixture.whenStable();
 
     expect(document.activeElement).toBe(field);
@@ -970,7 +1011,7 @@ describe('SteppersComponent — first step and start index', () => {
   it('starts on startIndex with earlier steps complete', async () => {
     const { host, steppers } = await create(h => { h.startIndex = 1; h.startData = { n: 7 }; });
     expect(steppers.currentIndex()).toBe(1);
-    expect(steppers.steps[0].complete).toBe(true);
+    expect(steppers.steps[0].complete()).toBe(true);
     expect(host.secondEnter).toHaveBeenCalledWith({ n: 7 });
     expect(host.firstEnter).not.toHaveBeenCalled();
   });

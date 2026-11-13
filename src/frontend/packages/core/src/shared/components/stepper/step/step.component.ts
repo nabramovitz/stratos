@@ -1,15 +1,8 @@
-import { ChangeDetectionStrategy, Component, Signal, TemplateRef, input, output, viewChild } from '@angular/core';
-import { from, Observable, of as observableOf } from 'rxjs';
+import { ChangeDetectionStrategy, Component, Signal, TemplateRef, input, signal, viewChild } from '@angular/core';
 
 import { StepperRedirectPayload } from '../stepper.types';
 import { ErrorPiece, extractHttpErrorPieces, piecesToText } from '@stratosui/store';
 
-export interface IStepperStep {
-  validate: Observable<boolean>;
-  valid?: boolean;
-  onNext: StepOnNextFunction;
-  onEnter?: (data?: any) => void;
-}
 
 export interface StepOnNextResult {
   success: boolean;
@@ -24,8 +17,6 @@ export interface StepOnNextResult {
   ignoreSuccess?: boolean;
   data?: any;
 }
-
-export type StepOnNextFunction = (index: number, step: StepComponent) => Observable<StepOnNextResult>;
 
 /**
  * Signal-native step contract — additive shape introduced in FWT-956 and
@@ -98,27 +89,14 @@ export interface SignalStepHandle {
 export class StepComponent {
 
   public pOnEnter: (data?: any) => void;
-  active = false;
-  complete = false;
-  error = false;
-
-  // busy gates the parent stepper's Next/Apply [disabled] binding, but the
-  // steppers component is OnPush and busy mutations happen outside its CD
-  // scope (the destructive-entry timer below, goNext teardown). busy is a
-  // plain field, not a signal, so it emits a change event for the stepper to
-  // markForCheck — a bare property write is invisible to it (a step's
-  // markForCheck walks the declaration tree, which doesn't include the
-  // steppers view). Without this the destructive confirm step's Apply stayed
-  // disabled forever under zoneless.
-  readonly busyChange = output<boolean>();
-  set busy(v: boolean) {
-    if (this._busy !== v) {
-      this._busy = v;
-      this.busyChange.emit(v);
-    }
-  }
-  get busy(): boolean { return this._busy; }
-  private _busy = false;
+  // Set by the stepper, read by its template. Signals, so a write from a
+  // timer or a submit continuation re-renders the stepper by itself.
+  readonly active = signal(false);
+  readonly complete = signal(false);
+  readonly error = signal(false);
+  // Disables Next/Apply while a submit runs, and for a moment on entering a
+  // destructive or warning step.
+  readonly busy = signal(false);
 
   // Empty when not bound: the single-step base wizards give their step no title.
   readonly title = input('');
@@ -207,10 +185,8 @@ export class StepComponent {
     return this.signalHandle()?.showBusy?.() ?? this.showBusy();
   }
 
-  // The three callbacks are inputs holding a function. Call them through
-  // invokeNext, pOnEnter and invokeLeave, which also honour the signalHandle.
-  readonly onNext = input<StepOnNextFunction>(() => observableOf({ success: true }));
-
+  // The two callbacks are inputs holding a function. Call them through
+  // pOnEnter and invokeLeave, which also honour the signalHandle.
   readonly onEnter = input<(data: any) => void>(() => { });
 
   readonly onLeave = input<(isNext?: boolean) => void>(() => { });
@@ -233,41 +209,27 @@ export class StepComponent {
   readonly signalHandle = input<SignalStepHandle>();
 
   /**
-   * Dispatch the step's submission. Signal-handle path wraps `submit()` as
-   * an Observable<StepOnNextResult> so SteppersComponent.goNext can consume
-   * both shapes uniformly. When `signalHandle` is set without `submit`, the
-   * step auto-succeeds (confirmation-screen pattern). Legacy path delegates
-   * to the existing `onNext(index, this)` contract.
+   * Runs the step's submission: the signalHandle's `submit`, or an
+   * immediate success for a step without one (a confirmation screen). It
+   * never rejects: a submit that throws or rejects gives
+   * `{ success: false }` with the error's message.
    */
-  invokeNext(index: number): Observable<StepOnNextResult> {
-    const handle = this.signalHandle();
-    const submit = handle?.submit;
-    if (submit) {
-      return from(
-        submit().then(
-          (resolved) => {
-            // resolved is `void | Partial<StepOnNextResult>`; void case
-            // (Promise.resolve()) isn't an object so guard before merge.
-            // Without spreading the resolved object the redirect / redirectPayload
-            // flags from routeToServices-style success returns are lost and the
-            // stepper can't navigate the user out of the wizard on completion.
-            const base = { success: true } as StepOnNextResult;
-            if (typeof resolved === 'object' && resolved !== null) {
-              return { ...base, ...resolved } as StepOnNextResult;
-            }
-            return base;
-          },
-          (err: unknown) => {
-            const messagePieces = extractHttpErrorPieces(err);
-            return { success: false, message: piecesToText(messagePieces), messagePieces } as StepOnNextResult;
-          },
-        ),
-      );
+  async invokeNext(): Promise<StepOnNextResult> {
+    const submit = this.signalHandle()?.submit;
+    if (!submit) {
+      return { success: true };
     }
-    if (handle) {
-      return observableOf({ success: true } as StepOnNextResult);
+    try {
+      const resolved = await submit();
+      // A resolved object carries flags such as redirect/redirectPayload,
+      // which take the user out of the wizard on completion.
+      return typeof resolved === 'object' && resolved !== null
+        ? { ...resolved, success: resolved.success ?? true }
+        : { success: true };
+    } catch (err) {
+      const messagePieces = extractHttpErrorPieces(err);
+      return { success: false, message: piecesToText(messagePieces), messagePieces };
     }
-    return this.onNext()(index, this);
   }
 
   constructor() {
@@ -280,9 +242,9 @@ export class StepComponent {
       const enter = handleEnter ?? this.onEnter();
       if (enter) {
         if (this.effectiveDestructiveStep || this.effectiveWarningStep) {
-          this.busy = true;
+          this.busy.set(true);
           setTimeout(() => {
-            this.busy = false;
+            this.busy.set(false);
           }, 1000);
         }
         // Promise return values are fire-and-forget here — SteppersComponent
