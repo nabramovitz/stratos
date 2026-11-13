@@ -1,8 +1,9 @@
-import { Component, OnInit, signal, ChangeDetectionStrategy, inject } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Component, OnInit, signal, ChangeDetectionStrategy, inject, Injector } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { toObservable } from '@angular/core/rxjs-interop';
-import { combineLatest, Observable, of } from 'rxjs';
+import { combineLatest, from, Observable, of } from 'rxjs';
 import { take, defaultIfEmpty, map, shareReplay, startWith, switchMap } from 'rxjs/operators';
 
 import {
@@ -17,10 +18,11 @@ import {
   StepOnNextFunction,
 } from '@stratosui/core';
 import { CFFeatureFlagTypes } from '../../../../../cf-api.types';
+import { CfCurrentUserRolesDataService } from '../../../../../services/cf-current-user-roles-data.service';
 import { CfUsersRolesDataService } from '../../../../../services/domain-data/cf-users-roles-data.service';
 import { StUser } from '../../../../../services/endpoint-data/stratos-types';
-import { CfCurrentUserRolesSignalService } from '../../../../../user-permissions/cf-current-user-roles-signal.service';
 import { CfPermissionTypes } from '../../../../../user-permissions/cf-user-permissions-checkers';
+import { getFeatureFlagsSource } from '../../../../../user-permissions/feature-flags-cache';
 import { ActiveRouteCfOrgSpace } from '../../../cf-page.types';
 import { waitForCFPermissions } from '../../../cf.helpers';
 
@@ -77,20 +79,27 @@ export class ManageUsersSetUsernamesComponent implements OnInit {
 
   constructor() {
     const activeRouteCfOrgSpace = this.activeRouteCfOrgSpace;
-    const cfRoles = inject(CfCurrentUserRolesSignalService);
+    const rolesData = inject(CfCurrentUserRolesDataService);
+    const injector = inject(Injector);
     const userPerms = inject(CurrentUserPermissionsService);
+    const http = inject(HttpClient);
 
     this.stateIn$ = toObservable(this.stateIn);
     const ffSetPermConfig = new PermissionConfig(CfPermissionTypes.FEATURE_FLAG, CFFeatureFlagTypes.set_roles_by_username);
     const ffRemovePermConfig = new PermissionConfig(CfPermissionTypes.FEATURE_FLAG, CFFeatureFlagTypes.unset_roles_by_username);
-    this.canAdd$ = waitForCFPermissions(cfRoles, activeRouteCfOrgSpace.cfGuid).pipe(
-      switchMap(() => userPerms.can(ffSetPermConfig, activeRouteCfOrgSpace.cfGuid)),
-      take(1),
+    const canSet = userPerms.can(ffSetPermConfig, activeRouteCfOrgSpace.cfGuid);
+    const canUnset = userPerms.can(ffRemovePermConfig, activeRouteCfOrgSpace.cfGuid);
+    // The checks read false until the roles and the flags load, so each is
+    // read once both have.
+    const flagsLoaded$ = waitForCFPermissions(rolesData, activeRouteCfOrgSpace.cfGuid, injector).pipe(
+      switchMap(() => from(getFeatureFlagsSource(activeRouteCfOrgSpace.cfGuid, http).load())),
+    );
+    this.canAdd$ = flagsLoaded$.pipe(
+      map(() => canSet()),
       shareReplay({ bufferSize: 1, refCount: true })
     );
-    this.canRemove$ = waitForCFPermissions(cfRoles, activeRouteCfOrgSpace.cfGuid).pipe(
-      switchMap(() => userPerms.can(ffRemovePermConfig, activeRouteCfOrgSpace.cfGuid)),
-      take(1),
+    this.canRemove$ = flagsLoaded$.pipe(
+      map(() => canUnset()),
       shareReplay({ bufferSize: 1, refCount: true })
     );
 

@@ -3,13 +3,12 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { describe, expect, it, beforeEach } from 'vitest';
-import { NEVER, of } from 'rxjs';
 import { firstValueFrom } from 'rxjs';
 
 import { UserInviteService, UserInviteSendSpaceRoles } from './user-invite.service';
 import { CloudFoundryEndpointService } from '../services/cloud-foundry-endpoint.service';
 import { ActiveRouteCfOrgSpace } from '../cf-page.types';
-import { CfCurrentUserRolesSignalService } from '../../../user-permissions/cf-current-user-roles-signal.service';
+import { CfCurrentUserRolesDataService } from '../../../services/cf-current-user-roles-data.service';
 import { AuthDataService } from '@stratosui/store';
 import { CurrentUserPermissionsService } from '../../../../../core/src/core/permissions/current-user-permissions.service';
 
@@ -17,9 +16,9 @@ import { CurrentUserPermissionsService } from '../../../../../core/src/core/perm
 
 const stubCfEndpoint = { endpoint: signal(undefined) };
 const stubActiveRoute = { cfGuid: '' };
-const stubCfRoles = { cfEndpointRolesState$: () => NEVER };
+const stubCfRoles = { cfEndpointRolesState: () => signal(null) };
 const stubAuthData = { sessionData: signal(null) };
-const stubPermissions = { can: () => NEVER };
+const stubPermissions = { can: () => signal(false) };
 
 describe('UserInviteService.invite', () => {
   let svc: UserInviteService;
@@ -34,7 +33,7 @@ describe('UserInviteService.invite', () => {
         provideHttpClientTesting(),
         { provide: CloudFoundryEndpointService, useValue: stubCfEndpoint },
         { provide: ActiveRouteCfOrgSpace, useValue: stubActiveRoute },
-        { provide: CfCurrentUserRolesSignalService, useValue: stubCfRoles },
+        { provide: CfCurrentUserRolesDataService, useValue: stubCfRoles },
         { provide: AuthDataService, useValue: stubAuthData },
         { provide: CurrentUserPermissionsService, useValue: stubPermissions },
         UserInviteService,
@@ -82,7 +81,7 @@ describe('UserInviteService.configured', () => {
         provideHttpClientTesting(),
         { provide: CloudFoundryEndpointService, useValue: { endpoint } },
         { provide: ActiveRouteCfOrgSpace, useValue: stubActiveRoute },
-        { provide: CfCurrentUserRolesSignalService, useValue: stubCfRoles },
+        { provide: CfCurrentUserRolesDataService, useValue: stubCfRoles },
         { provide: AuthDataService, useValue: stubAuthData },
         { provide: CurrentUserPermissionsService, useValue: stubPermissions },
         UserInviteService,
@@ -107,9 +106,11 @@ describe('UserInviteService.configured', () => {
 
 describe('UserInviteService.canShowInviteUser', () => {
   const endpoint = signal<unknown>(undefined);
+  const canChangeRoles = signal(true);
 
   beforeEach(() => {
     endpoint.set(undefined);
+    canChangeRoles.set(true);
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       providers: [
@@ -118,11 +119,11 @@ describe('UserInviteService.canShowInviteUser', () => {
         provideHttpClientTesting(),
         { provide: CloudFoundryEndpointService, useValue: { endpoint } },
         { provide: ActiveRouteCfOrgSpace, useValue: stubActiveRoute },
-        { provide: CfCurrentUserRolesSignalService, useValue: {
-          cfEndpointRolesState$: () => of({ state: { initialised: true } }),
+        { provide: CfCurrentUserRolesDataService, useValue: {
+          cfEndpointRolesState: () => signal({ state: { initialised: true } }),
         } },
         { provide: AuthDataService, useValue: stubAuthData },
-        { provide: CurrentUserPermissionsService, useValue: { can: () => of(true) } },
+        { provide: CurrentUserPermissionsService, useValue: { can: () => canChangeRoles } },
         UserInviteService,
       ],
     });
@@ -138,5 +139,15 @@ describe('UserInviteService.canShowInviteUser', () => {
     endpoint.set({ entity: { metadata: { userInviteAllowed: 'true' } } });
     TestBed.tick();
     expect(seen).toEqual([true]);
+  });
+
+  it('does not offer invites without the org role-change permission', () => {
+    canChangeRoles.set(false);
+    const svc = TestBed.inject(UserInviteService);
+    const seen: boolean[] = [];
+    svc.canShowInviteUser('cf1', 'org1', '').subscribe(v => seen.push(v));
+    endpoint.set({ entity: { metadata: { userInviteAllowed: 'true' } } });
+    TestBed.tick();
+    expect(seen).toEqual([false]);
   });
 });

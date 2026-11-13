@@ -224,7 +224,7 @@ export { UtilsService, safeUnsubscribe } from './core/utils.service';
 export { TabNavService } from './tab-nav.service';
 export { CurrentUserPermissionsService, CUSTOM_USER_PERMISSION_CHECKERS } from './core/permissions/current-user-permissions.service';
 export { PermissionConfig, PermissionConfigLink, IPermissionConfigs, PermissionTypes } from './core/permissions/current-user-permissions.config';
-export { BaseCurrentUserPermissionsChecker, ICurrentUserPermissionsChecker, IPermissionCheckCombiner, IConfigGroup, IConfigGroups } from './core/permissions/current-user-permissions.types';
+export { BaseCurrentUserPermissionsChecker, ICurrentUserPermissionsChecker, PERMISSION_DENIED, IPermissionCheckCombiner, IConfigGroup, IConfigGroups } from './core/permissions/current-user-permissions.types';
 export { StratosCurrentUserPermissions, StratosScopeStrings } from './core/permissions/stratos-user-permissions.checker';
 export { UserProfileService } from './core/user-profile.service';
 export { SessionService } from './shared/services/session.service';
@@ -234,8 +234,6 @@ export { AuthSignalService } from './core/signals/auth-signal.service';
 export { SessionSignalService } from './core/signals/session-signal.service';
 export { UserSignalService } from './core/signals/user-signal.service';
 export { EndpointsSignalService } from './core/signals/endpoints-signal.service';
-export { PermissionsSignalService } from './core/signals/permissions-signal.service';
-export { CurrentUserRolesSignalService } from './core/signals/current-user-roles-signal.service';
 
 // Helper Classes
 export { arrayHelper } from './core/helper-classes/array.helper';
