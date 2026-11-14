@@ -141,8 +141,9 @@ func (p *portalProxy) DoRegisterEndpoint(cnsiName string, apiEndpoint string, sk
 		isAdmin = currentCreator.Admin
 	}
 
-	// Multiple registrations of the same URL are permitted — each gets a unique GUID.
-	// A follow-on ticket (FWT-TBD) adds UX warning when a duplicate URL is detected.
+	// Multiple registrations of the same URL are permitted — each gets a
+	// unique GUID. The Register step and the endpoint pages tell the user
+	// when an address is shared.
 	guid := uuid.New().String()
 
 	newCNSI, _, err := fetchInfo(apiEndpoint, skipSSLValidation, caCert)
@@ -255,8 +256,9 @@ func (p *portalProxy) buildCNSIList(c *echo.Context) ([]*api.CNSIRecord, error) 
 
 		if p.GetConfig().UserEndpointsEnabled != config.UserEndpointsConfigEnum.AdminOnly {
 			// The user's own endpoints come first. One of them hides a system
-			// endpoint of the same type at the same URL; endpoints of other
-			// types can share a URL (Metrics at a Cloud Foundry API address).
+			// endpoint of the same type at the same address (endpointURLKey,
+			// as connect and login compare); endpoints of other types can
+			// share a URL (Metrics at a Cloud Foundry API address).
 			unfilteredList, err := p.ListAdminEndpoints(userID.(string))
 			if err != nil {
 				return unfilteredList, err
@@ -269,7 +271,7 @@ func (p *portalProxy) buildCNSIList(c *echo.Context) ([]*api.CNSIRecord, error) 
 				if len(endpoint.Creator) == 0 {
 					for _, own := range filteredList {
 						if len(own.Creator) != 0 && own.CNSIType == endpoint.CNSIType &&
-							own.APIEndpoint.String() == endpoint.APIEndpoint.String() {
+							endpointURLKey(own.APIEndpoint) == endpointURLKey(endpoint.APIEndpoint) {
 							hidden = true
 							break
 						}
