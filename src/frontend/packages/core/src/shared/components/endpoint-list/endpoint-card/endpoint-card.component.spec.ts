@@ -5,10 +5,11 @@ import { RouterTestingModule } from '@angular/router/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { of } from 'rxjs';
 import { EndpointModel, UserFavoriteManager, entityCatalog, EntityCatalogTestModuleManualStore, generateStratosEntities, TEST_CATALOGUE_ENTITIES } from '@stratosui/store';
-import { createBasicStoreModule, STORE_TEST_PROVIDERS } from '@stratosui/store/testing';
-import { CurrentUserPermissionsService, SessionService } from '@stratosui/core';
+import { createBasicStoreModule, seedEndpointsDataService, STORE_TEST_PROVIDERS } from '@stratosui/store/testing';
+import { CurrentUserPermissionsService } from '@stratosui/core';
+import { SessionSignalService } from '../../../../core/signals/session-signal.service';
+import { StratosCurrentUserPermissions } from '../../../../core/permissions/stratos-user-permissions.checker';
 import { EndpointListHelper } from '../endpoint-list.helpers';
 import { EndpointCardComponent } from './endpoint-card.component';
 import { MetricsService } from '../../../../features/metrics/services/metrics-service';
@@ -16,6 +17,7 @@ import { MetricsService } from '../../../../features/metrics/services/metrics-se
 describe('EndpointCardComponent', () => {
   let component: EndpointCardComponent;
   let fixture: ComponentFixture<EndpointCardComponent>;
+  const sessionSignals = { userEndpointsEnabled: signal(true), userEndpointsNotDisabled: signal(true) };
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -39,18 +41,11 @@ describe('EndpointCardComponent', () => {
         UserFavoriteManager,
         {
           provide: MetricsService,
-          useValue: {
-            metricsEndpoints$: of([]),
-            haveNoMetricsEndpoints$: of(false),
-            haveNoConnectedMetricsEndpoints$: of(false)
-          }
+          useValue: { metricsEndpoints: signal([]) }
         },
         {
-          provide: SessionService,
-          useValue: {
-            userEndpointsEnabled: () => of(true),
-            userEndpointsNotDisabled: () => of(true)
-          }
+          provide: SessionSignalService,
+          useValue: sessionSignals
         },
         {
           provide: CurrentUserPermissionsService,
@@ -64,6 +59,8 @@ describe('EndpointCardComponent', () => {
   });
 
   beforeEach(async () => {
+    sessionSignals.userEndpointsEnabled.set(true);
+    sessionSignals.userEndpointsNotDisabled.set(true);
     fixture = TestBed.createComponent(EndpointCardComponent);
     component = fixture.componentInstance;
     fixture.componentRef.setInput('row', {
@@ -94,6 +91,41 @@ describe('EndpointCardComponent', () => {
     isAdmin.set(true);
     await card.whenStable();
     expect(text()).toContain('Creator');
+  });
+
+  // An endpoint admin sees the creator while user endpoints are enabled.
+  // The card kept the setting's first answer.
+  it('shows the creator to an endpoint admin while user endpoints are enabled', async () => {
+    sessionSignals.userEndpointsEnabled.set(false);
+    TestBed.tick();
+    vi.spyOn(TestBed.inject(CurrentUserPermissionsService), 'can')
+      .mockImplementation(((p: string) => signal(p === StratosCurrentUserPermissions.EDIT_ENDPOINT)) as never);
+    const card = TestBed.createComponent(EndpointCardComponent);
+    card.componentRef.setInput('row', component.row());
+    await card.whenStable();
+    const text = () => (card.nativeElement as HTMLElement).textContent ?? '';
+    expect(text()).not.toContain('Creator');
+
+    sessionSignals.userEndpointsEnabled.set(true);
+    await card.whenStable();
+    expect(text()).toContain('Creator');
+  });
+
+  it('warns while another endpoint shares the address, and stops when it goes', async () => {
+    const warning = () => fixture.nativeElement.querySelector('span[aria-label="Another endpoint is registered at this URL"]');
+    const ep = (guid: string) => ({ guid, cnsi_type: 'metrics', creator: { name: 'a', admin: false, system: true }, api_endpoint: { Scheme: 'https', Host: 'one.example.com', Path: '' } }) as EndpointModel;
+    fixture.componentRef.setInput('row', ep('ep-1'));
+    seedEndpointsDataService([ep('ep-1')]);
+    await fixture.whenStable();
+    expect(warning()).toBeNull();
+
+    seedEndpointsDataService([ep('ep-1'), ep('ep-2')]);
+    await fixture.whenStable();
+    expect(warning()).not.toBeNull();
+
+    seedEndpointsDataService([ep('ep-1')]);
+    await fixture.whenStable();
+    expect(warning()).toBeNull();
   });
 
   // The card navigated on click only: no link, role or tab stop, so keyboard

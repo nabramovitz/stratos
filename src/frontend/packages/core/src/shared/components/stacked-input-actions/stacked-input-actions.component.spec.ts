@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vitest';
-import { BehaviorSubject } from 'rxjs';
+import { By } from '@angular/platform-browser';
 
 import { BaseTestModulesNoShared, STORE_TEST_PROVIDERS } from "@test-framework/core-test.helper";
 import { BooleanIndicatorComponent } from '../boolean-indicator/boolean-indicator.component';
@@ -11,7 +11,6 @@ import { StackedInputActionsComponent, StackedInputActionsState } from './stacke
 describe('StackedInputActionsComponent', () => {
   let component: StackedInputActionsComponent;
   let fixture: ComponentFixture<StackedInputActionsComponent>;
-  let stateIn: BehaviorSubject<StackedInputActionsState[]>;
 
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -32,8 +31,7 @@ describe('StackedInputActionsComponent', () => {
   beforeEach(async () => {
     fixture = TestBed.createComponent(StackedInputActionsComponent);
     component = fixture.componentInstance;
-    stateIn = new BehaviorSubject<StackedInputActionsState[]>([]);
-    fixture.componentRef.setInput('stateIn$', stateIn);
+    fixture.componentRef.setInput('stateIn', []);
     await fixture.whenStable();
   });
 
@@ -41,7 +39,7 @@ describe('StackedInputActionsComponent', () => {
   const addButton = () => host().querySelector<HTMLButtonElement>('button.stacked-input__add')!;
   const resultIcon = () => host().querySelector('app-stacked-input-action app-boolean-indicator .material-icons');
   const pushState = async (result: StackedInputActionResult, message?: string) => {
-    stateIn.next([{ key: '0', result, message }]);
+    fixture.componentRef.setInput('stateIn', [{ key: '0', result, message }] as StackedInputActionsState[]);
     await fixture.whenStable();
   };
 
@@ -93,5 +91,23 @@ describe('StackedInputActionsComponent', () => {
     await fixture.whenStable();
 
     expect(emitted.at(-1)?.values).toEqual({ 0: 'a@example.com', 1: 'b@example.com' });
+  });
+
+  // Each row is fed by a watcher on its own state. A row that is removed
+  // takes its watcher with it; the watchers used to live on until the whole
+  // form was destroyed, one more for every row added and removed.
+  it('ends a removed row\'s state feed with the row', async () => {
+    addButton().click();
+    await fixture.whenStable();
+    const rows = fixture.debugElement.queryAll(By.directive(StackedInputActionComponent));
+    const second = rows[1].componentInstance as StackedInputActionComponent;
+    const ended = vi.fn();
+    second.stateIn$().subscribe({ complete: ended });
+    expect(ended).not.toHaveBeenCalled();
+
+    component.removeComponent(second);
+    await fixture.whenStable();
+
+    expect(ended).toHaveBeenCalledTimes(1);
   });
 });

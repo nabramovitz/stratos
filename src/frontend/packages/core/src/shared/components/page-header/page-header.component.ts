@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { ChangeDetectionStrategy, AfterViewInit, Component, HostListener, OnDestroy, TemplateRef, ViewContainerRef, computed, effect, inject, input, linkedSignal, Signal, signal, untracked, viewChild } from '@angular/core';
 import { RouterModule, ActivatedRoute, Router } from '@angular/router';
-import { toObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   InternalEventSeverity,
   IFavoriteMetadata,
@@ -123,9 +123,9 @@ export class PageHeaderComponent implements OnDestroy, AfterViewInit {
   public environment = environment;
 
   // Menu state for Tailwind dropdowns
-  public isHistoryMenuOpen = false;
-  public isUserMenuOpen = false;
-  public isTokenMenuOpen = false;
+  public readonly isHistoryMenuOpen = signal(false);
+  public readonly isUserMenuOpen = signal(false);
+  public readonly isTokenMenuOpen = signal(false);
 
   readonly pageHeaderTmpl = viewChild.required<TemplateRef<any>>('pageHeaderTmpl');
 
@@ -192,7 +192,7 @@ export class PageHeaderComponent implements OnDestroy, AfterViewInit {
     }
     return name ? name : profile.userName;
   });
-  public allowGravatar$: Observable<boolean>;
+  public readonly allowGravatar = this.dashboardSignals.gravatarEnabled;
   public canLogout: Signal<boolean>;
   public authToken$!: Observable<string>;
   public refreshToken$!: Observable<string>;
@@ -302,8 +302,6 @@ export class PageHeaderComponent implements OnDestroy, AfterViewInit {
       }
     });
 
-    this.allowGravatar$ = toObservable(this.dashboardSignals.gravatarEnabled);
-
     // Must be enabled and the user must have permission
     const apiKeysPermission = this.cups.can(StratosCurrentUserPermissions.API_KEYS);
     this.canAPIKeys = computed(() => !this.endpointsService.disablePersistenceFeatures() && apiKeysPermission());
@@ -368,26 +366,26 @@ export class PageHeaderComponent implements OnDestroy, AfterViewInit {
 
   // Tailwind dropdown menu methods
   toggleHistoryMenu() {
-    this.isHistoryMenuOpen = !this.isHistoryMenuOpen;
-    if (this.isHistoryMenuOpen) {
-      this.isUserMenuOpen = false;
-      this.isTokenMenuOpen = false;
+    this.isHistoryMenuOpen.update(open => !open);
+    if (this.isHistoryMenuOpen()) {
+      this.isUserMenuOpen.set(false);
+      this.isTokenMenuOpen.set(false);
     }
   }
 
   toggleUserMenu() {
-    this.isUserMenuOpen = !this.isUserMenuOpen;
-    if (this.isUserMenuOpen) {
-      this.isHistoryMenuOpen = false;
-      this.isTokenMenuOpen = false;
+    this.isUserMenuOpen.update(open => !open);
+    if (this.isUserMenuOpen()) {
+      this.isHistoryMenuOpen.set(false);
+      this.isTokenMenuOpen.set(false);
     }
   }
 
   toggleTokenMenu() {
-    this.isTokenMenuOpen = !this.isTokenMenuOpen;
-    if (this.isTokenMenuOpen) {
-      this.isHistoryMenuOpen = false;
-      this.isUserMenuOpen = false;
+    this.isTokenMenuOpen.update(open => !open);
+    if (this.isTokenMenuOpen()) {
+      this.isHistoryMenuOpen.set(false);
+      this.isUserMenuOpen.set(false);
       this.refreshTokenObservables();
     }
   }
@@ -397,7 +395,7 @@ export class PageHeaderComponent implements OnDestroy, AfterViewInit {
   }
 
   closeUserMenu() {
-    this.isUserMenuOpen = false;
+    this.isUserMenuOpen.set(false);
   }
 
   // Escape closes the open panel (user, token or history) and returns focus
@@ -405,9 +403,9 @@ export class PageHeaderComponent implements OnDestroy, AfterViewInit {
   // button is used.
   @HostListener('document:keydown.escape')
   onEscape() {
-    const open = this.isUserMenuOpen ? 'userMenu'
-      : this.isTokenMenuOpen ? 'tokenMenu'
-      : this.isHistoryMenuOpen ? 'historyMenu'
+    const open = this.isUserMenuOpen() ? 'userMenu'
+      : this.isTokenMenuOpen() ? 'tokenMenu'
+      : this.isHistoryMenuOpen() ? 'historyMenu'
       : null;
     if (!open) {
       return;
@@ -420,11 +418,11 @@ export class PageHeaderComponent implements OnDestroy, AfterViewInit {
   }
 
   closeHistoryMenu() {
-    this.isHistoryMenuOpen = false;
+    this.isHistoryMenuOpen.set(false);
   }
 
   closeTokenMenu() {
-    this.isTokenMenuOpen = false;
+    this.isTokenMenuOpen.set(false);
   }
 
 }

@@ -2,11 +2,11 @@ import { inject, TestBed } from '@angular/core/testing';
 import { ApplicationRef, provideZonelessChangeDetection, signal } from '@angular/core';
 import { ActivatedRouteSnapshot, Router, RouterStateSnapshot } from '@angular/router';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { firstValueFrom, Observable, of } from 'rxjs';
+import { firstValueFrom, Observable } from 'rxjs';
 import { AuthDataService, AuthState, EndpointModel, EndpointsDataService, entityCatalog } from '@stratosui/store';
 import { createBasicStoreModule, STORE_TEST_PROVIDERS } from '@stratosui/store/testing';
 import { CoreTestingModule } from '@test-framework/core-test.modules';
-import { SessionService } from '../shared/services/session.service';
+import { SessionSignalService } from './signals/session-signal.service';
 import { CoreModule } from './core.module';
 import { EndpointsService, endpointsGuard } from './endpoints.service';
 import { UserService } from './user.service';
@@ -19,7 +19,6 @@ describe('EndpointsService', () => {
         ...(STORE_TEST_PROVIDERS || []),
         EndpointsService,
         UtilsService,
-        SessionService,
         provideZonelessChangeDetection(),
       ],
       imports: [
@@ -83,6 +82,23 @@ describe('EndpointsService', () => {
     list.set(new Map([['cf-1', { guid: 'cf-1', cnsi_type: 'cf', connectionStatus: 'connected' } as EndpointModel]]));
     expect(none()).toBe(false);
   });
+
+  // The install page lists the connected clusters; the list follows them.
+  it('lists the connected endpoints of a type as they connect', async () => {
+    const data = TestBed.inject(EndpointsDataService);
+    const list = signal(new Map([
+      ['k8s-1', { guid: 'k8s-1', cnsi_type: 'k8s', connectionStatus: 'connected' } as EndpointModel],
+      ['k8s-2', { guid: 'k8s-2', cnsi_type: 'k8s', connectionStatus: 'disconnected' } as EndpointModel],
+      ['cf-1', { guid: 'cf-1', cnsi_type: 'cf', connectionStatus: 'connected' } as EndpointModel],
+    ]));
+    vi.spyOn(data, 'endpoints').mockImplementation(() => list());
+    vi.spyOn(entityCatalog, 'getEndpoint').mockReturnValue({ definition: { unConnectable: false } } as never);
+    const connected = TestBed.inject(EndpointsService).connectedEndpointsOfTypes('k8s');
+
+    expect(connected().map(e => e.guid)).toEqual(['k8s-1']);
+    list.set(new Map([['k8s-2', { guid: 'k8s-2', cnsi_type: 'k8s', connectionStatus: 'connected' } as EndpointModel]]));
+    expect(connected().map(e => e.guid)).toEqual(['k8s-2']);
+  });
 });
 
 describe('endpointsGuard runs', () => {
@@ -96,6 +112,8 @@ describe('endpointsGuard runs', () => {
   let authReads = 0;
   let loadingReads = 0;
   let haveRegistered = true;
+  let isAdmin = true;
+  const userEndpointsEnabled = signal(false);
   let navigate: ReturnType<typeof vi.fn>;
 
   function authState(valid: boolean): AuthState {
@@ -113,6 +131,8 @@ describe('endpointsGuard runs', () => {
     authReads = 0;
     loadingReads = 0;
     haveRegistered = true;
+    isAdmin = true;
+    userEndpointsEnabled.set(false);
     auth.set(authState(true));
     loading.set(false);
     navigate = vi.fn();
@@ -136,8 +156,8 @@ describe('endpointsGuard runs', () => {
             disablePersistenceFeatures: () => false,
           },
         },
-        { provide: UserService, useValue: { isAdmin: () => true, isEndpointAdmin: () => false } },
-        { provide: SessionService, useValue: { userEndpointsEnabled: () => of(false) } },
+        { provide: UserService, useValue: { isAdmin: () => isAdmin, isEndpointAdmin: () => true } },
+        { provide: SessionSignalService, useValue: { userEndpointsEnabled } },
       ],
     });
   });
@@ -160,6 +180,21 @@ describe('endpointsGuard runs', () => {
     TestBed.tick();
     expect(results).toEqual([false]);
     expect(navigate).toHaveBeenCalledWith(['/endpoints']);
+  });
+
+  // An endpoint admin may register endpoints only while user endpoints are
+  // enabled; otherwise there is nothing for them to do on /endpoints.
+  it('sends an endpoint admin with none registered where the setting says', () => {
+    haveRegistered = false;
+    isAdmin = false;
+    runGuard();
+    TestBed.tick();
+    expect(navigate).toHaveBeenLastCalledWith(['/noendpoints']);
+
+    userEndpointsEnabled.set(true);
+    runGuard();
+    TestBed.tick();
+    expect(navigate).toHaveBeenLastCalledWith(['/endpoints']);
   });
 
   it('leaves no auth or status watcher behind after it resolves', () => {

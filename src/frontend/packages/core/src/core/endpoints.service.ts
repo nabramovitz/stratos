@@ -1,5 +1,4 @@
 import { ApplicationRef, computed, inject, Injectable, Signal } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRouteSnapshot, CanActivateFn, Router, RouterStateSnapshot } from '@angular/router';
 import {
   EndpointsDataService,
@@ -12,10 +11,10 @@ import {
   EndpointModel } from '@stratosui/store';
 import { EndpointStatusState } from './signals/endpoint-status-signal.service';
 import { combineLatest as observableCombineLatest, Observable, of } from 'rxjs';
-import { catchError, filter, map, take, withLatestFrom } from 'rxjs/operators';
+import { catchError, filter, map, take } from 'rxjs/operators';
 
 import { endpointHasMetrics } from '../features/endpoints/endpoint-helpers';
-import { SessionService } from '../shared/services/session.service';
+import { SessionSignalService } from './signals/session-signal.service';
 import { EndpointHealthChecks } from './endpoints-health-checks';
 import { AuthSignalService } from './signals/auth-signal.service';
 import { EndpointStatusSignalService } from './signals/endpoint-status-signal.service';
@@ -30,7 +29,6 @@ export class EndpointsService {
   private endpointsSignals = inject(EndpointsSignalService);
   private userService = inject(UserService);
   private endpointHealthChecks = inject(EndpointHealthChecks);
-  private sessionService = inject(SessionService);
   private appRef = inject(ApplicationRef);
 
   // Signal reads of the endpoint projections.
@@ -39,9 +37,6 @@ export class EndpointsService {
   readonly haveConnected = this.endpointsSignals.haveConnected;
   readonly connectedEndpoints = this.endpointsSignals.connectedEndpoints;
   readonly disablePersistenceFeatures = this.endpointsSignals.disablePersistenceFeatures;
-
-  // Observable bridge kept for the Observable connectedEndpointsOfTypes().
-  endpoints$: Observable<IRequestEntityTypeState<EndpointModel>>;
 
   static getLinkForEndpoint(endpoint: EndpointModel): string {
     if (!endpoint || !endpoint.cnsi_type || !endpoint.guid) {
@@ -99,17 +94,6 @@ export class EndpointsService {
     ).subscribe(() => {
       this.validateEntityCatalog();
     });
-
-    // Observables sourced from the signal-native projection. The signal
-    // service already encapsulates the entity-catalog defensive filtering
-    // for the connected/registered/persistence projections, so we just
-    // adapt to Observable shape here for legacy callers.
-    this.endpoints$ = toObservable(this.endpointsSignals.endpoints).pipe(
-      catchError((error): Observable<IRequestEntityTypeState<EndpointModel>> => {
-        console.error('Error reading endpoints:', error);
-        return of({} as IRequestEntityTypeState<EndpointModel>);
-      })
-    );
   }
 
   /**
@@ -146,7 +130,7 @@ export class EndpointsService {
     this.endpointHealthChecks.checkEndpoint(endpoint);
   }
 
-  // Reads the signal, not endpoints$: toObservable replays what its effect
+  // Reads the signal: a toObservable copy replays what its effect
   // last pushed, which lags a just-reloaded list until the next change
   // detection, so a check right after a reload saw the old connections.
   public checkAllEndpoints() {
@@ -164,14 +148,15 @@ export class EndpointsService {
     return computed(() => connectedOfType(this.endpointsSignals.endpoints(), type).length === 0);
   }
 
-  connectedEndpointsOfTypes(type: string): Observable<EndpointModel[]> {
-    return this.endpoints$.pipe(
-      map(ep => connectedOfType(ep, type)),
-      catchError((error): Observable<EndpointModel[]> => {
+  connectedEndpointsOfTypes(type: string): Signal<EndpointModel[]> {
+    return computed(() => {
+      try {
+        return connectedOfType(this.endpointsSignals.endpoints(), type);
+      } catch (error) {
         console.error(`Error getting connected endpoints of type ${type}:`, error);
-        return of([]);
-      })
-    );
+        return [];
+      }
+    });
   }
 }
 
@@ -223,7 +208,7 @@ export const endpointsGuard: CanActivateFn = (
   const router = inject(Router);
   const endpointsService = inject(EndpointsService);
   const userService = inject(UserService);
-  const sessionService = inject(SessionService);
+  const sessionSignals = inject(SessionSignalService);
   const authSignals = inject(AuthSignalService);
   const endpointStatusSignals = inject(EndpointStatusSignalService);
 
@@ -238,9 +223,7 @@ export const endpointsGuard: CanActivateFn = (
       // Only proceed when logged in and endpoints are done loading
       return !!state && state.loggedIn && !endpointState.loading;
     }),
-    withLatestFrom(sessionService.userEndpointsEnabled()),
-    map(([state, userEndpointsEnabled]: [[any, EndpointStatusState], boolean]) => {
-      const [authState] = state;
+    map(([authState]: [any, EndpointStatusState]) => {
       const haveRegistered = endpointsService.haveRegistered();
       const haveConnected = endpointsService.haveConnected();
       const isAdmin = userService.isAdmin();
@@ -252,7 +235,7 @@ export const endpointsGuard: CanActivateFn = (
         let redirect: string | undefined;
         if (!disablePersistenceFeatures) {
           if (!haveRegistered) {
-            redirect = isAdmin || (userEndpointsEnabled && isEndpointAdmin) ? '/endpoints' : '/noendpoints';
+            redirect = isAdmin || (sessionSignals.userEndpointsEnabled() && isEndpointAdmin) ? '/endpoints' : '/noendpoints';
           } else if (!haveConnected) {
             redirect = '/endpoints';
           }

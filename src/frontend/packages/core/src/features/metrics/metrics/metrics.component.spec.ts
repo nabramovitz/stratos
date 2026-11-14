@@ -1,14 +1,14 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideZonelessChangeDetection } from '@angular/core';
+import { provideZonelessChangeDetection, signal } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { RouterTestingModule } from '@angular/router/testing';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { of } from 'rxjs';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-import { EntityCatalogHelper, EntityCatalogHelpers, EntityCatalogTestModule, generateStratosEntities, StratosStatus, TEST_CATALOGUE_ENTITIES } from '@stratosui/store';
+import { entityCatalog, EntityCatalogHelper, EntityCatalogHelpers, EntityCatalogTestModule, generateStratosEntities, TEST_CATALOGUE_ENTITIES } from '@stratosui/store';
 import { createBasicStoreModule, STORE_TEST_PROVIDERS } from '@stratosui/store/testing';
 import { CoreModule } from '../../../core/core.module';
 import { SharedModule } from '../../../shared/shared.module';
@@ -19,6 +19,7 @@ import { MetricsEndpointProvider, MetricsService } from '../services/metrics-ser
 import { MetricsComponent } from './metrics.component';
 
 describe('MetricsComponent', () => {
+  const metricsEndpoints = signal<MetricsEndpointProvider[]>([]);
   let component: MetricsComponent;
   let fixture: ComponentFixture<MetricsComponent>;
 
@@ -46,13 +47,10 @@ describe('MetricsComponent', () => {
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
+        { provide: ActivatedRoute, useValue: { snapshot: { params: { metricsId: 'metrics-guid' } } } },
         {
           provide: MetricsService,
-          useValue: {
-            metricsEndpoints$: of([]),
-            haveNoMetricsEndpoints$: of(false),
-            haveNoConnectedMetricsEndpoints$: of(false)
-          }
+          useValue: { metricsEndpoints }
         },
         TabNavService,
         CurrentUserPermissionsService,
@@ -68,11 +66,14 @@ describe('MetricsComponent', () => {
     EntityCatalogHelpers.SetEntityCatalogHelper(ech);
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    metricsEndpoints.set([]);
     fixture = TestBed.createComponent(MetricsComponent);
     component = fixture.componentInstance;
-    fixture.detectChanges();
+    await fixture.whenStable();
   });
+
+  afterEach(() => vi.restoreAllMocks());
 
   it('should create', () => {
     expect(component).toBeTruthy();
@@ -91,20 +92,12 @@ describe('MetricsComponent', () => {
   });
 
   it('draws an endpoint icon in the font it names', async () => {
-    const iconFixture = TestBed.createComponent(MetricsComponent);
-    iconFixture.componentInstance.metricsEndpoint$ = of({
+    metricsEndpoints.set([{
       provider: { guid: 'metrics-guid', name: 'metrics' },
-      endpoints: []
-    } as unknown as MetricsEndpointProvider);
-    iconFixture.componentInstance.metricsInfo$ = of([{
-      known: true,
-      name: 'cf',
-      url: 'https://api.example.test',
-      icon: { name: 'cloud_foundry', font: 'stratos-icons' },
-      metadata: {},
-      status: of(StratosStatus.OK)
-    }]);
-    iconFixture.detectChanges();
+      endpoints: [{ guid: 'cf-1', name: 'cf', cnsi_type: 'cf', api_endpoint: { Scheme: 'https', Host: 'api.example.test', Path: '' } }],
+    } as unknown as MetricsEndpointProvider]);
+    vi.spyOn(entityCatalog, 'getEndpoint').mockReturnValue({ definition: { label: 'Cloud Foundry', icon: 'cloud_foundry' } } as never);
+    const iconFixture = TestBed.createComponent(MetricsComponent);
     await iconFixture.whenStable();
 
     const spans: HTMLElement[] = Array.from(iconFixture.nativeElement.querySelectorAll('span'));
@@ -113,5 +106,21 @@ describe('MetricsComponent', () => {
     // Under material-icons the name splits into the "cloud" and "foundry" ligatures.
     expect(icon!.classList.contains('stratos-icons')).toBe(true);
     expect(icon!.classList.contains('material-icons')).toBe(false);
+  });
+
+  // A metrics endpoint that reports an error for its metadata file says so.
+  it('says when the metrics endpoint provides no metadata file', async () => {
+    metricsEndpoints.set([{
+      provider: { guid: 'metrics-guid', name: 'metrics', metadata: { metrics_stratos: { error: 'no file' } } },
+      endpoints: [],
+    } as unknown as MetricsEndpointProvider]);
+    const page = TestBed.createComponent(MetricsComponent);
+    await page.whenStable();
+    expect(page.nativeElement.textContent).toContain('does not provide a');
+    expect(page.nativeElement.textContent).toContain('metadata file');
+
+    metricsEndpoints.set([{ provider: { guid: 'metrics-guid', name: 'metrics' }, endpoints: [] } as unknown as MetricsEndpointProvider]);
+    await page.whenStable();
+    expect(page.nativeElement.textContent).not.toContain('metadata file');
   });
 });

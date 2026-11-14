@@ -6,16 +6,17 @@ import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { Router } from '@angular/router';
 import { RouterTestingModule } from '@angular/router/testing';
-import { of } from 'rxjs';
 import { AuthDataService, EndpointsDataService, EntityCatalogHelper, EntityCatalogHelpers } from '@stratosui/store';
 import { createBasicStoreModule, STORE_TEST_PROVIDERS } from '@stratosui/store/testing';
 import { CoreTestingModule } from "@test-framework/core-test.modules";
 import { CoreModule } from '../../../core/core.module';
+import { DashboardDataService } from '../../../core/dashboard-data.service';
+import { StratosCurrentUserPermissions } from '../../../core/permissions/stratos-user-permissions.checker';
 import { CurrentUserPermissionsService } from '../../../core/permissions/current-user-permissions.service';
 import { SharedModule } from '../../../shared/shared.module';
 import { TabNavService } from '../../../tab-nav.service';
 import { SidePanelService } from './../../../shared/services/side-panel.service';
-import { SessionService } from '../../../shared/services/session.service';
+import { SessionSignalService } from '../../../core/signals/session-signal.service';
 import { EndpointsService } from '../../../core/endpoints.service';
 import { EndpointStatusSignalService } from '../../../core/signals/endpoint-status-signal.service';
 import { CustomizationService, CustomizationsMetadata } from '../../../core/customizations.types';
@@ -34,10 +35,10 @@ describe('EndpointsPageComponent', () => {
   let customizations: CustomizationsMetadata;
 
   // Mock services
-  const mockSessionService = {
-    userEndpointsEnabled: () => of(true),
-    userEndpointsNotDisabled: () => of(true),
-    isTechPreview: () => of(false)
+  const sessionSignals = {
+    userEndpointsEnabled: signal(true),
+    userEndpointsNotDisabled: signal(true),
+    isTechPreview: signal(false)
   };
 
   const mockEndpointsService = {
@@ -85,11 +86,10 @@ describe('EndpointsPageComponent', () => {
         TabNavService,
         SidePanelService,
         { provide: CurrentUserPermissionsService, useValue: mockPermissionsService },
-        { provide: EndpointStatusSignalService, useValue: mockEndpointStatusSignals },
-        { provide: SessionService, useValue: mockSessionService },
+        { provide: SessionSignalService, useValue: sessionSignals },
         { provide: EndpointsService, useValue: mockEndpointsService },
         // The real service waits on an endpoints request the test never answers.
-        { provide: EndpointStatusSignalService, useValue: { initialised: signal(true) } },
+        { provide: EndpointStatusSignalService, useValue: mockEndpointStatusSignals },
         { provide: CustomizationService, useValue: mockCustomizationService },
         { provide: TailwindSnackBarService, useValue: mockSnackBarService },
         { provide: EndpointModalService, useValue: mockEndpointModalService },
@@ -106,6 +106,8 @@ describe('EndpointsPageComponent', () => {
 
   beforeEach(async () => {
     perm = signal(false);
+    mockEndpointStatusSignals.initialised.set(true);
+    sessionSignals.userEndpointsEnabled.set(true);
     mockEndpointsService.haveRegistered.set(false);
     mockEndpointsService.haveConnected.set(false);
     mockEndpointsService.disablePersistenceFeatures.set(false);
@@ -138,6 +140,23 @@ describe('EndpointsPageComponent', () => {
 
   // Backup and restore need the backend plugin and the admin permission;
   // the session may arrive after the page.
+  // An endpoint admin may register only while user endpoints are enabled;
+  // the button followed the first answer only.
+  it('follows the user-endpoints setting for an endpoint admin', async () => {
+    sessionSignals.userEndpointsEnabled.set(false);
+    TestBed.tick();
+    const can = vi.spyOn(TestBed.inject(CurrentUserPermissionsService), 'can')
+      .mockImplementation(((p: string) => signal(p === StratosCurrentUserPermissions.EDIT_ENDPOINT)) as any);
+    const page = TestBed.createComponent(EndpointsPageComponent);
+    await page.whenStable();
+    expect(page.componentInstance.canRegisterEndpoint()).toBe(false);
+
+    sessionSignals.userEndpointsEnabled.set(true);
+    await page.whenStable();
+    expect(page.componentInstance.canRegisterEndpoint()).toBe(true);
+    can.mockRestore();
+  });
+
   it('offers backup and restore once the session has the plugin', () => {
     perm.set(true);
     expect(component.canBackupRestore()).toBe(false);
@@ -164,14 +183,33 @@ describe('EndpointsPageComponent', () => {
     expect(navigate).toHaveBeenCalledWith(['applications'], { replaceUrl: true });
   });
 
-  // The content waits for isInitialised$, which is delayed by 500ms.
   const renderEmptyPage = async () => {
     const page = TestBed.createComponent(EndpointsPageComponent);
     await page.whenStable();
-    await new Promise(resolve => setTimeout(resolve, 600));
-    await page.whenStable();
     return page.nativeElement as HTMLElement;
   };
+
+  // The page showed neither the loader nor the content for the first
+  // 500 ms, and lagged 500 ms behind every later change.
+  it('shows the content right away once the endpoints are loaded', async () => {
+    const el = await renderEmptyPage();
+    expect(el.querySelector('app-area-loader')).toBeNull();
+    expect(el.querySelector('app-endpoints-missing')).not.toBeNull();
+  });
+
+  it('shows the loader right away while the endpoints load, then the content', async () => {
+    mockEndpointStatusSignals.initialised.set(false);
+    const page = TestBed.createComponent(EndpointsPageComponent);
+    await page.whenStable();
+    const el = page.nativeElement as HTMLElement;
+    expect(el.querySelector('app-area-loader')).not.toBeNull();
+    expect(el.querySelector('app-endpoints-missing')).toBeNull();
+
+    mockEndpointStatusSignals.initialised.set(true);
+    await page.whenStable();
+    expect(el.querySelector('app-area-loader')).toBeNull();
+    expect(el.querySelector('app-endpoints-missing')).not.toBeNull();
+  });
 
   it('shows the default message with no endpoints', async () => {
     const el = await renderEmptyPage();
@@ -227,6 +265,35 @@ describe('EndpointsPageComponent', () => {
   // the server dropped a connection the page still said Connected, so every
   // tick fetched /pp/v1/cf/info and got 403 "no token for endpoint" (76 times
   // in 38 minutes on the lab).
+  // The dashboard setting "polling" decides whether the page keeps checking
+  // the endpoints while it is open.
+  describe('health check polling', () => {
+    const ticks = async (pollingEnabled: boolean) => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      try {
+        TestBed.inject(DashboardDataService).setPollingEnabled(pollingEnabled);
+        vi.spyOn(TestBed.inject(EndpointsDataService), 'getAll').mockResolvedValue([]);
+        const page = TestBed.createComponent(EndpointsPageComponent);
+        await page.whenStable();
+        mockEndpointsService.checkAllEndpoints.mockClear();
+        await vi.advanceTimersByTimeAsync(30000);
+        page.destroy();
+        return mockEndpointsService.checkAllEndpoints.mock.calls.length;
+      } finally {
+        mockEndpointsService.checkAllEndpoints.mockReset();
+        vi.useRealTimers();
+      }
+    };
+
+    it('checks the endpoints every 30 seconds when polling is on', async () => {
+      expect(await ticks(true)).toBe(1);
+    });
+
+    it('does not check them when polling is off', async () => {
+      expect(await ticks(false)).toBe(0);
+    });
+  });
+
   it('re-reads the endpoint list before each health check tick', async () => {
     vi.useFakeTimers();
     try {

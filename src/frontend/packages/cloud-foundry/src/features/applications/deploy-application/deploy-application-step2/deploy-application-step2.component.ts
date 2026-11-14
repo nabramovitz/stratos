@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { AfterContentInit, Component, OnDestroy, OnInit, ChangeDetectionStrategy, inject, signal, input, viewChild } from '@angular/core';
+import { AfterContentInit, Component, Injector, OnDestroy, OnInit, ChangeDetectionStrategy, computed, effect, inject, signal, input, untracked, viewChild } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormsModule, NgForm } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
@@ -85,7 +85,7 @@ export class DeployApplicationStep2Component
   private projectExists$ = toObservable(this.deployData.projectExists);
   private deployBranchName$ = toObservable(this.deployData.deployBranchName);
   private deployCommit$ = toObservable(this.deployData.newProjectCommit);
-  private peProjectName$ = toObservable(this.deployData.projectName);
+  private injector = inject(Injector);
 
 
   readonly isRedeploy = input(false);
@@ -97,15 +97,26 @@ export class DeployApplicationStep2Component
   // display details, so Next does not wait on or depend on the lookup.
   private redeployCommitSha?: string;
   public DEPLOY_TYPES_IDS = DEPLOY_TYPES_IDS;
-  sourceType$!: Observable<SourceType>;
   INITIAL_SOURCE_TYPE = 0; // Fall back to GitHub, for cases where there's no type in store (refresh) or url (removed & nav)
+  // The type picked in the link, else the one saved in the deploy state, else the default
+  readonly selectedSourceType = computed<SourceType | undefined>(() =>
+    this.appDeploySourceTypes.getAutoSelectedType(this.route) ||
+    this.deployData.sourceType() ||
+    this.appDeploySourceTypes.types()[this.INITIAL_SOURCE_TYPE]
+  );
   validate!: Observable<boolean>;
 
   stepperText$!: Observable<string | null | undefined>;
 
-  // Observables for source types
-  sourceTypeGithub$!: Observable<boolean>;
-  sourceTypeNeedsUpload$!: Observable<boolean>;
+  // Undefined until the source type is known
+  readonly sourceTypeGithub = computed(() => {
+    const type = this.selectedSourceType();
+    return type?.id ? type.group === 'gitscm' : undefined;
+  });
+  readonly sourceTypeNeedsUpload = computed(() => {
+    const type = this.selectedSourceType();
+    return type?.id ? type.id === DEPLOY_TYPES_IDS.FOLDER || type.id === DEPLOY_TYPES_IDS.FILE : undefined;
+  });
   // tslint:disable-next-line:ban-types
   canDeployType$!: Observable<boolean>;
   isLoading$!: Observable<boolean>;
@@ -124,7 +135,9 @@ export class DeployApplicationStep2Component
   // (Next button / template reads) can fire.
   sourceType!: SourceType;
   repositoryBranch?: GitBranch;
-  repository = '';
+  // Signal: bound to the project field, and seeded once the deployed app's
+  // project is known, outside change detection
+  readonly repository = signal('');
 
   // Assigned in setupForGit's source-type subscription before repo/branch
   // lookups run; reads are all downstream of that assignment.
@@ -225,15 +238,15 @@ export class DeployApplicationStep2Component
         return {
           success: false,
           message: this.isRedeploy() && branchName ?
-            `Branch ${branchName} was not found in ${this.repository}.` :
-            `Select a branch to deploy from ${this.repository}.`,
+            `Branch ${branchName} was not found in ${this.repository()}.` :
+            `Select a branch to deploy from ${this.repository()}.`,
         };
       }
       // waitForValue$ can stay open, so take its first value only
       try {
-        const repo = await firstValueFrom(this.gitData.getRepository(this.scm, this.repository).waitForValue$);
+        const repo = await firstValueFrom(this.gitData.getRepository(this.scm, this.repository()).waitForValue$);
         this.deployData.saveAppDetails({
-          projectName: this.repository,
+          projectName: this.repository(),
           branch,
           url: repo.clone_url,
           accessToken: this.accessToken,
@@ -244,7 +257,7 @@ export class DeployApplicationStep2Component
       } catch (err) {
         return {
           success: false,
-          message: `Unable to fetch ${this.scm.getLabel()} repository ${this.repository}: ${(err as Error).message}`,
+          message: `Unable to fetch ${this.scm.getLabel()} repository ${this.repository()}: ${(err as Error).message}`,
         };
       }
     } else if (this.sourceType.id === DEPLOY_TYPES_IDS.GIT_URL) {
@@ -270,27 +283,12 @@ export class DeployApplicationStep2Component
   }
 
   ngOnInit() {
-    this.sourceType$ = combineLatest([
-      this.appDeploySourceTypes.getAutoSelectedType(this.route),
-      this.sourceType$$,
-      this.appDeploySourceTypes.types$.pipe(take(1), map(st => st[this.INITIAL_SOURCE_TYPE]))
-    ]).pipe(
-      map(([sourceFromParam, sourceFromStore, sourceDefault]) => sourceFromParam || sourceFromStore || sourceDefault),
-      filter(sourceType => !!sourceType),
+    // The source type as a stream, for the chains below that switch to HTTP
+    const sourceType$ = toObservable(this.selectedSourceType, { injector: this.injector }).pipe(
+      filter((sourceType): sourceType is SourceType => !!sourceType)
     );
 
-    this.sourceTypeGithub$ = this.sourceType$.pipe(
-      filter(type => type && !!type.id),
-      map(type => type.group === 'gitscm')
-    );
-
-    this.sourceTypeNeedsUpload$ = this.sourceType$.pipe(
-      filter(type => type && !!type.id),
-      map(type => type.id === DEPLOY_TYPES_IDS.FOLDER || type.id === DEPLOY_TYPES_IDS.FILE)
-    );
-
-
-    const setInitialSourceType$ = this.sourceType$.pipe(
+    const setInitialSourceType$ = sourceType$.pipe(
       take(1),
       tap(sourceType => {
         this.setSourceType(sourceType);
@@ -306,7 +304,7 @@ export class DeployApplicationStep2Component
 
     this.canDeployType$ = combineLatest([
       cfGuid$,
-      this.sourceType$
+      sourceType$
     ]).pipe(
       filter(([cfGuid, sourceType]) => !!cfGuid && !!sourceType),
       switchMap(([cfGuid, sourceType]) => this.appDeploySourceTypes.canDeployType(cfGuid, sourceType.id)),
@@ -315,7 +313,7 @@ export class DeployApplicationStep2Component
 
     this.stepperText$ = this.canDeployType$.pipe(
       switchMap(canDeployType => canDeployType ?
-        this.isRedeploy() ? of('Review source details') : this.sourceType$.pipe(map(st => st.helpText)) :
+        this.isRedeploy() ? of('Review source details') : sourceType$.pipe(map(st => st.helpText)) :
         of(null)
       )
     );
@@ -413,8 +411,8 @@ export class DeployApplicationStep2Component
 
     const setSourceTypeModel$ = this.sourceType$$.pipe(
       filter(p => !!p),
-      withLatestFrom(this.appDeploySourceTypes.types$),
-      tap(([p, sourceTypes]) => {
+      tap(p => {
+        const sourceTypes = this.appDeploySourceTypes.types();
         const matched = sourceTypes.find(s => s.id === p.id && (p.endpointGuid ? s.endpointGuid === p.endpointGuid : true));
         if (!matched) { return; }
         this.sourceType = matched;
@@ -424,7 +422,7 @@ export class DeployApplicationStep2Component
           // User selected one of the SCM options
           if (this.scm && newScm.getType() !== this.scm.getType()) {
             // User changed the SCM type, so reset the project and branch
-            this.repository = '';
+            this.repository.set('');
             this.commitInfo.set(undefined);
             this.redeployCommitSha = undefined;
             this.repositoryBranch = undefined;
@@ -440,16 +438,16 @@ export class DeployApplicationStep2Component
       })
     );
 
-    const setProjectName = this.peProjectName$.pipe(
-      filter((p): p is string => !!p),
-      take(1),
-      tap(p => {
-        this.repository = p;
-      })
-    );
+    // Once, when the deployed app's project is known
+    const seedRepository = effect(() => {
+      const projectName = this.deployData.projectName();
+      if (projectName) {
+        seedRepository.destroy();
+        untracked(() => this.repository.set(projectName));
+      }
+    }, { injector: this.injector });
 
     this.subscriptions.push(setSourceTypeModel$.subscribe());
-    this.subscriptions.push(setProjectName.subscribe());
 
     // strict: NgForm.valueChanges is non-null once the form is initialised,
     // which holds by the time setupForGit runs after ngOnInit.

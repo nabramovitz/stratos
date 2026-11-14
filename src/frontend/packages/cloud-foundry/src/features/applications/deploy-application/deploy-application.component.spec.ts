@@ -1,20 +1,21 @@
-import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
+import { Component, CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection, signal } from '@angular/core';
-import { provideRouter, ActivatedRoute } from '@angular/router';
+import { provideRouter, ActivatedRoute, Router } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { of } from 'rxjs';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { of, Subject } from 'rxjs';
 
-import { EntityCatalogTestModule, TEST_CATALOGUE_ENTITIES, generateStratosEntities, EntityCatalogHelper, EntityCatalogHelpers } from '@stratosui/store';
+import { EntityCatalogTestModule, TEST_CATALOGUE_ENTITIES, generateStratosEntities, EntityCatalogHelper, EntityCatalogHelpers, EndpointsDataService } from '@stratosui/store';
 import { createEmptyStoreModule, STORE_TEST_PROVIDERS } from '@stratosui/store/testing';
 import { CoreModule } from '@stratosui/core';
-import { getGitHubAPIURL, GITHUB_API_URL } from '@stratosui/git';
+import { getGitHubAPIURL, GITHUB_API_URL, GitSCMService } from '@stratosui/git';
 
 import { generateCFEntities } from '../../../cf-entity-generator';
 import { CfOrgSpaceDataService } from '../../../shared/data-services/cf-org-space-service.service';
+import { CfDeployAppDataService } from '../../../services/domain-data/cf-deploy-app-data.service';
 import { ApplicationDeploySourceTypes } from './deploy-application-steps.types';
 import { DeployApplicationComponent } from './deploy-application.component';
 
@@ -191,5 +192,121 @@ describe('DeployApplicationComponent', () => {
     expect(component.step3Handle.valid()).toBe(true);
     expect(component.step3Handle.canClose!()).toBe(true);
     expect(component.step3Handle.disablePrevious!()).toBe(false);
+  });
+});
+
+// Stands in for the page header and every wizard step, so the real template
+// renders without the steps' own dependencies.
+@Component({
+  selector: 'app-page-header, app-create-application-step1, app-deploy-application-step2, ' +
+    'app-deploy-application-step2-1, app-deploy-application-step-source-upload, ' +
+    'app-deploy-application-options-step, app-deploy-application-step3',
+  template: '<ng-content></ng-content>',
+})
+class StubWizardPartComponent {
+  validate = new Subject<boolean>();
+  sourceTypeGithub = () => undefined;
+  sourceTypeNeedsUpload = () => undefined;
+  valid$ = new Subject<boolean>();
+  onEnter() { }
+}
+
+describe('DeployApplicationComponent title', () => {
+  const githubEndpoints = signal<unknown[]>([]);
+
+  const render = async (queryParams: Record<string, string>, beforeCreate?: () => void) => {
+    TestBed.configureTestingModule({
+      imports: [createEmptyStoreModule(), EntityCatalogTestModule, CoreModule, NoopAnimationsModule, DeployApplicationComponent],
+      providers: [
+        ...STORE_TEST_PROVIDERS,
+        { provide: TEST_CATALOGUE_ENTITIES, useValue: [...generateStratosEntities(), ...generateCFEntities()] },
+        EntityCatalogHelper,
+        provideZonelessChangeDetection(),
+        provideRouter([{ path: '**', children: [] }]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: ActivatedRoute, useValue: { snapshot: { params: {}, queryParams } } },
+        { provide: GITHUB_API_URL, useFactory: getGitHubAPIURL },
+        { provide: EndpointsDataService, useValue: { endpointsList: githubEndpoints, endpoints: signal({}) } },
+        { provide: GitSCMService, useValue: { getSCM: () => ({ getType: () => 'github', getPublicApi: () => 'https://api.github.com' }) } },
+      ],
+      schemas: [CUSTOM_ELEMENTS_SCHEMA],
+    });
+    // Only the heading is under test: render the real template without the wizard steps
+    TestBed.overrideComponent(DeployApplicationComponent, { set: { imports: [StubWizardPartComponent] } });
+    EntityCatalogHelpers.SetEntityCatalogHelper(TestBed.inject(EntityCatalogHelper));
+    beforeCreate?.();
+    // Counts how often the title's source is looked up
+    const lookUp = ApplicationDeploySourceTypes.prototype.getAutoSelectedType;
+    vi.spyOn(ApplicationDeploySourceTypes.prototype, 'getAutoSelectedType').mockImplementation(function (this: ApplicationDeploySourceTypes, route) {
+      subscriptions++;
+      return lookUp.call(this, route);
+    });
+    const fixture = TestBed.createComponent(DeployApplicationComponent);
+    await fixture.whenStable();
+    return fixture;
+  };
+  let subscriptions = 0;
+
+  const heading = (fixture: ComponentFixture<DeployApplicationComponent>) =>
+    (fixture.nativeElement.querySelector('h1')?.textContent ?? '').trim();
+
+  beforeEach(() => {
+    githubEndpoints.set([]);
+    subscriptions = 0;
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('shows the source type picked in the link', async () => {
+    const fixture = await render({ 'auto-select-deploy': 'github' });
+    await fixture.whenStable();
+    expect(heading(fixture)).toBe('Deploy from GitHub');
+  });
+
+  it('looks the source type up once however often the view is checked', async () => {
+    const fixture = await render({ 'auto-select-deploy': 'github' });
+    await fixture.whenStable();
+    const lookedUp = subscriptions;
+    for (let i = 0; i < 3; i++) {
+      fixture.componentRef.changeDetectorRef.markForCheck();
+      await fixture.whenStable();
+    }
+    expect(heading(fixture)).toBe('Deploy from GitHub');
+    // The title's look-up is a computed: repeated checks do not repeat it
+    expect(lookedUp).toBeGreaterThan(0);
+    expect(subscriptions).toBe(lookedUp);
+  });
+
+  it('titles a redeploy', async () => {
+    const fixture = await render({ appGuid: 'app-1' });
+    expect(heading(fixture)).toBe('Redeploy');
+  });
+
+  // A redeploy opens with the app's CF, org and space already in the
+  // deploy state; the pickers follow it.
+  it('selects the cf, org and space of a redeploy', async () => {
+    const fixture = await render({ appGuid: 'app-1' });
+    TestBed.inject(CfDeployAppDataService).setCfDetails({ cloudFoundry: 'cf-1', org: 'org-1', space: 'space-1' });
+    await fixture.whenStable();
+
+    const spaces = fixture.componentInstance.cfOrgSpaceService;
+    expect([spaces.cf.select(), spaces.org.select(), spaces.space.select()]).toEqual(['cf-1', 'org-1', 'space-1']);
+  });
+
+  it('goes to a new deploy when a redeploy has no deploy state', async () => {
+    let navigate!: ReturnType<typeof vi.spyOn>;
+    await render({ appGuid: 'app-1' }, () => {
+      navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    });
+    expect(navigate).toHaveBeenCalledWith(['applications', 'deploy']);
+  });
+
+  it('skips the commit step for a public git URL', async () => {
+    const fixture = await render({});
+    const deployData = TestBed.inject(CfDeployAppDataService);
+    expect(fixture.componentInstance.skipConfig()).toBe(false);
+    deployData.setSourceType({ id: 'giturl', name: 'Public Git URL' } as never);
+    expect(fixture.componentInstance.skipConfig()).toBe(true);
   });
 });

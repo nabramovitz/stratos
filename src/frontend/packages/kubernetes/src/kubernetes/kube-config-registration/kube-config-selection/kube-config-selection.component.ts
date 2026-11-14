@@ -1,6 +1,5 @@
 import { ChangeDetectionStrategy, Component, Signal, WritableSignal, computed, inject, signal, input } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { combineLatest, of } from 'rxjs';
 import { map, take } from 'rxjs/operators';
 
@@ -55,14 +54,15 @@ export class KubeConfigSelectionComponent {
   // The last "Failed to load Kube Config" message, cleared by the next parse.
   private parseErrorSnackBar?: TailwindSnackBarRef<unknown>;
 
-  // Clusters as a signal. `helper.clusters$` filters to truthy arrays, so
-  // this starts empty and populates once a kube config is parsed. Drives
-  // the signal-list paging signals below; per-row mutations (_selected,
+  // The parsed clusters: null until a kube config has been parsed; the
+  // template shows the list only from then on.
+  protected readonly parsedClusters = this.helper.clusters;
+
+  // Clusters as a list, empty until a kube config is parsed. Drives the
+  // signal-list paging signals below; per-row mutations (_selected,
   // _state) don't change the array identity — those re-render via the
   // checkbox selection signal and per-row rowState signal respectively.
-  private readonly clusters: Signal<KubeConfigFileCluster[]> = toSignal(
-    this.helper.clusters$, { initialValue: [] as KubeConfigFileCluster[] }
-  );
+  private readonly clusters: Signal<KubeConfigFileCluster[]> = computed(() => this.parsedClusters() ?? []);
 
   // Selection mirror. signal-list's `kind: 'checkbox'` column owns a set of
   // selected row keys (_id), but the source of truth stays each cluster's
@@ -116,10 +116,9 @@ export class KubeConfigSelectionComponent {
     columns: this.buildColumns(),
   };
 
-  // Is the import data valid? Bridged into the parent stepper's select-step
-  // handle via valid$.
-  private _valid = signal<boolean>(false);
-  valid$ = toObservable(this._valid);
+  // Is the import data valid? Read by the parent stepper's select-step handle.
+  private readonly _valid = signal<boolean>(false);
+  readonly valid = this._valid.asReadonly();
 
   constructor() {
     this.helper.clustersChanged = () => this.clustersChanged();
@@ -223,26 +222,24 @@ export class KubeConfigSelectionComponent {
       return;
     }
     // Handle back from review step (ensure newly registered endpoints are taken into account)
-    this.helper.updateAll().pipe(take(1)).subscribe(() => { });
+    this.helper.updateAll();
   };
 
   // Row changed event — rebuild the selection mirror from the per-row
-  // `_selected` flags and update the next button. Uses `clusters$` (not the
-  // signal) so it observes the freshly-emitted array: the helper invokes
-  // this BEFORE pushing the new clusters during the initial parse.
+  // `_selected` flags and update the next button.
   clustersChanged() {
-    this.helper.clusters$.pipe(
-      take(1)
-    ).subscribe(clusters => {
-      const keys = new Set<string>();
-      clusters.forEach(c => {
-        if (c._selected && !c._invalid) {
-          keys.add(c._id);
-        }
-      });
-      this.selectedKeys.set(keys);
-      this.checkCanGoNext(clusters);
+    const clusters = this.helper.clusters();
+    if (!clusters) {
+      return;
+    }
+    const keys = new Set<string>();
+    clusters.forEach(c => {
+      if (c._selected && !c._invalid) {
+        keys.add(c._id);
+      }
     });
+    this.selectedKeys.set(keys);
+    this.checkCanGoNext(clusters);
   }
 
   // Can we proceed?

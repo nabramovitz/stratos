@@ -1,4 +1,4 @@
-import { AsyncPipe, CommonModule, TitleCasePipe } from '@angular/common';
+import { CommonModule, TitleCasePipe } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import {
   ChangeDetectionStrategy,
@@ -22,7 +22,6 @@ import { ActivatedRoute } from '@angular/router';
 import { Observable, of as observableOf, Subscription, firstValueFrom } from 'rxjs';
 import {
   catchError,
-  delay,
   distinctUntilChanged,
   filter,
   map,
@@ -73,7 +72,6 @@ import { extractHttpErrorMessage } from '@stratosui/store';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
-    AsyncPipe,
     PageHeaderComponent,
     SteppersComponent,
     StepComponent,
@@ -144,15 +142,15 @@ export class AddServiceInstanceComponent implements OnInit, OnDestroy {
   private cfDetails$ = toObservable(this.csiState.state);
   // Declared before the field initializers that end their streams with it
   private destroyRef = inject(DestroyRef);
-  // Loading state for applications - used to track async app fetching
-  private _appsLoading = signal<boolean>(false);
-  // toObservable() must run inside an injection context (constructor /
-  // field initializer / runInInjectionContext) — Angular 21 enforces this
-  // strictly. Calling toObservable() from onNext (an event handler) throws
-  // NG0203. Lift the conversion up here where field initializers execute
-  // during construction and have the injection context available, then
-  // reuse this single observable from onNext.
-  private appsLoading$ = toObservable(this._appsLoading);
+  // The space whose apps were last fetched (or failed to fetch), as
+  // "cf/space". The apps are loading while the picked space is not it, so
+  // the answer holds from the moment the pick is saved, before the fetch
+  // has started.
+  private readonly appsFetchedFor = signal('');
+  private readonly appsLoading = computed(() => {
+    const { cfGuid, spaceGuid } = this.csiState.state();
+    return !!cfGuid && !!spaceGuid && this.appsFetchedFor() !== `${cfGuid}/${spaceGuid}`;
+  });
 
   // Initialisation state is signal-native. Set by runInitialisation()
   // (mode-specific async setup); the template reads it via `@if
@@ -160,11 +158,9 @@ export class AddServiceInstanceComponent implements OnInit, OnDestroy {
   private _initialisedService = signal<boolean>(false);
   readonly initialisedService: Signal<boolean> = this._initialisedService.asReadonly();
 
-  public cfGuid$: Observable<string | null | undefined>;
-  public spaceGuid$ = this.cfDetails$.pipe(
-    map(details => details?.spaceGuid),
-    takeUntilDestroyed(this.destroyRef)
-  );
+  private readonly routeCfGuid = getIdFromRoute(this.activatedRoute, 'endpointId');
+  readonly cfGuid = computed(() => this.routeCfGuid || this.csiState.state().cfGuid);
+  readonly spaceGuid = computed(() => this.csiState.state().spaceGuid);
   public errorMessage: string | null = null;
 
   // FWT-959 Part 2 (Partition B): SignalStepHandle wiring for the
@@ -204,15 +200,9 @@ export class AddServiceInstanceComponent implements OnInit, OnDestroy {
   private readonly _supd = viewChild<SpecifyUserProvidedDetailsComponent>('supd');
 
   private selectCFValid = signal<boolean>(false);
-  private selectServiceFetching = signal<boolean>(false);
   private selectPlanFetching = signal<boolean>(false);
-  private specifyDetailsValid = signal<boolean>(false);
-  private specifyDetailsInit = signal<boolean>(true);
 
   private selectCFSub?: Subscription;
-  private selectServiceFetchSub?: Subscription;
-  private specifyDetailsValidSub?: Subscription;
-  private specifyDetailsInitSub?: Subscription;
 
   private isLoadingSignal = this.cfOrgSpaceService.isLoading;
   private skipAppsSignal = signal<boolean>(false);
@@ -250,44 +240,6 @@ export class AddServiceInstanceComponent implements OnInit, OnDestroy {
     });
   });
 
-  // SelectService.validate is already a Signal — the handle reads it
-  // directly. Only isFetching$ is bridged, for the blocked predicate.
-  private readonly selectServiceBridge = afterRenderEffect(() => {
-    const v = this._selectService();
-    untracked(() => {
-      this.selectServiceFetchSub?.unsubscribe();
-      this.selectServiceFetchSub = undefined;
-      if (v) {
-        this.selectServiceFetchSub = v.isFetching$.subscribe(b => {
-          this.selectServiceFetching.set(!!b);
-        });
-      } else {
-        this.selectServiceFetching.set(false);
-      }
-    });
-  });
-
-  private readonly specifyDetailsBridge = afterRenderEffect(() => {
-    const v = this._specifyDetails();
-    untracked(() => {
-      this.specifyDetailsValidSub?.unsubscribe();
-      this.specifyDetailsInitSub?.unsubscribe();
-      this.specifyDetailsValidSub = undefined;
-      this.specifyDetailsInitSub = undefined;
-      if (v) {
-        this.specifyDetailsValidSub = v.validate.subscribe(valid => {
-          this.specifyDetailsValid.set(!!valid);
-        });
-        this.specifyDetailsInitSub = v.serviceInstancesInit$.subscribe(init => {
-          this.specifyDetailsInit.set(!!init);
-        });
-      } else {
-        this.specifyDetailsValid.set(false);
-        this.specifyDetailsInit.set(true);
-      }
-    });
-  });
-
   selectCFHandle: SignalStepHandle = {
     valid: this.selectCFValid.asReadonly(),
     blocked: computed(() => !!this.isLoadingSignal()),
@@ -304,7 +256,7 @@ export class AddServiceInstanceComponent implements OnInit, OnDestroy {
     // computed reads `this._selectService()` (the query signal), so it
     // re-evaluates when the child appears.
     valid: computed(() => !!this._selectService()?.validate()),
-    blocked: this.selectServiceFetching.asReadonly(),
+    blocked: computed(() => !!this._selectService()?.isFetching()),
     submit: async () => {
       const result = await this._selectService()!.onNext();
       if (!result.success) {
@@ -347,8 +299,9 @@ export class AddServiceInstanceComponent implements OnInit, OnDestroy {
   };
 
   specifyDetailsHandle: SignalStepHandle = {
-    valid: this.specifyDetailsValid.asReadonly(),
-    blocked: this.specifyDetailsInit.asReadonly(),
+    valid: computed(() => !!this._specifyDetails()?.validate()),
+    // Until the step's child exists
+    blocked: computed(() => !this._specifyDetails()),
     cancelButtonText: signal('Cancel ').asReadonly(),
     nextButtonText: signal('Create ').asReadonly(),
     onEnter: (plan) => this._specifyDetails()?.onEnter(plan as any),
@@ -381,16 +334,6 @@ export class AddServiceInstanceComponent implements OnInit, OnDestroy {
   constructor() {
     const route = inject(ActivatedRoute);
 
-    const cfGuid = getIdFromRoute(this.activatedRoute, 'endpointId');
-    this.cfGuid$ = cfGuid ? observableOf(cfGuid) : this.cfDetails$.pipe(
-      map(details => details?.cfGuid),
-      catchError(error => {
-        console.error('constructor: Error retrieving CF GUID from store', error);
-        this.errorMessage = 'Failed to retrieve Cloud Foundry endpoint information';
-        return observableOf(null);
-      }),
-      takeUntilDestroyed(this.destroyRef)
-    );
     this.inMarketplaceMode = this.modeService.isMarketplaceMode();
     this.serviceType = route.snapshot.params.type || SERVICE_INSTANCE_TYPES.SERVICE;
 
@@ -415,7 +358,6 @@ export class AddServiceInstanceComponent implements OnInit, OnDestroy {
       filter((csi): csi is CsiState & { cfGuid: string; spaceGuid: string } =>
         !!csi && !!csi.spaceGuid && !!csi.cfGuid),
       distinctUntilChanged((x, y) => x.cfGuid + x.spaceGuid === y.cfGuid + y.spaceGuid),
-      tap(() => this._appsLoading.set(true)),
       switchMap(csi => this.http.get<{ resources: Array<{ guid: string; name: string }> }>(
         `/pp/v1/cf/apps/${csi.cfGuid}?space_guids=${csi.spaceGuid}&per_page=500&page=1`,
       ).pipe(
@@ -423,14 +365,15 @@ export class AddServiceInstanceComponent implements OnInit, OnDestroy {
           metadata: { guid: r.guid, url: '', created_at: '', updated_at: '' },
           entity: { name: r.name } as IApp,
         }) as APIResource<IApp>)),
+        // Inside the switchMap, so a failed fetch only costs that space's apps
+        // and a later space change still fetches
+        catchError(error => {
+          console.error('Error fetching applications for space:', error);
+          this.errorMessage = 'Failed to fetch applications. Please try again.';
+          return observableOf([] as APIResource<IApp>[]);
+        }),
+        tap(() => this.appsFetchedFor.set(`${csi.cfGuid}/${csi.spaceGuid}`)),
       )),
-      tap(() => this._appsLoading.set(false)),
-      catchError(error => {
-        console.error('Error fetching applications for space:', error);
-        this.errorMessage = 'Failed to fetch applications. Please try again.';
-        this._appsLoading.set(false);
-        return observableOf([]);
-      }),
       shareReplay({ bufferSize: 1, refCount: true }),
       takeUntilDestroyed(this.destroyRef)
     );
@@ -572,18 +515,21 @@ export class AddServiceInstanceComponent implements OnInit, OnDestroy {
       return { success: false };
     }
 
-    // appsLoading$ stays open, so take its first not-loading value only
-    return firstValueFrom(this.appsLoading$.pipe(
-      filter(loading => !loading),
-      delay(1),
-      map(() => ({ success: true })),
-      catchError(error => {
-        console.error('onNext: Error waiting for applications to load', error);
-        this.errorMessage = 'Failed to load applications';
-        return observableOf({ success: false });
-      }),
-      takeUntilDestroyed(this.destroyRef),
-    ));
+    // The bind step's skip decision follows the apps, so wait for the
+    // picked space's
+    await this.whenAppsLoaded();
+    return { success: true };
+  }
+
+  private whenAppsLoaded(): Promise<void> {
+    return new Promise(resolve => {
+      const ref = effect(() => {
+        if (!this.appsLoading()) {
+          ref.destroy();
+          resolve();
+        }
+      }, { injector: this.injector });
+    });
   }
 
   resetStoreData = () => {
@@ -862,9 +808,6 @@ export class AddServiceInstanceComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.selectCFSub?.unsubscribe();
-    this.selectServiceFetchSub?.unsubscribe();
-    this.specifyDetailsValidSub?.unsubscribe();
-    this.specifyDetailsInitSub?.unsubscribe();
     this.skipAppsSub?.unsubscribe();
     try {
       this.csiState.reset();

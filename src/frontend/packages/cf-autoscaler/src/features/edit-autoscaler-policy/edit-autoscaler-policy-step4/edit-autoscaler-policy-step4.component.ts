@@ -16,7 +16,6 @@ import {
 import { AutoscalerPolicyDataService } from '../../../services/domain-data/autoscaler-policy-data.service';
 import {
   AppAutoscalerInvalidPolicyError,
-  AppAutoscalerPolicyLocal,
   AppSpecificDate } from '../../../store/app-autoscaler.types';
 import { EditAutoscalerPolicyDirective } from '../edit-autoscaler-policy-base-step';
 import {
@@ -65,7 +64,6 @@ export class EditAutoscalerPolicyStep4Component extends EditAutoscalerPolicyDire
   policyAlert = PolicyAlert;
   editSpecificDateForm: FormGroup<EditSpecificDateForm>;
 
-  public declare currentPolicy: AppAutoscalerPolicyLocal;
   // Index of the row being edited, -1 when none. The parent reads it to gate
   // Next and Previous.
   readonly editIndex = signal(-1);
@@ -87,7 +85,6 @@ export class EditAutoscalerPolicyStep4Component extends EditAutoscalerPolicyDire
   }
 
   ngOnInit() {
-    super.ngOnInit();
     this.createUpdateTest = this.isCreate ? 'create policy' : 'update policy';
   }
 

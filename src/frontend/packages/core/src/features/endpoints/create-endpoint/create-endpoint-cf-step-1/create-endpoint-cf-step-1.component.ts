@@ -15,12 +15,11 @@ import {
   entityCatalog,
   getFullEndpointApiUrl,
 } from '@stratosui/store';
-import { combineLatest, firstValueFrom, Observable, of } from 'rxjs';
+import { combineLatest, Observable, of } from 'rxjs';
 import { catchError, map, startWith, switchMap } from 'rxjs/operators';
 
 import { getIdFromRoute } from '../../../../core/utils.service';
 import { StepOnNextResult } from '../../../../shared/components/stepper/step/step.component';
-import { SessionService } from '../../../../shared/services/session.service';
 import { CurrentUserPermissionsService } from '../../../../core/permissions/current-user-permissions.service';
 import { UserProfileService } from '../../../../core/user-profile.service';
 import { TailwindSnackBarService } from '../../../../shared/services/tailwind-snackbar.service';
@@ -204,12 +203,10 @@ export class CreateEndpointCfStep1Component extends CreateEndpointHelperComponen
 
   constructor() {
     const activatedRoute = inject(ActivatedRoute);
-    const sessionService = inject(SessionService);
     const currentUserPermissionsService = inject(CurrentUserPermissionsService);
     const userProfileService = inject(UserProfileService);
 
     super(
-      sessionService,
       currentUserPermissionsService,
       userProfileService,
       inject(EndpointsDataService),
@@ -444,7 +441,7 @@ export class CreateEndpointCfStep1Component extends CreateEndpointHelperComponen
     if (!result.error) {
       this.registered.set({
         ...data,
-        personal: await this.isPersonal(data.guid),
+        personal: this.isPersonal(data.guid),
         skipSSL: sslAllow,
         caCert: showCA ? (this.registerForm.value.caCertField ?? '') : '',
       });
@@ -477,10 +474,10 @@ export class CreateEndpointCfStep1Component extends CreateEndpointHelperComponen
   }
 
   // Personal = created by a user, not the system.
-  private async isPersonal(guid: string): Promise<boolean> {
+  private isPersonal(guid: string): boolean {
     return isPersonalEndpoint(
       this.endpointsData.endpoints().get(guid),
-      await firstValueFrom(this.userEndpointsAndIsAdmin),
+      this.userEndpointsAndIsAdminSignal(),
       !!this.registerForm.value.createSystemEndpointField,
     );
   }

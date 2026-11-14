@@ -1,8 +1,10 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  OnDestroy,
+  Injector,
+  effect,
   OnInit,
+  Signal,
   computed,
   inject,
   signal,
@@ -10,12 +12,9 @@ import {
   viewChild,
   afterRenderEffect,
 } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
 import { ErrorStateMatcher, ShowOnDirtyErrorStateMatcher } from '@stratosui/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Observable, Subscription, of, of as observableOf } from 'rxjs';
-import { take, filter, map, tap } from 'rxjs/operators';
-import { AsyncPipe } from '@angular/common';
+import { Subscription } from 'rxjs';
 
 import { SourceType } from '../../../store/types/deploy-application.types';
 import { CfDeployAppDataService } from '../../../services/domain-data/cf-deploy-app-data.service';
@@ -42,7 +41,6 @@ import { DeployApplicationStep3Component } from './deploy-application-step3/depl
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    AsyncPipe,
     PageHeaderComponent,
     SteppersComponent,
     StepComponent,
@@ -54,26 +52,25 @@ import { DeployApplicationStep3Component } from './deploy-application-step3/depl
     DeployApplicationStep3Component
 ]
 })
-export class DeployApplicationComponent implements OnInit, OnDestroy {
+export class DeployApplicationComponent implements OnInit {
   private router = inject(Router);
   cfOrgSpaceService = inject(CfOrgSpaceDataService);
   private appsConfig = inject(CfAppsSignalConfigService);
   private activatedRoute = inject(ActivatedRoute);
   private deployData = inject(CfDeployAppDataService);
-  private cfDetails$ = toObservable(this.deployData.cfDetails);
-
+  private injector = inject(Injector);
 
   appGuid: string;
   // Where Cancel returns to — the CF-scoped wall when launched from one
   // (?returnUrl, set by new-application-base-step), else the global wall.
   readonly returnUrl: string = this.activatedRoute.snapshot.queryParams[RETURN_URL_PARAM] || '/applications';
-  initCfOrgSpaceService: Subscription[] = [];
   deployButtonText = 'Deploy';
-  skipConfig$: Observable<boolean> = observableOf(false);
+  // A public git URL has no project to browse, so its commit step is skipped
+  readonly skipConfig = computed(() => this.deployData.applicationSource()?.type?.id === 'giturl');
   isRedeploy: boolean;
   // undefined when the wizard is opened without an auto-select query param
-  // (getAutoSelectedType returns of(undefined)); the title consumer guards for it.
-  selectedSourceType$: Observable<SourceType | undefined>;
+  // (getAutoSelectedType returns undefined); the title guards for it.
+  private readonly selectedSourceType: Signal<SourceType | undefined>;
 
   // Reactive deploy button text — switches to "Redeploy" when the
   // wizard is invoked with an existing appGuid, and to "Deploy again" once
@@ -331,20 +328,12 @@ export class DeployApplicationComponent implements OnInit, OnDestroy {
     this.appGuid = this.activatedRoute.snapshot.queryParams.appGuid;
     this.isRedeploy = !!this.appGuid;
 
-    this.selectedSourceType$ = appDeploySourceTypes.getAutoSelectedType(activatedRoute);
-
-    this.skipConfig$ = toObservable(this.deployData.applicationSource).pipe(
-      map(appSource => appSource?.type?.id === 'giturl'),
-    );
+    this.selectedSourceType = computed(() => appDeploySourceTypes.getAutoSelectedType(activatedRoute));
 
     if (this.isRedeploy) {
       this.deployButtonText = 'Redeploy';
       this.deployButtonTextSignal.set('Redeploy');
     }
-  }
-
-  ngOnDestroy(): void {
-    this.initCfOrgSpaceService.forEach(p => p.unsubscribe());
   }
 
   ngOnInit(): void {
@@ -355,21 +344,19 @@ export class DeployApplicationComponent implements OnInit, OnDestroy {
     }
 
     if (this.appGuid) {
-      this.initCfOrgSpaceService.push(this.cfDetails$.pipe(
-        filter(p => !!p),
-        tap(p => {
-          this.cfOrgSpaceService.cf.select.set(p.cloudFoundry);
-          this.cfOrgSpaceService.org.select.set(p.org);
-          this.cfOrgSpaceService.space.select.set(p.space);
-        })
-      ).subscribe());
-      // In case user has specified the query param manually
-      this.initCfOrgSpaceService.push(this.cfDetails$.pipe(
-        filter(p => !p),
-        tap(_p => {
-          this.router.navigate(['applications', 'deploy']);
-        })
-      ).subscribe());
+      effect(() => {
+        const details = this.deployData.cfDetails();
+        untracked(() => {
+          if (details) {
+            this.cfOrgSpaceService.cf.select.set(details.cloudFoundry);
+            this.cfOrgSpaceService.org.select.set(details.org);
+            this.cfOrgSpaceService.space.select.set(details.space);
+          } else {
+            // In case user has specified the query param manually
+            this.router.navigate(['applications', 'deploy']);
+          }
+        });
+      }, { injector: this.injector });
     } else {
       // Auto-select endpoint/org/space from the apps wall's current filter
       // (root-scoped CfAppsSignalConfigService keeps them in signals — read
@@ -391,13 +378,11 @@ export class DeployApplicationComponent implements OnInit, OnDestroy {
     }
   }
 
-  getTitle = (): Observable<string> => {
+  readonly title = computed(() => {
     if (this.appGuid) {
-      return of('Redeploy');
+      return 'Redeploy';
     }
-    return this.selectedSourceType$.pipe(
-      take(1),
-      map(selectedSourceType => `Deploy ${selectedSourceType ? 'from ' + selectedSourceType.name : ''}`)
-    );
-  };
+    const selectedSourceType = this.selectedSourceType();
+    return `Deploy ${selectedSourceType ? 'from ' + selectedSourceType.name : ''}`;
+  });
 }

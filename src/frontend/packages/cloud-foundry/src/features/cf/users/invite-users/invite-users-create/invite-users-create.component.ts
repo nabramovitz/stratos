@@ -1,9 +1,8 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, OnInit, Signal, signal, ChangeDetectionStrategy, inject, input } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { toObservable } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
-import { firstValueFrom, Observable } from 'rxjs';
+import { firstValueFrom } from 'rxjs';
 import { map } from 'rxjs/operators';
 
 import {
@@ -46,7 +45,6 @@ export class InviteUsersCreateComponent implements OnInit {
 
 
   public stepValid = signal<boolean>(false);
-  public valid$: Observable<boolean>;
 
   /** FWT-957: post-success navigation target supplied by parent. */
   // The one host stepper binds where to go on success.
@@ -70,7 +68,6 @@ export class InviteUsersCreateComponent implements OnInit {
     },
   };
   public stateIn = signal<StackedInputActionsState[]>([]);
-  public stateIn$: Observable<StackedInputActionsState[]>;
   public orgName!: Signal<string>;
   public spaceName!: Signal<string>;
   private orgData?: OrgDataService;
@@ -82,8 +79,6 @@ export class InviteUsersCreateComponent implements OnInit {
   private users!: StackedInputActionsUpdate;
 
   constructor() {
-    this.valid$ = toObservable(this.stepValid);
-    this.stateIn$ = toObservable(this.stateIn);
     this.spaceRoles.push(
       {
         label: UserRoleLabels.space.short[SpaceUserRoleNames.AUDITOR],

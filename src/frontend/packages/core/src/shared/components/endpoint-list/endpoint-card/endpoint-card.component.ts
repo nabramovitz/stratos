@@ -2,7 +2,6 @@ import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, ComponentRef, OnDestroy, OnInit, ViewContainerRef, ChangeDetectorRef, computed, effect, inject, input, untracked, viewChild } from '@angular/core';
 import { CustomTooltipDirective } from '../../custom-tooltip/custom-tooltip.directive';
 import { RouterModule } from '@angular/router';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   EndpointModel,
   entityCatalog,
@@ -16,7 +15,6 @@ import {
 
 import { EndpointsSignalService } from '../../../../core/signals/endpoints-signal.service';
 import { Observable, Subscription } from 'rxjs';
-import { map } from 'rxjs/operators';
 
 import { EndpointsService } from '../../../../core/endpoints.service';
 import { safeUnsubscribe } from '../../../../core/utils.service';
@@ -24,7 +22,7 @@ import { CardCell } from '../../signal-list/cell-base';
 import { EndpointListDetailsComponent, EndpointListHelper } from '../endpoint-list.helpers';
 import { CopyToClipboardComponent } from '../../copy-to-clipboard/copy-to-clipboard.component';
 import { CustomIconComponent } from '../../custom-material/custom-material.component';
-import { SessionService } from '../../../services/session.service';
+import { SessionSignalService } from '../../../../core/signals/session-signal.service';
 import { CurrentUserPermissionsService } from '../../../../core/permissions/current-user-permissions.service';
 import { StratosCurrentUserPermissions } from '../../../../core/permissions/stratos-user-permissions.checker';
 import { MultilineTitleComponent } from '../../multiline-title/multiline-title.component';
@@ -66,11 +64,10 @@ import { DisableRouterLinkDirective } from '../../../../core/disable-router-link
 })
 export class EndpointCardComponent extends CardCell<EndpointModel> implements OnInit, OnDestroy {
   private endpointsSignal = inject(EndpointsSignalService);
-  private endpoints$ = toObservable(this.endpointsSignal.endpoints);
   private endpointListHelper = inject(EndpointListHelper);
   private userFavoriteManager = inject(UserFavoriteManager);
   private currentUserPermissionsService = inject(CurrentUserPermissionsService);
-  private sessionService = inject(SessionService);
+  private sessionSignals = inject(SessionSignalService);
   private cdr = inject(ChangeDetectorRef);
 
 
@@ -82,11 +79,9 @@ export class EndpointCardComponent extends CardCell<EndpointModel> implements On
     return row?.cnsi_type ? entityCatalog.getEndpoint(row.cnsi_type, row.sub_type) : undefined;
   });
   public readonly address = computed(() => getFullEndpointApiUrl(this.row()));
-  public readonly isDuplicate$ = computed<Observable<boolean>>(() => {
+  public readonly isDuplicate = computed(() => {
     const address = this.address();
-    return this.endpoints$.pipe(
-      map(entities => Object.values(entities).filter(e => getFullEndpointApiUrl(e) === address).length > 1)
-    );
+    return Object.values(this.endpointsSignal.endpoints()).filter(e => getFullEndpointApiUrl(e) === address).length > 1;
   });
   public readonly endpointLink = computed<string | null>(() => {
     const row = this.row();
@@ -112,13 +107,13 @@ export class EndpointCardComponent extends CardCell<EndpointModel> implements On
   private subs: Subscription[] = [];
   // The creator shows to admins, and to endpoint admins while user
   // endpoints are enabled.
-  private readonly userEndpointsEnabled = toSignal(this.sessionService.userEndpointsEnabled());
-  private readonly userEndpointsNotDisabled = toSignal(this.sessionService.userEndpointsNotDisabled());
+  private readonly userEndpointsEnabled = this.sessionSignals.userEndpointsEnabled;
+  private readonly userEndpointsNotDisabled = this.sessionSignals.userEndpointsNotDisabled;
   private readonly isAdmin = this.currentUserPermissionsService.can(StratosCurrentUserPermissions.EDIT_ADMIN_ENDPOINT);
   private readonly isEndpointAdmin = this.currentUserPermissionsService.can(StratosCurrentUserPermissions.EDIT_ENDPOINT);
   public readonly viewCreator = computed(() =>
-    (!!this.userEndpointsEnabled() && (this.isAdmin() || this.isEndpointAdmin())) ||
-    (!!this.userEndpointsNotDisabled() && this.isAdmin()));
+    (this.userEndpointsEnabled() && (this.isAdmin() || this.isEndpointAdmin())) ||
+    (this.userEndpointsNotDisabled() && this.isAdmin()));
 
   private componentRef!: ComponentRef<EndpointListDetailsComponent>;
 

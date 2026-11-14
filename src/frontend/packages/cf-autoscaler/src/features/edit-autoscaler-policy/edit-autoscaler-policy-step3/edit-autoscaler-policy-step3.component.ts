@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { AbstractControl, FormBuilder, FormControl, FormGroup, ReactiveFormsModule, ValidatorFn, Validators } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { addDays, format } from 'date-fns';
@@ -12,7 +12,7 @@ import {
   recurringSchedulesOverlapping,
   timeIsSameOrAfter,
 } from '../../../core/autoscaler-helpers/autoscaler-validation';
-import { AppAutoscalerInvalidPolicyError, AppAutoscalerPolicyLocal, AppRecurringSchedule } from '../../../store/app-autoscaler.types';
+import { AppAutoscalerInvalidPolicyError, AppRecurringSchedule } from '../../../store/app-autoscaler.types';
 import { EditAutoscalerPolicyDirective } from '../edit-autoscaler-policy-base-step';
 import {
   validateRecurringSpecificMax,
@@ -50,7 +50,7 @@ interface EditRecurringScheduleForm {
     MetadataItemComponent
   ]
 })
-export class EditAutoscalerPolicyStep3Component extends EditAutoscalerPolicyDirective implements OnInit {
+export class EditAutoscalerPolicyStep3Component extends EditAutoscalerPolicyDirective {
   applicationService = inject(ApplicationService);
   private fb = inject(FormBuilder);
 
@@ -60,7 +60,6 @@ export class EditAutoscalerPolicyStep3Component extends EditAutoscalerPolicyDire
   monthdayOptions = AutoscalerConstants.MonthdayOptions;
   editRecurringScheduleForm: FormGroup<EditRecurringScheduleForm>;
 
-  public declare currentPolicy: AppAutoscalerPolicyLocal;
   // Index of the row being edited, -1 when none. The parent reads it to gate
   // Next and Previous.
   readonly editIndex = signal(-1);
@@ -89,8 +88,8 @@ export class EditAutoscalerPolicyStep3Component extends EditAutoscalerPolicyDire
     });
   }
 
-  // strict: autoscalerTransformArrayToMap (run in step1 ngOnInit, sharing one
-  // policy via the service) always sets schedules + recurring_schedule before
+  // strict: autoscalerTransformArrayToMap (run by the service policy, shared by
+  // every step) always sets schedules + recurring_schedule before
   // any step3 interaction, so both are guaranteed present at runtime even though
   // the shared AppAutoscalerPolicy type marks them optional.
   private get recurringSchedules(): AppRecurringSchedule[] {

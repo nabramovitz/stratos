@@ -37,7 +37,7 @@ describe('TableCellEndpointAddressComponent', () => {
     }).compileComponents();
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     fixture = TestBed.createComponent(TableCellEndpointAddressComponent);
     component = fixture.componentInstance;
     seedEndpointsDataService([
@@ -45,7 +45,7 @@ describe('TableCellEndpointAddressComponent', () => {
       { guid: 'ep-2', api_endpoint: { Scheme: 'https', Host: 'two.example.com', Path: '' } },
     ] as EndpointModel[]);
     fixture.componentRef.setInput('row', { guid: 'ep-1' });
-    fixture.detectChanges();
+    await fixture.whenStable();
   });
 
   it('should create', () => {
@@ -60,5 +60,24 @@ describe('TableCellEndpointAddressComponent', () => {
     await fixture.whenStable();
     expect(fixture.nativeElement.textContent).toContain('https://two.example.com');
     expect(fixture.nativeElement.textContent).not.toContain('one.example.com');
+  });
+
+  it('warns while another endpoint shares the address, and stops when it goes', async () => {
+    const warning = () => fixture.nativeElement.querySelector('span[aria-label="Another endpoint is registered at this URL"]');
+    await fixture.whenStable();
+    expect(warning()).toBeNull();
+
+    seedEndpointsDataService([
+      { guid: 'ep-1', api_endpoint: { Scheme: 'https', Host: 'one.example.com', Path: '' } },
+      { guid: 'ep-3', api_endpoint: { Scheme: 'https', Host: 'one.example.com', Path: '' } },
+    ] as EndpointModel[]);
+    await fixture.whenStable();
+    expect(warning()).not.toBeNull();
+
+    seedEndpointsDataService([
+      { guid: 'ep-1', api_endpoint: { Scheme: 'https', Host: 'one.example.com', Path: '' } },
+    ] as EndpointModel[]);
+    await fixture.whenStable();
+    expect(warning()).toBeNull();
   });
 });

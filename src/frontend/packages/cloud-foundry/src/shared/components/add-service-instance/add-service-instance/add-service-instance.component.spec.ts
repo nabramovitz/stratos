@@ -1,15 +1,16 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { importProvidersFrom, provideZonelessChangeDetection, signal, WritableSignal } from '@angular/core';
+import { importProvidersFrom, provideZonelessChangeDetection, signal } from '@angular/core';
 import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { STORE_TEST_PROVIDERS } from '@stratosui/store/testing';
 import { PageHeaderComponent, StepComponent, TabNavService } from '@stratosui/core';
 import { generateCfBaseTestModulesNoShared } from '@test-framework/cf';
 import { CfOrgSpaceDataService } from '../../../data-services/cf-org-space-service.service';
 import { CloudFoundryService } from '../../../data-services/cloud-foundry.service';
+import { CsiStateService } from '../csi-state.service';
 import { AddServiceInstanceComponent } from './add-service-instance.component';
 
 describe('AddServiceInstanceComponent', () => {
@@ -103,10 +104,20 @@ describe('AddServiceInstanceComponent', () => {
     it('selectServiceHandle.valid flips true when child validate flips true', () => {
       const ref = stubChild('_selectService');
       expect(component.selectServiceHandle.valid()).toBe(false);
-      const child = { validate: signal(false), isFetching$: { subscribe: () => ({ unsubscribe: () => {} }) } } as any;
+      const child = { validate: signal(false), isFetching: signal(false) } as any;
       ref.set(child);
       child.validate.set(true);
       expect(component.selectServiceHandle.valid()).toBe(true);
+    });
+
+    it('selectServiceHandle is blocked while the child fetches its services', () => {
+      const ref = stubChild('_selectService');
+      expect(component.selectServiceHandle.blocked!()).toBe(false);
+      const child = { validate: signal(false), isFetching: signal(true) } as any;
+      ref.set(child);
+      expect(component.selectServiceHandle.blocked!()).toBe(true);
+      child.isFetching.set(false);
+      expect(component.selectServiceHandle.blocked!()).toBe(false);
     });
 
     it('bindAppHandle.valid flips true when child validate flips true', () => {
@@ -229,20 +240,18 @@ describe('AddServiceInstanceComponent', () => {
   });
 
   // The first step saves the picked CF, org and space, then waits for the
-  // space's apps to finish loading (appsLoading$ never completes).
+  // space's apps to finish loading (the apps feed never completes).
   describe('onNext of the Cloud Foundry step', () => {
     it('fails without a selected endpoint', async () => {
       expect(await component.onNext()).toEqual({ success: false });
     });
 
-    it('succeeds once the apps have loaded', async () => {
+    it('waits for the picked space\'s apps before it succeeds', async () => {
+      const http = TestBed.inject(HttpTestingController);
       const spaces = component.cfOrgSpaceService;
       spaces.cf.select.set('cf-1');
       spaces.org.select.set('org-1');
       spaces.space.select.set('space-1');
-      const loading = (component as unknown as { _appsLoading: WritableSignal<boolean> })._appsLoading;
-      loading.set(true);
-      await fixture.whenStable();
 
       let done = false;
       const pending = component.onNext().then(result => {
@@ -250,11 +259,51 @@ describe('AddServiceInstanceComponent', () => {
         return result;
       });
       await new Promise(resolve => setTimeout(resolve, 20));
+      const request = http.expectOne('/pp/v1/cf/apps/cf-1?space_guids=space-1&per_page=500&page=1');
       expect(done).toBe(false);
 
-      loading.set(false);
-      await fixture.whenStable();
+      request.flush({ resources: [] });
       expect(await pending).toEqual({ success: true });
+    });
+
+    it('does not wait when a failed fetch has ended', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const http = TestBed.inject(HttpTestingController);
+      const spaces = component.cfOrgSpaceService;
+      spaces.cf.select.set('cf-1');
+      spaces.org.select.set('org-1');
+      spaces.space.select.set('space-1');
+
+      const pending = component.onNext();
+      await new Promise(resolve => setTimeout(resolve, 20));
+      http.expectOne('/pp/v1/cf/apps/cf-1?space_guids=space-1&per_page=500&page=1')
+        .flush('boom', { status: 500, statusText: 'Server Error' });
+      expect(await pending).toEqual({ success: true });
+    });
+  });
+
+  // The apps of the picked space feed the bind step. A failed fetch must not
+  // end the feed, or going back and picking another space shows no apps and
+  // skips the bind step.
+  describe('apps of the picked space', () => {
+    const appsUrl = (space: string) => `/pp/v1/cf/apps/cf-1?space_guids=${space}&per_page=500&page=1`;
+
+    it('fetches again for another space after one fetch failed', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const http = TestBed.inject(HttpTestingController);
+      const csi = fixture.debugElement.injector.get(CsiStateService);
+
+      csi.setCFDetails('cf-1', 'org-1', 'space-1');
+      await fixture.whenStable();
+      http.expectOne(appsUrl('space-1')).flush('boom', { status: 500, statusText: 'Server Error' });
+      await fixture.whenStable();
+
+      csi.setCFDetails('cf-1', 'org-1', 'space-2');
+      await fixture.whenStable();
+      http.expectOne(appsUrl('space-2')).flush({ resources: [{ guid: 'app-1', name: 'my-app' }] });
+      await fixture.whenStable();
+
+      expect(component.bindAppHandle.skipIf!()).toBe(false);
     });
   });
 });

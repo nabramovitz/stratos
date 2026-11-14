@@ -1,13 +1,10 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { CustomTooltipDirective } from '../../../shared/components/custom-tooltip/custom-tooltip.directive';
 import { Router, RouterModule } from '@angular/router';
 import {
   EndpointsDataService,
 } from '@stratosui/store';
-import { Observable, of, Subscription } from 'rxjs';
-import { catchError, take, delay, filter } from 'rxjs/operators';
 
 import { CustomizationService, CustomizationsMetadata } from '../../../core/customizations.types';
 import { EndpointsService } from '../../../core/endpoints.service';
@@ -20,12 +17,11 @@ import {
   StratosActionType } from '../../../core/extension/extension-service';
 import { CurrentUserPermissionsService } from '../../../core/permissions/current-user-permissions.service';
 import { StratosCurrentUserPermissions } from '../../../core/permissions/stratos-user-permissions.checker';
-import { safeUnsubscribe } from '../../../core/utils.service';
 import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 import { EndpointsMissingComponent } from '../../../shared/components/endpoints-missing/endpoints-missing.component';
 import { ListSubNavComponent } from '../../../shared/components/list-sub-nav/list-sub-nav.component';
 import { TailwindSnackBarRef, TailwindSnackBarService } from '../../../shared/services/tailwind-snackbar.service';
-import { SessionService } from '../../../shared/services/session.service';
+import { SessionSignalService } from '../../../core/signals/session-signal.service';
 import { EndpointModalService } from '../endpoint-register-modal/endpoint-modal.service';
 import { EndpointRegisterModalComponent } from '../endpoint-register-modal/endpoint-register-modal.component';
 import { EndpointsSignalListComponent } from './endpoints-signal-list.component';
@@ -55,13 +51,10 @@ export class EndpointsPageComponent implements OnDestroy, OnInit {
   private endpointsData = inject(EndpointsDataService);
   private authSignal = inject(AuthSignalService);
   private snackBarService = inject(TailwindSnackBarService);
-  sessionService = inject(SessionService);
   private endpointModalService = inject(EndpointModalService);
   private dashboardSignals = inject(DashboardSignalService);
   private endpointStatusSignals = inject(EndpointStatusSignalService);
   private currentUserPermissionsService = inject(CurrentUserPermissionsService);
-  // Bridge dashboard signal → observable in injection context (field init).
-  private dashboardState$ = toObservable(this.dashboardSignals.dashboard);
 
   // Signal-backed permission flag. The directive-based approach (*appUserPermission
   // + async pipe) was sensitive to CD timing under zoneless Angular 21 — the
@@ -73,21 +66,9 @@ export class EndpointsPageComponent implements OnDestroy, OnInit {
   // passes — matching the previous directive-based behavior.
   private readonly canEditAdminEndpoint = this.currentUserPermissionsService.can(StratosCurrentUserPermissions.EDIT_ADMIN_ENDPOINT);
   private readonly canEditEndpoint = this.currentUserPermissionsService.can(StratosCurrentUserPermissions.EDIT_ENDPOINT);
-  private readonly userEndpointsEnabled = toSignal(
-    this.sessionService.userEndpointsEnabled().pipe(
-      catchError(err => {
-        console.error('Error resolving register-endpoint permission:', err);
-        return of(null);
-      })
-    ),
-  );
-  public readonly canRegisterEndpoint = computed(() => {
-    const enabled = this.userEndpointsEnabled();
-    if (enabled === undefined || enabled === null) {
-      return false;
-    }
-    return this.canEditAdminEndpoint() || (enabled && this.canEditEndpoint());
-  });
+  private readonly userEndpointsEnabled = inject(SessionSignalService).userEndpointsEnabled;
+  public readonly canRegisterEndpoint = computed(() =>
+    this.canEditAdminEndpoint() || (this.userEndpointsEnabled() && this.canEditEndpoint()));
   private healthCheckTimeout!: number;
 
   /**
@@ -113,7 +94,7 @@ export class EndpointsPageComponent implements OnDestroy, OnInit {
   public readonly canBackupRestore = computed(() =>
     !!this.authSignal.sessionData()?.plugins?.backup && this.canEditAdminEndpoint());
   public readonly showRegisterModal = signal(false);
-  public isInitialised$: Observable<boolean>;
+  public readonly initialised = this.endpointStatusSignals.initialised;
 
   private snackBarText = {
     message: `There are no connected endpoints, connect with your personal credentials to get started.`,
@@ -148,15 +129,7 @@ export class EndpointsPageComponent implements OnDestroy, OnInit {
       const show = endpointsService.haveRegistered() && !endpointsService.haveConnected();
       untracked(() => this.showSnackBar(show));
     });
-
-    // Create an observable to track when endpoints are loaded and ready
-    // Defensive: Add null checks and error handling
-    this.isInitialised$ = toObservable(this.endpointStatusSignals.initialised).pipe(
-      delay(500) // Delay to ensure proper loading sequence
-    );
   }
-
-  subs: Subscription[] = [];
 
   public extensionActions: StratosActionMetadata[] = getActionsFromExtensions(StratosActionType.Endpoints);
 
@@ -210,21 +183,10 @@ export class EndpointsPageComponent implements OnDestroy, OnInit {
       console.error('Error checking endpoints:', error);
     }
 
-    // Subscribe to dashboard state to enable polling if configured
-    // Defensive: Add error handling and ensure subscription cleanup
-    this.subs.push(
-      this.dashboardState$.pipe(
-        filter(dashboard => !!dashboard),
-        take(1)
-      ).subscribe({
-        next: (dashboard) => {
-          if (dashboard.pollingEnabled) {
-            this.startEndpointHealthCheckPulse();
-          }
-        },
-        error: (err) => console.error('Error subscribing to dashboard state:', err)
-      })
-    );
+    // Poll the endpoints' health when the dashboard preference says so.
+    if (this.dashboardSignals.pollingEnabled()) {
+      this.startEndpointHealthCheckPulse();
+    }
   }
 
 
@@ -234,12 +196,6 @@ export class EndpointsPageComponent implements OnDestroy, OnInit {
       this.stopEndpointHealthCheckPulse();
     } catch (error) {
       console.error('Error stopping health check pulse:', error);
-    }
-
-    try {
-      safeUnsubscribe(...this.subs);
-    } catch (error) {
-      console.error('Error unsubscribing:', error);
     }
 
     try {

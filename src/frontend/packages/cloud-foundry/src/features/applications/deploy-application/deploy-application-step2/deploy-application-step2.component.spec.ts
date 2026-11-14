@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideZonelessChangeDetection } from '@angular/core';
+import { provideZonelessChangeDetection, signal } from '@angular/core';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ActivatedRoute } from '@angular/router';
@@ -322,7 +322,7 @@ describe('DeployApplicationStep2Component', () => {
       component = fixture.componentInstance;
       vi.spyOn(TestBed.inject(GitDataService), 'getRepository')
         .mockReturnValue({ waitForValue$: of({ clone_url: 'https://github.com/o/r.git' }) } as any);
-      component.repository = 'o/r';
+      component.repository.set('o/r');
       component.repositoryBranch = { name: 'main' } as any;
     });
 
@@ -356,7 +356,7 @@ describe('DeployApplicationStep2Component', () => {
       component = fixture.componentInstance;
       component.scm = TestBed.inject(GitSCMService).getSCM('github', '');
       component.sourceType = { id: 'github', group: 'gitscm', name: 'GitHub' } as any;
-      component.repository = 'o/r';
+      component.repository.set('o/r');
       component.repositoryBranch = undefined;
     });
 
@@ -394,7 +394,7 @@ describe('DeployApplicationStep2Component', () => {
       component.scm = TestBed.inject(GitSCMService).getSCM('github', '');
       component.sourceType = { id: 'github', group: 'gitscm', name: 'GitHub' } as any;
       component.gitMode = 'public';
-      component.repository = 'o/missing';
+      component.repository.set('o/missing');
       component.repositoryBranch = { name: 'main' } as any;
     });
 
@@ -421,7 +421,7 @@ describe('DeployApplicationStep2Component', () => {
     let commit$: Subject<any>;
 
     beforeEach(async () => {
-      TestBed.inject(ApplicationDeploySourceTypes).types$ = of([githubType]);
+      (TestBed.inject(ApplicationDeploySourceTypes) as any).types = signal([githubType]);
       const gitData = TestBed.inject(GitDataService);
       vi.spyOn(gitData, 'getBranches').mockReturnValue(of([branch]));
       vi.spyOn(gitData, 'getRepository')
@@ -445,6 +445,12 @@ describe('DeployApplicationStep2Component', () => {
       deployData.checkProjectExists({ getRepository: () => of(repo) } as any, 'o/r');
       await fixture.whenStable();
       expect(gitData.getCommit).toHaveBeenCalledWith(expect.anything(), 'o/r', 'rec1234abcd');
+    });
+
+    // The project name arrives from the deployed app after the step is set up
+    it('shows the repository of the deployed app in the project field', async () => {
+      const field = fixture.nativeElement.querySelector('input#projectName') as HTMLInputElement;
+      expect(field.value).toBe('o/r');
     });
 
     it('shows the commit card once the lookup resolves', async () => {

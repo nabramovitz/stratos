@@ -5,7 +5,7 @@
   @if ((canDeployType$ | async) === true) {
     <div>
       <div class="deploy-step2-form">
-        @if ((sourceType$ | async); as sourceType) {
+        @if (selectedSourceType(); as sourceType) {
           <div>
             @if (sourceType.id === DEPLOY_TYPES_IDS.FILE || sourceType.id === DEPLOY_TYPES_IDS.FOLDER) {
               <app-deploy-application-fs #fsChooser [hideTitle]='true'
@@ -128,7 +128,7 @@
                         Branch <span class="text-danger">*</span>
                       </label>
                       <select id="repositoryBranch" class="input"
-                        [disabled]="isRedeploy() || !repository || !sourceSelectionForm.controls.projectName.valid"
+                        [disabled]="isRedeploy() || !repository() || !sourceSelectionForm.controls.projectName.valid"
                         [(ngModel)]="repositoryBranch" name="repositoryBranch"
                         (ngModelChange)="updateBranchName($event)" required>
                         <option [ngValue]="undefined" disabled>Select a branch</option>
@@ -221,7 +221,7 @@
 <!-- Boolean object type to avoid flashing negative message then positive -->
 @if ((canDeployType$ | async) === false) {
   <div>
-    @if ((sourceType$ | async); as sourceType) {
+    @if (selectedSourceType(); as sourceType) {
       <div>
         {{ sourceType.disabledText || 'The selected Cloud Foundry cannot deploy this type.' }}
       </div>

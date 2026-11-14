@@ -1,14 +1,9 @@
-import { Injectable, Injector, Signal, computed, inject } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
-import { observeSignal } from '@stratosui/store';
-import { combineLatest, Observable } from 'rxjs';
-import { filter, map } from 'rxjs/operators';
+import { Injectable, Signal, computed, inject } from '@angular/core';
 
 import { ChartAttributes } from '../../../../helm/monocular/shared/models/chart';
 import { ChartMetadata } from '../../../../helm/store/helm.types';
 import { KubeHelmDataService } from '../../../../services/endpoint-data/kube-helm-data.service';
 import { KubePodDataService } from '../../../../services/domain-data/kube-pod-data.service';
-import { KubePod } from '../../../../services/endpoint-data/kube-types';
 import { ContainerStateCollection, KubernetesPod } from '../../../store/kube.types';
 
 import { getHelmReleaseDetailsFromGuid } from '../../store/workloads-entity-factory';
@@ -99,12 +94,15 @@ type InternalHelmUpgrade = {
 })
 export class HelmReleaseHelperService {
 
-  public release$: Observable<HelmRelease>;
-
   // Signal members. The release is undefined until its detail loads; one
   // without an icon gets the placeholder.
   readonly release: Signal<HelmRelease | undefined>;
   readonly isFetching: Signal<boolean>;
+
+  // Socket-fed graph and resources of the release (written by
+  // HelmReleaseSocketService); undefined until the first message.
+  readonly graph: Signal<HelmReleaseGraph | undefined>;
+  readonly resources: Signal<HelmReleaseResources | undefined>;
 
   public guid: string;
   public endpointGuid: string;
@@ -114,7 +112,6 @@ export class HelmReleaseHelperService {
   private podData = inject(KubePodDataService);
   private releaseData = inject(HelmReleaseDataService);
   private helmData = inject(KubeHelmDataService);
-  private injector = inject(Injector);
 
   constructor() {
     const helmReleaseGuid = inject(HelmReleaseGuid);
@@ -142,58 +139,25 @@ export class HelmReleaseHelperService {
     });
     this.isFetching = this.releaseData.isFetchingDetail(this.guid);
 
-    // Stream form for readers that combine the release with a request
-    // (hasUpgrade, the upgrade wizard).
-    this.release$ = toObservable(this.release, { injector: this.injector }).pipe(
-      filter((item): item is HelmRelease => !!item),
-    );
+    this.graph = this.releaseData.graph(this.guid);
+    this.resources = this.releaseData.resources(this.guid);
   }
 
   public guidAsUrlFragment(): string {
     return this.guid.replace(':', '/').replace(':', '/');
   }
 
-  // The fetch*/getCharts streams are built per call (per tab visit, per graph
-  // node click) on the release shell, which is reused across tab switches,
-  // so they use observeSignal: the watch ends with the subscription instead
-  // of piling up until the user leaves the release. The constructor streams
-  // above are built once per shell and keep toObservable.
-  public fetchReleaseGraph(): Observable<HelmReleaseGraph> {
-    // Socket-fed graph signal (written by HelmReleaseSocketService).
-    return observeSignal(this.releaseData.graph(this.guid), this.injector).pipe(
-      filter((graph): graph is HelmReleaseGraph => !!graph)
-    );
+  // Pod and container counts for the release's workload.
+  public chartStats(): Signal<HelmReleaseChartData> {
+    const pods = this.podData.podsInWorkload(this.endpointGuid, this.namespace, this.releaseTitle);
+    return computed(() => this.mapPods(pods() as any));
   }
 
-  public fetchReleaseResources(): Observable<HelmReleaseResources> {
-    // Socket-fed resources signal (written by HelmReleaseSocketService).
-    return observeSignal(this.releaseData.resources(this.guid), this.injector).pipe(
-      filter((resources): resources is HelmReleaseResources => !!resources)
-    );
-  }
-
-  public fetchReleaseChartStats(): Observable<HelmReleaseChartData> {
-    const podsSig = this.podData.podsInWorkload(this.endpointGuid, this.namespace, this.releaseTitle);
-    return observeSignal(podsSig, this.injector).pipe(
-      map((pods: KubePod[]) => this.mapPods(pods as any)),
-    );
-  }
-
-  // Check to see if a workload has updates available
-  public getCharts() {
-    void this.helmData.loadCharts();
-    return observeSignal(this.helmData.monocularCharts(), this.injector).pipe(
-      filter((charts: any) => !!charts)
-    );
-  }
-
-  public fetchReleaseHistory(): Observable<HelmReleaseRevision[]> {
-    // Get the history for a Helm release (signal-native; replaces the ngrx
-    // `history` entity-catalog getEntityService).
+  // Get the history for a Helm release (signal-native; replaces the ngrx
+  // `history` entity-catalog getEntityService). Undefined until it loads.
+  public history(): Signal<HelmReleaseRevision[] | undefined> {
     void this.releaseData.loadHistory(this.endpointGuid, this.namespace, this.releaseTitle);
-    return observeSignal(this.releaseData.history(this.guid), this.injector).pipe(
-      filter((revisions): revisions is HelmReleaseRevision[] => !!revisions)
-    );
+    return this.releaseData.history(this.guid);
   }
 
   private mapPods(pods: KubernetesPod[]): HelmReleaseChartData {
@@ -254,52 +218,58 @@ export class HelmReleaseHelperService {
     return false;
   }
 
-  public hasUpgrade(returnLatest = false): Observable<InternalHelmUpgrade | null> {
-    const updates = combineLatest([this.getCharts(), this.release$]);
-    return updates.pipe(
-      map(([charts, release]: [any, any]) => {
-        let score = -1;
-        let match;
-        for (const c of charts) {
-          const matchScore = this.compareCharts(c.attributes, release.chart.metadata);
-          if (matchScore > score) {
-            score = matchScore;
-            if (c.relationships && c.relationships.latestChartVersion && c.relationships.latestChartVersion.data) {
-              const latest = new Version(c.relationships.latestChartVersion.data.version);
-              const current = new Version(release.chart.metadata.version);
-              if (latest.isNewer(current)) {
-                match = {
-                  release,
-                  upgrade: c.attributes,
-                  version: c.relationships.latestChartVersion.data.version,
-                  monocularEndpointId: c.monocularEndpointId
-                };
-              }
-            }
-          }
-        }
-        // Did we find a matching chart? If so, return it
-        if (match) {
-          return match;
-        }
-        // No newer release, so return the release itself if that is what was requested and we can find the chart
-        // NOTE: If the helm repository is removed that we installed from, we won't be able to find the chart
-        if (returnLatest) {
-          // Need to check that the chart is probably the same
-          const releaseChart = charts.find((c: any) => this.compareCharts(c.attributes, release.chart.metadata) !== -1 &&
-            c.relationships.latestChartVersion.data.version === release.chart.metadata.version);
-          if (releaseChart) {
-            return {
+  // Check to see if a workload has updates available. Null while the charts
+  // or the release are still loading, and when no chart matches.
+  public upgrade(returnLatest = false): Signal<InternalHelmUpgrade | null> {
+    void this.helmData.loadCharts();
+    const charts = this.helmData.monocularCharts();
+    return computed(() => {
+      const release = this.release();
+      return release ? this.findUpgrade(charts(), release, returnLatest) : null;
+    });
+  }
+
+  private findUpgrade(charts: any[], release: HelmRelease, returnLatest: boolean): InternalHelmUpgrade | null {
+    let score = -1;
+    let match;
+    for (const c of charts) {
+      const matchScore = this.compareCharts(c.attributes, release.chart.metadata);
+      if (matchScore > score) {
+        score = matchScore;
+        if (c.relationships && c.relationships.latestChartVersion && c.relationships.latestChartVersion.data) {
+          const latest = new Version(c.relationships.latestChartVersion.data.version);
+          const current = new Version(release.chart.metadata.version);
+          if (latest.isNewer(current)) {
+            match = {
               release,
-              upgrade: releaseChart.attributes,
-              version: releaseChart.relationships.latestChartVersion.data.version,
-              monocularEndpointId: releaseChart.monocularEndpointId
+              upgrade: c.attributes,
+              version: c.relationships.latestChartVersion.data.version,
+              monocularEndpointId: c.monocularEndpointId
             };
           }
         }
-        return null;
-      })
-    );
+      }
+    }
+    // Did we find a matching chart? If so, return it
+    if (match) {
+      return match;
+    }
+    // No newer release, so return the release itself if that is what was requested and we can find the chart
+    // NOTE: If the helm repository is removed that we installed from, we won't be able to find the chart
+    if (returnLatest) {
+      // Need to check that the chart is probably the same
+      const releaseChart = charts.find((c: any) => this.compareCharts(c.attributes, release.chart.metadata) !== -1 &&
+        c.relationships.latestChartVersion.data.version === release.chart.metadata.version);
+      if (releaseChart) {
+        return {
+          release,
+          upgrade: releaseChart.attributes,
+          version: releaseChart.relationships.latestChartVersion.data.version,
+          monocularEndpointId: releaseChart.monocularEndpointId
+        };
+      }
+    }
+    return null;
   }
 
   // We might have a chart with the same name in multiple repositories - we only have chart metadata
