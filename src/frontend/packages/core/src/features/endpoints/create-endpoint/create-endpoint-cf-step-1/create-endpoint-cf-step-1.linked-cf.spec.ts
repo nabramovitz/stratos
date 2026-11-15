@@ -20,7 +20,7 @@ import { EndpointPermissionsService } from '../../endpoint-permissions.service';
 import { EndpointsSignalConfigService } from '../../endpoints-page/endpoints-signal-config.service';
 import { CreateEndpointCfStep1Component } from './create-endpoint-cf-step-1.component';
 
-const BROKERS_URL = (cf: string) => `/pp/v1/cf/service_brokers/${cf}?return=base`;
+const BROKERS_URL = (cf: string, page = 1) => `/pp/v1/cf/service_brokers/${cf}?return=base&per_page=100&page=${page}`;
 
 function cf(guid: string, host: string): EndpointModel {
   return {
@@ -143,6 +143,24 @@ describe('CreateEndpointCfStep1Component: a type linked to a Cloud Foundry', () 
     expect(select('linked-broker')!.value).toBe('b1');
   });
 
+  it('offers every broker, not only the first page', async () => {
+    await open(cf('lab', 'api.sys.x.com'));
+    await typeUrl('https://autoscaler.sys.x.com');
+    http.expectOne(BROKERS_URL('lab')).flush({
+      resources: [{ guid: 'b1', name: 'mysql', url: 'https://mysql-broker.sys.x.com' }],
+      pagination: { totalResults: 2, totalPages: 2 },
+    });
+    await fixture.whenStable();
+    http.expectOne(BROKERS_URL('lab', 2)).flush({
+      resources: [{ guid: 'b2', name: 'autoscaler', url: 'https://autoscalerservicebroker.sys.x.com' }],
+      pagination: { totalResults: 2, totalPages: 2 },
+    });
+    await fixture.whenStable();
+
+    expect(options('linked-broker')).toEqual(['Not registered in Cloud Foundry yet', 'mysql', 'autoscaler']);
+    expect(select('linked-broker')!.value).toBe('b2');
+  });
+
   it('offers only "not registered yet" when the brokers cannot be read', async () => {
     await open(cf('lab', 'api.sys.x.com'));
     await typeUrl('https://autoscaler.sys.x.com');
@@ -176,5 +194,23 @@ describe('CreateEndpointCfStep1Component: a type linked to a Cloud Foundry', () 
     expect(opts.cfGuid).toBe('lab');
     expect(opts.brokerGuid).toBeUndefined();
     expect(opts.brokerName).toBeUndefined();
+  });
+
+  it('warns that apps will not use an autoscaler that is not registered yet, and not for a real broker', async () => {
+    await open(cf('lab', 'api.sys.x.com'));
+    await typeUrl('https://autoscaler.sys.x.com');
+    await brokers('lab', [{ guid: 'b1', name: 'autoscaler', url: 'https://autoscalerservicebroker.sys.x.com' }]);
+    const hint = () => (fixture.nativeElement as HTMLElement).querySelector('#linked-broker-hint');
+
+    expect(select('linked-broker')!.value).toBe('b1');
+    expect(hint()).toBeNull();
+    expect(select('linked-broker')!.getAttribute('aria-describedby')).toBeNull();
+
+    select('linked-broker')!.value = '';
+    select('linked-broker')!.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    expect(hint()!.textContent).toContain('Apps will not use this autoscaler');
+    expect(select('linked-broker')!.getAttribute('aria-describedby')).toBe('linked-broker-hint');
   });
 });

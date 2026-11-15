@@ -583,6 +583,21 @@ describe('AppDetailDataService', () => {
     expect(svc.appDetail()).toBeUndefined();
   });
 
+  it('refresh() after a write re-reads when a poll is already in flight', async () => {
+    const poll = svc.refresh('app'); // no value yet, so the raw status is 'loading'
+    await tick();
+    const pollReq = httpMock.expectOne(DETAIL_URL); // a poll that started before the write
+
+    const afterWrite = svc.refresh('app');
+    await tick();
+    pollReq.flush(MOCK_APP_DETAIL); // pre-write response
+    await tick();
+    // The refresh that follows the write must send its own request.
+    httpMock.expectOne(DETAIL_URL).flush({ ...MOCK_APP_DETAIL, sshEnabled: false });
+    await Promise.all([poll, afterWrite]);
+    expect(svc.appDetail()).toEqual({ ...MOCK_APP_DETAIL, sshEnabled: false });
+  });
+
   it('clears a previous error on successful re-fetch', async () => {
     const p1 = svc.refresh('app');
     await tick();
@@ -595,6 +610,25 @@ describe('AppDetailDataService', () => {
     httpMock.expectOne(DETAIL_URL).flush(MOCK_APP_DETAIL);
     await p2;
     expect(svc.errors().app).toBeNull();
+  });
+
+  it('keeps the loaded env vars through a reload after a failed poll and a second failure', async () => {
+    await loadAll();
+    expect(svc.envVars()).toEqual(MOCK_ENV); // a view reads it, which keeps the value alive
+    const failed = svc.refresh('envVars');
+    await tick();
+    httpMock.expectOne(ENV_URL).flush('err', { status: 500, statusText: 'Server Error' });
+    await failed;
+    expect(svc.envVars()).toEqual(MOCK_ENV);
+
+    const again = svc.refresh('envVars');
+    await tick();
+    // The reload that follows an error is loading: the kept value must stay.
+    expect(svc.envVars()).toEqual(MOCK_ENV);
+    httpMock.expectOne(ENV_URL).flush('err', { status: 500, statusText: 'Server Error' });
+    await again;
+    expect(svc.errors().envVars).not.toBeNull();
+    expect(svc.envVars()).toEqual(MOCK_ENV);
   });
 
   // -------------------------------------------------------------------------

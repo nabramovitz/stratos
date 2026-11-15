@@ -61,6 +61,14 @@ export const stripMarkup = (text: string): string => piecesToText(htmlToPieces(t
 
 const textPiece = (text: string): ErrorPiece[] => [{ text, style: 'text' }];
 
+// A plain-text detail that quotes a few HTML tags (`<b>name</b>`): only those
+// tags go, so text in angle brackets that is not HTML (Go's `<nil>`) stays.
+const detailPieces = (detail: string): ErrorPiece[] => {
+  const tags = /<\/?(?:a|abbr|b|big|br|code|em|font|i|kbd|p|s|small|span|strong|sub|sup|tt|u)(?:\s[^<>]*)?\/?>/gi;
+  const text = detail.replace(tags, ' ').replace(/\s+/g, ' ').trim();
+  return text ? textPiece(text) : [];
+};
+
 // A message that may quote an HTML page after a lead-in, such as capi's
 // `resource not found (status 404): <html>...`: the page is read, the
 // lead-in kept, and the text itself is used when the page has no words.
@@ -92,7 +100,8 @@ export function extractHttpErrorPieces(err: unknown): ErrorPiece[] {
       const errors = (body as { errors?: Array<{ detail?: unknown; title?: string; message?: string }> }).errors;
       const first = errors?.[0];
       if (first) {
-        const detail = typeof first.detail === 'string' ? htmlToPieces(first.detail) : [];
+        const detail = typeof first.detail !== 'string' ? []
+          : looksLikeHtml(first.detail) ? htmlToPieces(first.detail) : detailPieces(first.detail);
         if (detail.length) return detail;
         if (first.title) return textPiece(first.title);
         if (first.message) return textPiece(first.message);
@@ -109,6 +118,7 @@ export function extractHttpErrorPieces(err: unknown): ErrorPiece[] {
       const page = htmlToPieces(body);
       if (page.length) return page;
     }
+    if (err.status === 0) return textPiece('Could not reach the server.');
     return textPiece(err.statusText && err.statusText !== 'OK'
       ? `HTTP ${err.status} ${err.statusText}`
       : `HTTP ${err.status}`);
@@ -137,6 +147,32 @@ export function leadPieces(lead: string, err: unknown): ErrorPiece[] {
   return first.style === 'text'
     ? [{ text: `${lead}: ${first.text}`, style: 'text' }, ...rest]
     : [{ text: `${lead}: `, style: 'text' }, first, ...rest];
+}
+
+/** One failed sub-call of a request that answered 200: its detail or title. */
+export interface PartialFailure {
+  detail?: string;
+  title?: string;
+}
+
+/**
+ * The Error to throw when a request answered 200 but listed failures in its
+ * body (patchApp's `_meta.errors`): each failure's words as pieces, an HTML
+ * page read, joined by '; '. Its message is their text, `pieces` keeps them.
+ */
+export function partialFailureError(failures: PartialFailure[]): Error & { pieces: ErrorPiece[] } {
+  const pieces: ErrorPiece[] = [];
+  failures.forEach((failure, i) => {
+    for (const piece of [...(i ? textPiece('; ') : []), ...messagePieces(failure.detail || failure.title || '')]) {
+      const last = pieces[pieces.length - 1];
+      if (last?.style === piece.style) {
+        pieces[pieces.length - 1] = { text: last.text + piece.text, style: piece.style };
+      } else {
+        pieces.push(piece);
+      }
+    }
+  });
+  return Object.assign(new Error(piecesToText(pieces)), { pieces });
 }
 
 /**

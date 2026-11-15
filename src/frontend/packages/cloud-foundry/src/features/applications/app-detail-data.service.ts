@@ -1,4 +1,4 @@
-import { Injectable, Injector, Resource, ResourceRef, computed, effect, inject, linkedSignal, signal, Signal, untracked, WritableSignal } from '@angular/core';
+import { DestroyRef, Injectable, Injector, Resource, ResourceRef, ResourceStatus, computed, effect, inject, linkedSignal, signal, Signal, untracked, WritableSignal } from '@angular/core';
 import { HttpClient, httpResource } from '@angular/common/http';
 
 import { AppDetailPrefs } from './app-detail-prefs.service';
@@ -73,6 +73,9 @@ export class AppDetailDataService {
   private readonly endpointDataRegistry = inject(EndpointDataRegistry);
 
   private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
+  private destroyed = false;
+  private readonly markDestroyed = this.destroyRef.onDestroy(() => this.destroyed = true);
 
   private readonly _ids = signal({ cnsi: '', app: '' });
   get cnsiGuid(): string { return this._ids().cnsi; }
@@ -132,11 +135,19 @@ export class AppDetailDataService {
     org: this.orgRes, domains: this.domainsRes, routes: this.routesRes, serviceBindings: this.bindingsRes,
   };
 
-  /** The resource's value, kept across a failed reload (value() is unusable in the error state). */
+  /**
+   * The resource's value, kept in the error state and while a reload runs after an error
+   * (value() is the default in both). A first load or a changed url starts empty.
+   */
   private latest<T>(res: Resource<T | undefined>): WritableSignal<T | undefined> {
-    return linkedSignal<{ v: T | undefined; failed: boolean }, T | undefined>({
-      source: () => ({ v: res.hasValue() ? res.value() : undefined, failed: res.status() === 'error' }),
-      computation: (src, prev) => src.v ?? (src.failed ? prev?.value : undefined),
+    return linkedSignal<{ v: T | undefined; status: ResourceStatus }, T | undefined>({
+      source: () => ({ v: res.hasValue() ? res.value() : undefined, status: res.status() }),
+      computation: (src, prev) => {
+        if (src.v !== undefined) {
+          return src.v;
+        }
+        return src.status === 'error' || src.status === 'reloading' ? prev?.value : undefined;
+      },
     });
   }
 
@@ -425,9 +436,10 @@ export class AppDetailDataService {
     // app + envVars in parallel, then each kind that depends on the one before.
     const phases: EntityKind[][] = scope === 'all'
       ? [['app', 'envVars'], ['stats'], ['space'], ['org'], ['domains']] : [[scope]];
+    const requested = this._wanted();
     this._wanted.update(kinds => new Set([...kinds, ...phases.flat()]));
     for (const phase of phases) {
-      await Promise.all(phase.map(kind => this.run(this.resources[kind])));
+      await Promise.all(phase.map(kind => this.run(this.resources[kind], requested.has(kind))));
     }
 
     this._lastPolledAt.set(new Date());
@@ -469,9 +481,11 @@ export class AppDetailDataService {
     }
   }
 
-  /** Reload a resource and wait until it settles (an idle or already-loading one just settles). */
-  private run(res: ResourceRef<unknown>): Promise<void> {
-    res.reload();
+  /** Wait until the resource is not loading. Resolves at once when the service is destroyed (no effect would run). */
+  private settled(res: ResourceRef<unknown>): Promise<void> {
+    if (this.destroyed) {
+      return Promise.resolve();
+    }
     return new Promise(resolve => {
       const watcher = effect(() => {
         if (!res.isLoading()) {
@@ -479,7 +493,25 @@ export class AppDetailDataService {
           resolve();
         }
       }, { injector: this.injector });
+      this.destroyRef.onDestroy(resolve);
     });
+  }
+
+  /**
+   * Reload a resource and wait until it settles (an idle one just settles). reload() does nothing
+   * while a request is in flight, and that one may predate the write being refreshed for: wait
+   * for it, then reload. `requested` is whether the kind was asked for before this refresh began
+   * (a first request is this refresh's own, and needs no second one).
+   */
+  private async run(res: ResourceRef<unknown>, requested: boolean): Promise<void> {
+    if (requested && res.status() === 'loading') {
+      await this.settled(res);
+    }
+    if (this.destroyed) {
+      return;
+    }
+    res.reload();
+    await this.settled(res);
   }
 
   // Diagnostic trace per fetch (kind, url, outcome, duration), gated on

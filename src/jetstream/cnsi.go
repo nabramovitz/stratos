@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -215,6 +217,10 @@ func (p *portalProxy) unregisterCluster(c *echo.Context) error {
 	}
 
 	return p.doUnregisterCluster(cnsiGUID)
+}
+
+func (p *portalProxy) UnregisterEndpoint(guid string) error {
+	return p.doUnregisterCluster(guid)
 }
 
 func (p *portalProxy) doUnregisterCluster(cnsiGUID string) error {
@@ -516,11 +522,16 @@ func (p *portalProxy) GetUserConnectedAdminCNSIRecordByEndpoint(endpoint string,
 // preferring one on the console's client: the login hook links the console's
 // token into it, and only that client can refresh the token. Duplicates are
 // allowed, so several may be on that client; the one with the auto-register
-// name wins, as the database returns them in no set order.
+// name wins. Otherwise the first by name, then GUID, as the database returns
+// them in no set order.
 func (p *portalProxy) pickAdminCNSIRecord(endpointList []*api.CNSIRecord, cnsiType string) (api.CNSIRecord, error) {
 	var rec *api.CNSIRecord
 	consoleClient := p.GetConfig().CFClient
 	autoRegName := p.GetConfig().AutoRegisterName()
+	endpointList = slices.Clone(endpointList)
+	slices.SortFunc(endpointList, func(a, b *api.CNSIRecord) int {
+		return cmp.Or(cmp.Compare(a.Name, b.Name), cmp.Compare(a.GUID, b.GUID))
+	})
 	for _, endpoint := range endpointList {
 		if len(endpoint.Creator) != 0 || endpoint.CNSIType != cnsiType {
 			continue

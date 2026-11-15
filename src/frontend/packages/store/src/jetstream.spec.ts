@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { describe, expect, it } from 'vitest';
 import {
-  extractHttpErrorMessage, extractHttpErrorPieces, httpErrorResponseToSafeString, leadError, leadPieces, stripMarkup,
+  extractHttpErrorMessage, extractHttpErrorPieces, httpErrorResponseToSafeString, leadError, leadPieces, partialFailureError, stripMarkup,
 } from './jetstream';
 import { ErrorPiece, piecesToText } from './upstream-error-text';
 
@@ -84,6 +84,40 @@ describe('extractHttpErrorPieces', () => {
     const err = Object.assign(new Error('502 Bad Gateway nginx'), { pieces: [h('502 Bad Gateway'), t('\nnginx')] });
     expect(extractHttpErrorPieces(err)).toEqual([h('502 Bad Gateway'), t('\nnginx')]);
     expect(extractHttpErrorPieces(new Error('boom'))).toEqual([t('boom')]);
+  });
+});
+
+describe('extractHttpErrorPieces (no response)', () => {
+  it('says so when the server could not be reached', () => {
+    expect(extractHttpErrorMessage(httpError(null, 0, 'Unknown Error'))).toBe('Could not reach the server.');
+  });
+});
+
+describe('extractHttpErrorPieces (plain detail)', () => {
+  it('keeps angle-bracket text in a plain CF error detail', () => {
+    expect(extractHttpErrorMessage(httpError({ errors: [{ detail: 'Space <nil> not found', title: 'T' }] })))
+      .toBe('Space <nil> not found');
+  });
+});
+
+describe('extractHttpErrorPieces (inline tags in a plain detail)', () => {
+  it('drops inline HTML tags but keeps other angle-bracket text', () => {
+    expect(extractHttpErrorMessage(httpError({ errors: [{ detail: 'unbind <b>failed</b> for <nil>', title: 'T' }] })))
+      .toBe('unbind failed for <nil>');
+  });
+});
+
+describe('partialFailureError', () => {
+  it('joins the details and reads an HTML page in one', () => {
+    const err = partialFailureError([{ detail: 'name taken' }, { title: 'CF-Bad', detail: nginx502 }]);
+    expect(err.message).toBe('name taken; 502 Bad Gateway\nnginx');
+    expect(err.pieces).toEqual([t('name taken; '), h('502 Bad Gateway'), t('\nnginx')]);
+    expect(extractHttpErrorMessage(err)).toBe(err.message);
+  });
+
+  it('falls back to the title and keeps plain angle brackets', () => {
+    expect(partialFailureError([{ title: 'CF-NotAuthorized' }, { detail: 'no <nil>' }]).message)
+      .toBe('CF-NotAuthorized; no <nil>');
   });
 });
 

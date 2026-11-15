@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"errors"
 
@@ -282,9 +283,13 @@ func (c *CloudFoundrySpecification) cfLoginHook(context *echo.Context) error {
 	slog.Info("Determining whether the user should auto-connect", "url", cfAPI, "endpoint", connectCnsi.Name, "user", userGUID)
 
 	cfTokenRecord, ok := c.portalProxy.GetCNSITokenRecordWithDisconnected(connectCnsi.GUID, userGUID)
-	if ok && cfTokenRecord.Disconnected {
+	if (ok && cfTokenRecord.Disconnected) || c.disconnectedAnyAt(cfAPI, userGUID) {
 		// There exists a record but it's been cleared. This means user has disconnected manually. Don't auto-reconnect
 		slog.Info("No: the user previously disconnected, so will not auto-connect", "url", cfAPI, "user", userGUID)
+	} else if !c.portalProxy.GetConfig().SSOLogin && hasLiveToken(cfTokenRecord, ok) {
+		// The user already holds a connection, maybe made with other credentials; a
+		// login must not replace it with the login credentials.
+		slog.Info("No: the user is already connected, so will not auto-connect", "url", cfAPI, "user", userGUID)
 	} else {
 		slog.Info("Yes: the user should auto-connect", "url", cfAPI, "user", userGUID)
 
@@ -306,6 +311,37 @@ func (c *CloudFoundrySpecification) cfLoginHook(context *echo.Context) error {
 		}
 	}
 	return nil
+}
+
+// disconnectedAnyAt reports whether the user disconnected a Cloud Foundry
+// endpoint at the auto-register URL. Duplicates are allowed, and a user who
+// disconnects the one they use is left with none connected, so the
+// console-wide pick, never attempted for them, would otherwise be
+// connected in its place.
+func (c *CloudFoundrySpecification) disconnectedAnyAt(cfAPI, userGUID string) bool {
+	all, err := c.portalProxy.ListEndpoints()
+	if err != nil {
+		return false
+	}
+	for _, rec := range all {
+		if rec.CNSIType != EndpointType || rec.APIEndpoint == nil ||
+			!strings.EqualFold(strings.TrimRight(rec.APIEndpoint.String(), "/"), cfAPI) {
+			continue
+		}
+		if tr, ok := c.portalProxy.GetCNSITokenRecordWithDisconnected(rec.GUID, userGUID); ok && tr.Disconnected {
+			return true
+		}
+	}
+	return false
+}
+
+// hasLiveToken reports whether the record is a connection that still works:
+// not cleared, and either refreshable or not yet expired.
+func hasLiveToken(tr api.TokenRecord, found bool) bool {
+	if !found || tr.Disconnected {
+		return false
+	}
+	return tr.RefreshToken != "" || tr.TokenExpiry == 0 || time.Unix(tr.TokenExpiry, 0).After(time.Now())
 }
 
 // userPreferredEndpoint is the admin endpoint at the auto-register URL the
