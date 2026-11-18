@@ -51,12 +51,34 @@ Valid sections, in the order they appear in the published notes:
 | `[Breaking Changes]` | Anything an operator must act on before upgrading |
 | `[Features]` | New functionality |
 | `[BugFixes]` | Fixes |
+| `[Accessibility]` | Accessibility and WCAG changes, fixes and features alike |
 | `[Maintainability]` | Keeping the codebase current: retiring an unmaintained or archived dependency, consolidating forked or vendored code, clearing scanner findings |
 | `[Chores]` | Routine dependency bumps, CI/build changes, docs |
 | `[Security Updates]` | CVE fixes (table of release/version/CVE links) |
 
 A section appears in the published notes only when at least one fragment
 contributes to it. Unknown section headers fail assembly loudly.
+
+**Accessibility** collects every accessibility entry. A header such as
+`[BugFixes: Accessibility]` or `[Features: Accessibility]` lands there
+too. Name the WCAG success criterion as the subcategory, so the changes
+group by criterion:
+
+```markdown
+[Accessibility: 1.4.3 Contrast (Minimum)]
+- Placeholder text in form fields now meets 4.5:1.
+```
+
+**Maintainability** and **Chores** publish together as one **Maintenance**
+section, in the order the fragments landed; subcategories with the same
+name merge. Every `| Package | From | To |` table in them is merged into
+one `Package | Versions` table at the end of the section's bullets, with
+each package's moves chained in landing order
+(`10.11.0 → 10.12.0 → 10.14.0`). A step that does not start where the last
+one ended starts a new run after `;`, which usually means a bump nobody
+wrote up. The bullet that introduced a table loses its colon: a bare
+"Dependency updates:" is dropped, and any other wording stays as a
+sentence.
 
 ### Subcategories
 
@@ -99,7 +121,8 @@ so in each section the plugin fixes follow the core ones.
 When an entry covers several items, lay them out instead of chaining them
 into one sentence:
 
-- **Version moves** → a table with `From` and `To` columns.
+- **Version moves** → a `| Package | From | To |` table (that exact
+  header, so assembly merges it into the release's dependency table).
 - **Named items with a meaning** (advisories, removed pins, renamed
   files) → a two-column table, such as `Advisory | What it fixes`.
 - **A short list of plain items** → a nested list under the bullet.
@@ -113,7 +136,7 @@ table) so the table stays narrow.
 [Chores]
 - Backend dependency updates:
 
-| Component  | From   | To     |
+| Package    | From   | To     |
 |------------|--------|--------|
 | Helm       | 3.21.4 | 3.22.0 |
 | go-sqlite3 | 0.35.4 | 0.35.6 |

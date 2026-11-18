@@ -56,3 +56,78 @@ test('the section before the colon must still be a known one', () => {
   assert.notEqual(status, 0)
   assert.match(err, /unknown section \[Feature\]/)
 })
+
+test('accessibility is its own section, after the bug fixes', () => {
+  const { out, status } = assemble({
+    '0001-a.md': '[Accessibility]\n- A1.\n',
+    '0002-b.md': '[BugFixes]\n- B1.\n\n[Features]\n- F1.\n',
+  })
+  assert.equal(status, 0)
+  assert.equal(out, '## Features\n\n- F1.\n\n## Bug Fixes\n\n- B1.\n\n## Accessibility\n\n- A1.\n')
+})
+
+test('an Accessibility subcategory in any section lands in the Accessibility section', () => {
+  const { out, status } = assemble({
+    '0001-a.md': '[BugFixes: Accessibility]\n- A1.\n',
+    '0002-b.md': '[Features: Accessibility]\n- A2.\n\n[BugFixes]\n- B1.\n',
+  })
+  assert.equal(status, 0)
+  assert.equal(out, '## Bug Fixes\n\n- B1.\n\n## Accessibility\n\n- A1.\n- A2.\n')
+})
+
+test('WCAG criteria group as subcategories of the Accessibility section', () => {
+  const { out, status } = assemble({
+    '0001-a.md': '[Accessibility: 1.4.3 Contrast (Minimum)]\n- C1.\n',
+    '0002-b.md': '[Accessibility]\n- Plain.\n\n[Accessibility: 1.4.3 Contrast (Minimum)]\n- C2.\n',
+  })
+  assert.equal(status, 0)
+  assert.equal(out, '## Accessibility\n\n- Plain.\n\n### 1.4.3 Contrast (Minimum)\n\n- C1.\n- C2.\n')
+})
+
+test('Maintainability and Chores assemble as one Maintenance section', () => {
+  const { out, status } = assemble({
+    '0001-a.md': '[Maintainability]\n- M1.\n\n[Chores: Services]\n- S1.\n',
+    '0002-b.md': '[Chores]\n- C1.\n\n[Maintainability: Services]\n- S2.\n',
+  })
+  assert.equal(status, 0)
+  assert.equal(out, '## Maintenance\n\n- M1.\n- C1.\n\n### Services\n\n- S1.\n- S2.\n')
+})
+
+test('dependency tables merge into one table of version chains', () => {
+  const { out, status } = assemble({
+    '0001-a.md': '[Chores]\n- Dependency updates:\n\n| Package | From | To |\n|---|---|---|\n| eslint | 1.0 | 1.1 |\n| go | 5 | 6 |\n',
+    '0002-b.md': '[Chores]\n- A chore.\n- Backend updates, from moving to the CLI\n  branch:\n\n| Package | From | To |\n|---|---|---|\n| eslint | 1.1 | 1.2 |\n| jwt | (new) | 5.3.1 |\n',
+    '0003-c.md': '[Maintainability]\n| Package | From | To |\n|---|---|---|\n| eslint | 2.0 | 2.1 |\n',
+  })
+  assert.equal(status, 0)
+  assert.equal(out, [
+    '## Maintenance',
+    '',
+    '- A chore.',
+    '- Backend updates, from moving to the CLI',
+    '  branch.',
+    '- Dependency updates:',
+    '',
+    '| Package | Versions                   |',
+    '|---------|----------------------------|',
+    '| eslint  | 1.0 → 1.1 → 1.2; 2.0 → 2.1 |',
+    '| go      | 5 → 6                      |',
+    '| jwt     | (new) → 5.3.1              |',
+    '',
+  ].join('\n'))
+})
+
+test('tables outside the maintenance section are left as written', () => {
+  const body = '[Security Updates]\n| Package | From | To |\n|---|---|---|\n| x | 1 | 2 |\n'
+  const { out, status } = assemble({ '0001-a.md': body })
+  assert.equal(status, 0)
+  assert.equal(out, '## Security Updates\n\n| Package | From | To |\n|---|---|---|\n| x | 1 | 2 |\n')
+})
+
+test('a list that held a dependency table stays one list', () => {
+  const { out, status } = assemble({
+    '0001-a.md': '[Chores]\n- Before.\n- Dependency updates:\n\n| Package | From | To |\n|---|---|---|\n| x | 1 | 2 |\n\n- After.\n',
+  })
+  assert.equal(status, 0)
+  assert.equal(out, '## Maintenance\n\n- Before.\n- After.\n- Dependency updates:\n\n| Package | Versions |\n|---------|----------|\n| x       | 1 → 2    |\n')
+})

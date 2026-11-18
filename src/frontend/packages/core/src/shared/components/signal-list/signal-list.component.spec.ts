@@ -125,6 +125,87 @@ describe('SignalListComponent', () => {
     expect(menu.querySelector('[data-test="rename-row"]')).not.toBeNull();
   });
 
+  // Typing in the name filter or picking a filter changed the list with
+  // nothing said (WCAG 4.1.3). A status line, empty until the person
+  // changes a filter, then says how many results the list holds.
+  it('says the result count once the person changes a filter', async () => {
+    const fixture = TestBed.createComponent(Host);
+    const nameFilter = signal('');
+    const total = signal(2);
+    fixture.componentInstance.config = {
+      ...fixture.componentInstance.config,
+      nameFilter,
+      totalFilteredResults: total.asReadonly(),
+    };
+    await fixture.whenStable();
+    const status = () => (fixture.nativeElement as HTMLElement).querySelector('[data-test="result-status"]');
+    expect(status()?.getAttribute('role')).toBe('status');
+    expect(status()!.textContent!.trim()).toBe('');
+
+    nameFilter.set('node');
+    total.set(1);
+    await fixture.whenStable();
+    expect(status()!.textContent!.trim()).toBe('1 result');
+
+    nameFilter.set('');
+    total.set(2);
+    await fixture.whenStable();
+    expect(status()!.textContent!.trim()).toBe('2 results');
+  });
+
+  // A field's edge shows where to type: it takes the field border token,
+  // drawn at 3:1 or more (WCAG 1.4.11), not the faint card border.
+  it('draws the toolbar fields with the field border', async () => {
+    const fixture = TestBed.createComponent(Host);
+    await fixture.whenStable();
+    const fields = [...fixture.nativeElement.querySelectorAll('input[type=text], select')] as HTMLElement[];
+    expect(fields.length).toBeGreaterThan(0);
+    for (const f of fields) {
+      expect(f.className, f.outerHTML.slice(0, 80)).toContain('border-input-border');
+      expect(f.className).not.toContain('border-content-border');
+    }
+  });
+
+  // Two links in one cell can have the same text: an app's org and space
+  // are both "e2e". A label read before each by screen readers only tells
+  // them apart (WCAG 2.4.4); the visible text stays at the end of the name.
+  it('reads a compound segment label before its text, for screen readers only', async () => {
+    const fixture = TestBed.createComponent(Host);
+    fixture.componentInstance.config = {
+      ...fixture.componentInstance.config,
+      columns: [
+        { header: 'Name', render: r => r.name },
+        {
+          header: 'Org/Space', kind: 'compound', render: () => '',
+          compound: () => [
+            { text: 'e2e', link: ['/org'], label: 'Organization' },
+            { text: 'e2e', link: ['/space'], label: 'Space' },
+          ],
+        },
+      ],
+    };
+    await fixture.whenStable();
+    const links = [...fixture.nativeElement.querySelector('tbody tr').querySelectorAll('td a')].filter((a: HTMLElement) => a.textContent?.includes('e2e'));
+    expect(links.map((a: HTMLElement) => a.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['Organization e2e', 'Space e2e']);
+    expect(links[0].querySelector('.sr-only')?.textContent?.trim()).toBe('Organization');
+  });
+
+  // Links stacked in one cell were 17.5 px tall and touching: each line is
+  // now 24 px tall, the WCAG 2.5.8 minimum for a target.
+  it('gives each stacked compound line a 24 px line height', async () => {
+    const fixture = TestBed.createComponent(Host);
+    fixture.componentInstance.config = {
+      ...fixture.componentInstance.config,
+      columns: [
+        { header: 'Name', render: r => r.name },
+        { header: 'Org/Space', kind: 'compound', render: () => '', compound: () => [{ text: 'a', link: ['/a'] }, { text: 'b', link: ['/b'] }] },
+      ],
+    };
+    await fixture.whenStable();
+    const stack = fixture.nativeElement.querySelector('tbody tr td a')!.parentElement as HTMLElement;
+    expect(stack.classList.contains('leading-6')).toBe(true);
+  });
+
   describe('row-action menu and the Escape key', () => {
     async function withActions() {
       const fixture = TestBed.createComponent(Host);
@@ -141,6 +222,20 @@ describe('SignalListComponent', () => {
     const menu = (el: HTMLElement) => el.querySelector('[data-test="row-actions-menu"]');
     const escape = (target: EventTarget) =>
       target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+    // The popup is a plain group of buttons, Tab moves through it and it
+    // has no arrow keys, so it is not a menu: aria-haspopup="menu" told a
+    // screen reader to expect one (WCAG 4.1.2). The button shows and hides
+    // the group, and says whether it is open.
+    it('presents the actions button as a show/hide button, not a menu button', async () => {
+      const fixture = await withActions();
+      const kebab = fixture.nativeElement.querySelector('[data-test="row-actions"]') as HTMLButtonElement;
+      expect(kebab.hasAttribute('aria-haspopup')).toBe(false);
+      expect(kebab.getAttribute('aria-expanded')).toBe('false');
+      kebab.click();
+      await fixture.whenStable();
+      expect(kebab.getAttribute('aria-expanded')).toBe('true');
+    });
 
     // The checklist popup listens for the same document click; a second
     // listener for one host event was dropped, so only Escape closed the menu.
@@ -2505,6 +2600,27 @@ describe('SignalListComponent control names', () => {
     fixture.componentInstance.config = { ...fixture.componentInstance.config, viewMode: signal<'table' | 'card'>('card') };
     await fixture.whenStable();
     expect(Array.from(root.querySelectorAll('[data-test="row-radio"]')).map(name)).toEqual(['Pick one', 'Pick two']);
+  });
+
+  // A screen reader says which column sorts the table, and which way: the
+  // sorted header has aria-sort, and only that one (WCAG 1.3.1).
+  it('marks the sorted column header with aria-sort', async () => {
+    const fixture = TestBed.createComponent(Host);
+    const sort = signal<{ field: string; direction: 'asc' | 'desc' }>({ field: 'name', direction: 'asc' });
+    fixture.componentInstance.config = {
+      ...fixture.componentInstance.config,
+      columns: [
+        { key: 'name', header: 'Name', sortField: 'name', render: r => r.name },
+        { key: 'size', header: 'Size', sortField: r => r.name, render: r => r.name },
+      ],
+      sort,
+    };
+    await fixture.whenStable();
+    const ths = () => Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('thead th')).map(th => th.getAttribute('aria-sort'));
+    expect(ths()).toEqual(['ascending', null]);
+    ((fixture.nativeElement as HTMLElement).querySelector('thead th button') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    expect(ths()).toEqual(['descending', null]);
   });
 
   it('names the sort and items-per-page drop-downs after their captions', async () => {

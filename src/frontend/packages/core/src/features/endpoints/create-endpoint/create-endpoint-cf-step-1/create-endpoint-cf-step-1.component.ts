@@ -16,7 +16,7 @@ import {
   getFullEndpointApiUrl,
 } from '@stratosui/store';
 import { combineLatest, EMPTY, Observable, of } from 'rxjs';
-import { catchError, expand, map, reduce, startWith, switchMap } from 'rxjs/operators';
+import { catchError, expand, map, reduce, startWith, switchMap, tap } from 'rxjs/operators';
 
 import { getIdFromRoute } from '../../../../core/utils.service';
 import { StepOnNextResult } from '../../../../shared/components/stepper/step/step.component';
@@ -32,7 +32,8 @@ import { ProductNameComponent } from '../../../../shared/components/product-name
 import { ConfirmationDialogService } from '../../../../shared/components/confirmation-dialog.service';
 import { EndpointCertificatesComponent } from '../../certificates/endpoint-certificates.component';
 import { EndpointPermissionsService } from '../../endpoint-permissions.service';
-import { confirmAndUnregister, isPersonalEndpoint } from '../../unregister-endpoint/unregister-endpoint';
+import { confirmAndUnregister, isPersonalEndpoint, linkedAutoscalerNames } from '../../unregister-endpoint/unregister-endpoint';
+import { endpointNameCompare } from '../../../../shared/utils/natural-sort';
 
 // What the step knows about the endpoint it registered or is reviewing.
 interface RegisteredEndpoint {
@@ -168,14 +169,23 @@ export class CreateEndpointCfStep1Component extends CreateEndpointHelperComponen
   private readonly urlValue = signal('');
   readonly linkedToCf = computed(() => !!this.endpoint()?.definition?.linkedToCf && !this.review());
   readonly urlDomain = computed(() => cfDomain(this.urlValue()));
+  // The host as typed, and the domains the registered Cloud Foundry endpoints sit on.
+  readonly urlHostName = computed(() => urlHost(this.urlValue().trim()));
+  readonly cfDomains = computed(() => [...new Set(
+    [...this.endpointsData.endpoints().values()]
+      .filter(e => e.cnsi_type === 'cf')
+      .map(e => cfDomain(getFullEndpointApiUrl(e)))
+      .filter(domain => !!domain),
+  )].sort());
   readonly linkedCfs = computed(() => {
     const domain = this.urlDomain();
     if (!this.linkedToCf() || !domain) {
       return [];
     }
-    return [...this.endpointsData.endpoints().values()]
-      .filter(e => e.cnsi_type === 'cf' && cfDomain(getFullEndpointApiUrl(e)) === domain)
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const cfs = [...this.endpointsData.endpoints().values()]
+      .filter(e => e.cnsi_type === 'cf' && cfDomain(getFullEndpointApiUrl(e)) === domain);
+    const compare = endpointNameCompare(cfs.map(e => e.name));
+    return cfs.sort((a, b) => compare(a.name, b.name));
   });
   // The only Cloud Foundry on the domain is picked; a choice stays while listed.
   readonly linkedCf = linkedSignal<EndpointModel[], string>({
@@ -183,14 +193,31 @@ export class CreateEndpointCfStep1Component extends CreateEndpointHelperComponen
     computation: (list, previous) =>
       list.some(e => e.guid === previous?.value) ? previous!.value : (list.length === 1 ? list[0].guid ?? '' : ''),
   });
+  // The Cloud Foundry chosen, and whether it is known to be disconnected.
+  private readonly chosenCf = computed(() => this.linkedCfs().find(e => e.guid === this.linkedCf()));
+  readonly chosenCfName = computed(() => this.chosenCf()?.name ?? '');
+  readonly cfDisconnected = computed(() => this.chosenCf()?.connectionStatus === 'disconnected');
+  // The Cloud Foundry answered the broker request with an error (not an admin).
+  private readonly brokersRefused = signal(false);
+  // Why the list is empty: shown beside the select, which it describes.
+  readonly brokerNote = computed(() => {
+    if (this.cfDisconnected()) {
+      return `Connect to ${this.chosenCfName()} to choose its service broker. You can link one later.`;
+    }
+    return this.brokersRefused() ? 'Only a Cloud Foundry admin can list service brokers.' : '';
+  });
   // Brokers the user can read; none (not an admin, or not connected) leaves
-  // only "not registered yet".
-  readonly brokers = toSignal(toObservable(this.linkedCf).pipe(
+  // only "not registered yet". A Cloud Foundry known to be disconnected is not asked.
+  readonly brokers = toSignal(toObservable(computed(() => this.cfDisconnected() ? '' : this.linkedCf())).pipe(
+    tap(() => this.brokersRefused.set(false)),
     switchMap(guid => !guid ? of([] as BrokerChoice[]) :
       this.brokerPage(guid, 1).pipe(
         expand(res => res.page < res.totalPages ? this.brokerPage(guid, res.page + 1) : EMPTY),
         reduce((all, res) => all.concat(res.resources), [] as BrokerChoice[]),
-        catchError(() => of([] as BrokerChoice[])),
+        catchError(() => {
+          this.brokersRefused.set(true);
+          return of([] as BrokerChoice[]);
+        }),
       )),
   ), { initialValue: [] as BrokerChoice[] });
   // One page of the Cloud Foundry's brokers, 100 at a time like the other lists.
@@ -206,6 +233,10 @@ export class CreateEndpointCfStep1Component extends CreateEndpointHelperComponen
     source: computed(() => ({ list: this.brokers(), url: this.urlValue() })),
     computation: ({ list, url }) => list.find(b => firstLabel(b.url) === `${firstLabel(url)}servicebroker`)?.guid ?? '',
   });
+  // The notes the broker select is described by.
+  readonly brokerDescribedBy = computed(() =>
+    [this.brokerNote() ? 'linked-broker-note' : '', this.linkedBroker() ? '' : 'linked-broker-hint']
+      .filter(id => id).join(' ') || null);
   // Registering waits for a Cloud Foundry to link to.
   private readonly linkedCfMissing = computed(() => this.linkedToCf() && !this.linkedCf());
 
@@ -384,7 +415,10 @@ export class CreateEndpointCfStep1Component extends CreateEndpointHelperComponen
     if (!reg) {
       return;
     }
-    const gone = await confirmAndUnregister(this.confirmDialog, this.endpointsSignalConfig, this.snackBarService, reg);
+    const gone = await confirmAndUnregister(this.confirmDialog, this.endpointsSignalConfig, this.snackBarService, {
+      ...reg,
+      autoscalers: reg.type === 'cf' ? linkedAutoscalerNames(reg.guid, this.endpointsData.endpoints().values()) : [],
+    });
     if (!gone) {
       return;
     }

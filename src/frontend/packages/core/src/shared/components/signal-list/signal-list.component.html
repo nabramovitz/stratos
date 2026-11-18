@@ -1,4 +1,5 @@
 <div class="flex flex-col h-full min-h-0 border border-content-border rounded bg-content-bg">
+  <span class="sr-only" role="status" data-test="result-status">{{ resultStatus() }}</span>
 
   <!-- Toolbar -->
   <div class="flex items-center gap-3 px-4 py-2 border-b border-content-border flex-wrap">
@@ -13,7 +14,7 @@
             (mousedown)="dd.onOpen?.()"
             (focus)="dd.onOpen?.()"
             (change)="onDropdownChange(dd, $any($event.target).value)"
-            class="px-2 py-1 border border-content-border rounded bg-content-bg text-content-text disabled:opacity-40 disabled:cursor-not-allowed">
+            class="px-2 py-1 border border-input-border rounded bg-content-bg text-content-text disabled:opacity-40 disabled:cursor-not-allowed">
             @for (opt of dd.options(); track opt.value ?? opt.label) {
               <option [value]="opt.value ?? ''" [selected]="(opt.value ?? '') === (dd.selected() ?? '')">{{ opt.label }}</option>
             }
@@ -34,7 +35,7 @@
           (change)="onFilterFieldChange($any($event.target).value)"
           title="Filter by"
           aria-label="Filter by field"
-          class="px-2 py-1 text-sm border border-content-border rounded bg-content-bg text-content-text">
+          class="px-2 py-1 text-sm border border-input-border rounded bg-content-bg text-content-text">
           @for (col of filterableColumns(); track col.key) {
             <option [value]="columnKey(col)" [selected]="config().filterField!() === columnKey(col)">{{ col.header }}</option>
           }
@@ -46,7 +47,7 @@
             type="button"
             data-test="multi-filter-toggle"
             (click)="multiPopupOpen.set(!multiPopupOpen())"
-            class="px-3 py-1 text-sm border border-content-border rounded bg-content-bg text-content-text min-w-44 text-left">
+            class="px-3 py-1 text-sm border border-input-border rounded bg-content-bg text-content-text min-w-44 text-left">
             {{ multiSummary(fm) }}
             <span aria-hidden="true" class="material-icons text-base leading-4 align-middle float-right">arrow_drop_down</span>
           </button>
@@ -85,7 +86,7 @@
             type="button"
             data-test="range-filter-toggle"
             (click)="multiPopupOpen.set(!multiPopupOpen())"
-            class="px-3 py-1 text-sm border border-content-border rounded bg-content-bg text-content-text min-w-44 text-left">
+            class="px-3 py-1 text-sm border border-input-border rounded bg-content-bg text-content-text min-w-44 text-left">
             {{ rangeSummary(fr) }}
             <span aria-hidden="true" class="material-icons text-base leading-4 align-middle float-right">arrow_drop_down</span>
           </button>
@@ -97,7 +98,7 @@
                 <select
                   data-test="range-mode"
                   [attr.aria-label]="filterFieldHeader() + ' range type'"
-                  class="text-sm border border-content-border rounded bg-content-bg text-content-text px-1 py-0.5"
+                  class="text-sm border border-input-border rounded bg-content-bg text-content-text px-1 py-0.5"
                   [value]="fr.selected()?.mode ?? 'date'"
                   (change)="updateRange(fr, { mode: $any($event.target).value })">
                   <option value="date">specific date</option>
@@ -108,7 +109,7 @@
               <select
                 data-test="range-op"
                 [attr.aria-label]="filterFieldHeader() + ' comparison'"
-                class="text-sm border border-content-border rounded bg-content-bg text-content-text px-1 py-0.5"
+                class="text-sm border border-input-border rounded bg-content-bg text-content-text px-1 py-0.5"
                 [value]="fr.selected()?.op ?? 'gte'"
                 (change)="updateRange(fr, { op: $any($event.target).value })">
                 <option value="lt">{{ opLabel(fr, 'lt') }}</option>
@@ -122,7 +123,7 @@
                 [attr.aria-label]="filterFieldHeader() + ((fr.selected()?.op ?? 'gte') === 'between' ? ' start' : ' value')"
                 [type]="fr.valueType === 'date' && !isRelativeRange(fr) ? 'date' : 'number'"
                 [attr.min]="isRelativeRange(fr) ? 1 : null"
-                class="text-sm border border-content-border rounded bg-content-bg text-content-text px-1 py-0.5"
+                class="text-sm border border-input-border rounded bg-content-bg text-content-text px-1 py-0.5"
                 [value]="fr.selected()?.a ?? ''"
                 (change)="updateRange(fr, { a: $any($event.target).value })" />
               @if ((fr.selected()?.op ?? 'gte') === 'between') {
@@ -131,7 +132,7 @@
                   [attr.aria-label]="filterFieldHeader() + ' end'"
                   [type]="fr.valueType === 'date' && !isRelativeRange(fr) ? 'date' : 'number'"
                   [attr.min]="isRelativeRange(fr) ? 1 : null"
-                  class="text-sm border border-content-border rounded bg-content-bg text-content-text px-1 py-0.5"
+                  class="text-sm border border-input-border rounded bg-content-bg text-content-text px-1 py-0.5"
                   [value]="fr.selected()?.b ?? ''"
                   (change)="updateRange(fr, { b: $any($event.target).value })" />
                 <label class="flex items-center gap-2 px-1 text-xs text-content-text cursor-pointer">
@@ -165,7 +166,7 @@
                 <label class="flex items-center gap-2 px-1 text-xs text-content-text">
                   + weekday holidays
                   <input type="number" min="0" step="1" data-test="range-holidays"
-                    class="w-14 text-sm border border-content-border rounded bg-content-bg text-content-text px-1 py-0.5"
+                    class="w-14 text-sm border border-input-border rounded bg-content-bg text-content-text px-1 py-0.5"
                     [value]="fr.selected()?.holidayCount ?? 0"
                     (change)="updateRange(fr, { holidayCount: +$any($event.target).value })" />
                 </label>
@@ -217,7 +218,7 @@
           [value]="nameFilter()"
           (input)="onNameFilterChange($any($event.target).value)"
           (keydown.escape)="onNameFilterChange('')"
-          class="px-3 py-1 text-sm border border-content-border rounded bg-content-bg text-content-text" />
+          class="px-3 py-1 text-sm border border-input-border rounded bg-content-bg text-content-text" />
       }
     }
 
@@ -240,7 +241,7 @@
         <select
           aria-label="Sort"
           (change)="onSortFieldChange($any($event.target).value)"
-          class="px-2 py-1 border border-content-border rounded bg-content-bg text-content-text">
+          class="px-2 py-1 border border-input-border rounded bg-content-bg text-content-text">
           @for (col of sortableColumns(); track col.key) {
             <option [value]="columnKey(col)" [selected]="config().sort!().field === columnKey(col)">{{ col.header }}</option>
           }
@@ -502,7 +503,6 @@
                             (click)="toggleRowActions(row, $event)"
                             title="Actions"
                             aria-label="Row actions"
-                            aria-haspopup="menu"
                             [attr.aria-expanded]="openActionsRowKey() === config().getRowKey(row)"
                             class="inline-flex items-center justify-center p-0.5 text-content-muted hover:text-accent">
                             <span aria-hidden="true" class="material-icons text-xl leading-none">more_vert</span>
@@ -541,7 +541,7 @@
                        blanks the title or hides its checkbox. -->
                 } @else if (col.kind === 'radio' && col.radio) {
                   <div class="flex justify-between items-center gap-2 text-sm py-0.5">
-                    <span class="text-content-muted">{{ col.header }}</span>
+                    <span class="text-content-muted"><app-abbr-text [text]="col.header" /></span>
                     <input
                       data-test="row-radio"
                       [attr.aria-label]="rowSelectLabel(col, row)"
@@ -556,14 +556,14 @@
                   </div>
                 } @else if (col.kind === 'template' && cellTemplateFor(col); as tpl) {
                   <div class="flex justify-between items-start gap-2 text-sm py-0.5">
-                    <span class="text-content-muted shrink-0">{{ col.header }}</span>
+                    <span class="text-content-muted shrink-0"><app-abbr-text [text]="col.header" /></span>
                     <div class="min-w-0 text-right">
                       <ng-container *ngTemplateOutlet="tpl; context: { $implicit: row, row: row }"></ng-container>
                     </div>
                   </div>
                 } @else if (col.kind === 'gauge' && col.gauge) {
                   <div class="flex items-center gap-2 text-sm py-0.5" data-test="row-gauge">
-                    <span class="text-content-muted shrink-0">{{ col.header }}</span>
+                    <span class="text-content-muted shrink-0"><app-abbr-text [text]="col.header" /></span>
                     <div class="grow min-w-0">
                       <app-usage-gauge
                         [barOnly]="false"
@@ -575,13 +575,13 @@
                   </div>
                 } @else if (col.kind === 'compound' && col.compound) {
                   <div class="flex items-start justify-between gap-2 text-sm py-0.5">
-                    <span class="text-content-muted shrink-0">{{ col.header }}</span>
-                    <div class="flex flex-col items-end leading-tight text-right min-w-0">
+                    <span class="text-content-muted shrink-0"><app-abbr-text [text]="col.header" /></span>
+                    <div class="flex flex-col items-end leading-6 text-right min-w-0">
                       @for (seg of visibleCompoundSegments(col, row); track $index) {
                         @if (seg.link) {
-                          <a [routerLink]="seg.link" (click)="$event.stopPropagation()" class="text-accent hover:underline truncate max-w-full" [attr.title]="seg.text">{{ seg.text }}</a>
+                          <a [routerLink]="seg.link" (click)="$event.stopPropagation()" class="text-accent hover:underline truncate max-w-full" [attr.title]="seg.text">@if (seg.label) {<span class="sr-only">{{ seg.label }} </span>}{{ seg.text }}</a>
                         } @else {
-                          <span class="truncate max-w-full" [attr.title]="seg.text">{{ seg.text }}</span>
+                          <span class="truncate max-w-full" [attr.title]="seg.text">@if (seg.label) {<span class="sr-only">{{ seg.label }} </span>}{{ seg.text }}</span>
                         }
                       }
                       @if (hiddenCompoundCount(col, row) > 0) {
@@ -605,7 +605,7 @@
                   </div>
                 } @else {
                   <div class="flex justify-between items-center gap-2 text-sm py-0.5">
-                    <span class="text-content-muted">{{ col.header }}</span>
+                    <span class="text-content-muted"><app-abbr-text [text]="col.header" /></span>
                     <span class="text-content-text text-right truncate" [attr.title]="(col.kind === 'pill' || col.kind === 'dot') && col.tooltip ? col.tooltip(row) : col.render(row)">
                       @if (col.copyValue?.(row); as cv) {
                         <app-copy-to-clipboard data-test="copy-value" class="inline-flex align-middle mr-1" [compact]="true" [text]="cv" [tooltip]="'Copy ' + cv" [showSuccessText]="false" />
@@ -656,7 +656,7 @@
             }
             @for (col of config().columns; track col.key) {
               @if (col.kind !== 'favorite' && col.kind !== 'actions') {
-                <th class="text-left px-3 py-2 font-semibold text-sm text-content-text whitespace-nowrap">
+                <th class="text-left px-3 py-2 font-semibold text-sm text-content-text whitespace-nowrap" [attr.aria-sort]="ariaSortFor(col)">
                   @if (col.kind === 'checkbox' && col.checkbox?.selectAll) {
                     <input
                       data-test="select-all"
@@ -674,7 +674,7 @@
                       type="button"
                       (click)="onHeaderSort(col)"
                       class="inline-flex items-center gap-1 hover:text-content-muted">
-                      <span>{{ col.header }}</span>
+                      <span><app-abbr-text [text]="col.header" /></span>
                       @if (sortDirectionFor(col) === 'asc') {
                         <span aria-hidden="true" class="material-icons text-base opacity-60 rotate-180">sort</span>
                       } @else if (sortDirectionFor(col) === 'desc') {
@@ -684,7 +684,7 @@
                       }
                     </button>
                   } @else {
-                    {{ col.header }}
+                    <app-abbr-text [text]="col.header" />
                   }
                 </th>
               }
@@ -722,7 +722,6 @@
                           (click)="toggleRowActions(row, $event)"
                           title="Actions"
                           aria-label="Row actions"
-                          aria-haspopup="menu"
                           [attr.aria-expanded]="openActionsRowKey() === config().getRowKey(row)"
                           class="inline-flex items-center justify-center p-0.5 text-content-muted hover:text-accent">
                           <span aria-hidden="true" class="material-icons text-xl leading-none">more_vert</span>
@@ -784,12 +783,12 @@
                       <span class="truncate">{{ col.render(row) }}</span>
                     </span>
                   } @else if (col.kind === 'compound' && col.compound) {
-                    <div class="flex flex-col leading-tight">
+                    <div class="flex flex-col leading-6">
                       @for (seg of visibleCompoundSegments(col, row); track $index) {
                         @if (seg.link) {
-                          <a [routerLink]="seg.link" (click)="$event.stopPropagation()" class="text-accent hover:underline truncate" [attr.title]="seg.text">{{ seg.text }}</a>
+                          <a [routerLink]="seg.link" (click)="$event.stopPropagation()" class="text-accent hover:underline truncate" [attr.title]="seg.text">@if (seg.label) {<span class="sr-only">{{ seg.label }} </span>}{{ seg.text }}</a>
                         } @else {
-                          <span class="truncate" [attr.title]="seg.text">{{ seg.text }}</span>
+                          <span class="truncate" [attr.title]="seg.text">@if (seg.label) {<span class="sr-only">{{ seg.label }} </span>}{{ seg.text }}</span>
                         }
                       }
                       @if (hiddenCompoundCount(col, row) > 0) {
@@ -929,7 +928,7 @@
         data-test="page-size"
         aria-label="Items per page"
         (change)="onPageSizeChange($any($event.target).value)"
-        class="px-2 py-1 border border-content-border rounded bg-content-bg text-content-text">
+        class="px-2 py-1 border border-input-border rounded bg-content-bg text-content-text">
         @for (opt of pageSizeOptions(); track opt) {
           <option [value]="opt" [selected]="opt === config().pageSize()">{{ pageSizeLabel(opt) }}</option>
         }

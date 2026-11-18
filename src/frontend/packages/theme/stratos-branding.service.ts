@@ -26,13 +26,13 @@ const defaultCompanyConfig: CompanyConfig = {
     loginBackground: '/core/assets/login-bg.webp',
   },
   theme: {
-    primary: '#2563eb',
-    secondary: '#2563eb',
-    accent: '#2563eb',
+    primary: '#1e40af',
+    secondary: '#1e40af',
+    accent: '#1e40af',
     success: '#22c55e',
     warning: '#f59e0b',
     danger: '#ef4444',
-    info: '#2563eb',
+    info: '#1e40af',
   },
   navigation: {
     background: '#1e293b',
@@ -362,7 +362,7 @@ export class StratosBrandingService {
     root.style.setProperty('--app-bg', theme.layout.background);
     root.style.setProperty('--body-bg', theme.layout.bodyBackground || theme.layout.background);
     root.style.setProperty('--app-text', theme.layout.text);
-    root.style.setProperty('--text-muted', theme.layout.textMuted || '#64748b');
+    root.style.setProperty('--text-muted', theme.layout.textMuted || '#475569');
     root.style.setProperty('--header-bg', theme.layout.headerBackground);
     root.style.setProperty('--header-text', theme.layout.headerText);
     root.style.setProperty('--header-border', theme.layout.headerBorder || '#e2e8f0');
@@ -370,7 +370,7 @@ export class StratosBrandingService {
     root.style.setProperty('--content-secondary', theme.layout.contentSecondary || '#f8fafc');
     root.style.setProperty('--content-border', theme.layout.contentBorder || '#e2e8f0');
     root.style.setProperty('--content-text', theme.layout.text);
-    root.style.setProperty('--content-muted', theme.layout.textMuted || '#64748b');
+    root.style.setProperty('--content-muted', theme.layout.textMuted || '#475569');
 
     // Apply branding variables
     root.style.setProperty('--logo-bg', theme.branding.logo);
@@ -391,7 +391,7 @@ export class StratosBrandingService {
     root.style.setProperty('--table-row-hover', isDark ? '#334155' : '#f9fafb');
     root.style.setProperty('--table-border', isDark ? '#334155' : '#e5e7eb');
     root.style.setProperty('--input-bg', isDark ? '#1e293b' : '#ffffff');
-    root.style.setProperty('--input-border', isDark ? '#475569' : '#d1d5db');
+    root.style.setProperty('--input-border', isDark ? '#94a3b8' : '#64748b');
     root.style.setProperty('--input-text', isDark ? '#f1f5f9' : '#1e293b');
     root.style.setProperty('--input-placeholder', isDark ? '#94a3b8' : '#64748b');
     root.style.setProperty('--input-disabled-bg', isDark ? '#0f172a' : '#f3f4f6');

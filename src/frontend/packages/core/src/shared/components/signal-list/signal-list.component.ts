@@ -1,4 +1,4 @@
-import { Component, HostListener, Signal, WritableSignal, ChangeDetectionStrategy, ElementRef, TemplateRef, signal, DestroyRef, inject, AfterViewInit, Injector, input, contentChild, contentChildren, viewChild } from '@angular/core';
+import { Component, HostListener, Signal, computed, WritableSignal, ChangeDetectionStrategy, ElementRef, TemplateRef, signal, DestroyRef, inject, AfterViewInit, Injector, input, contentChild, contentChildren, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { EndpointsDataService } from '@stratosui/store';
@@ -9,6 +9,7 @@ import { AppAreaLoaderComponent } from '../area-loader/area-loader.component';
 import { CopyToClipboardComponent } from '../copy-to-clipboard/copy-to-clipboard.component';
 import { SignalListCellTemplateDirective } from './signal-list-cell-template.directive';
 import { rangeIsComplete, resolveRelativeDay, SignalListRangeBoundMode, SignalListRangeValue, SignalListRangeValueType } from './range-filter';
+import { AbbrTextComponent } from '../abbr-text/abbr-text.component';
 
 export type SignalListPillColor = 'success' | 'warning' | 'danger' | 'neutral';
 
@@ -19,6 +20,10 @@ export type SignalListPillColor = 'success' | 'warning' | 'danger' | 'neutral';
 export interface SignalListCompoundSegment {
   readonly text: string;
   readonly link?: readonly (string | number)[];
+  // What the segment is ('Organization', 'Space'), read before the text by
+  // screen readers only. It tells apart two links in one cell that have the
+  // same text, such as an org and a space both named "e2e".
+  readonly label?: string;
 }
 
 // ── Per-row state (RowState) ────────────────────────────────────────────
@@ -508,7 +513,7 @@ export interface SignalListConfig<T> {
 @Component({
   selector: 'app-signal-list',
   standalone: true,
-  imports: [CommonModule, RouterModule, UsageGaugeComponent, AppBusyComponent, AppAreaLoaderComponent, CopyToClipboardComponent],
+  imports: [CommonModule, RouterModule, UsageGaugeComponent, AppBusyComponent, AppAreaLoaderComponent, CopyToClipboardComponent, AbbrTextComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './signal-list.component.html',
   host: { class: 'block h-full min-h-0' },
@@ -796,6 +801,13 @@ export class SignalListComponent<T> implements AfterViewInit {
     return this.config().sort!().direction;
   }
 
+  // aria-sort goes on the sorted header only, as in the WAI-ARIA sortable
+  // table pattern; the other headers leave it out rather than say "none".
+  ariaSortFor(col: SignalListColumn<T>): 'ascending' | 'descending' | null {
+    const direction = this.isSortable(col) ? this.sortDirectionFor(col) : null;
+    return direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : null;
+  }
+
   onHeaderSort(col: SignalListColumn<T>): void {
     const config = this.config();
     if (!this.isSortable(col) || !config.sort) return;
@@ -991,8 +1003,8 @@ export class SignalListComponent<T> implements AfterViewInit {
     this.onDocumentClickForMultiPopup(ev);
   }
 
-  // Escape closes the open menu and puts focus back on the kebab that
-  // opened it, as the button advertises (aria-haspopup="menu"). It is
+  // Escape closes the open actions popup and puts focus back on the kebab
+  // that opened it, as a show/hide button's popup does. It is
   // handled on the host while focus is inside the list (on the kebab or an
   // item in the menu) and stopped there: dialogs and the side panel close on
   // any Escape that reaches the document, and one press should only close
@@ -1579,6 +1591,32 @@ export class SignalListComponent<T> implements AfterViewInit {
     });
     config.pageIndex.set(0);
   }
+
+  // The filter state as one value, to see when the person changes it.
+  private readonly filterKey = computed(() => {
+    const config = this.config();
+    return JSON.stringify([
+      (config.filterDropdowns ?? []).map(dd => dd.selected()),
+      (config.filterMultis ?? []).map(fm => fm.selected()),
+      (config.filterRanges ?? []).map(fr => fr.selected()),
+      config.nameFilter?.() ?? '',
+    ]);
+  });
+  private firstFilterKey?: string;
+  private filterChanged = false;
+
+  // Said by the list's status line (WCAG 4.1.3): empty until the person
+  // changes a filter, then the number of results, once they have loaded.
+  // NOTE: the two plain fields are set inside the computed; they only latch.
+  protected readonly resultStatus = computed(() => {
+    const key = this.filterKey();
+    this.firstFilterKey ??= key;
+    if (key !== this.firstFilterKey) this.filterChanged = true;
+    const config = this.config();
+    if (!this.filterChanged || config.isAnyLoading()) return '';
+    const n = config.totalFilteredResults();
+    return `${n} ${n === 1 ? 'result' : 'results'}`;
+  });
 
   hasActiveFilter(): boolean {
     for (const dd of this.config().filterDropdowns ?? []) {

@@ -34,6 +34,15 @@
   .bg-nav-bg { --focus-ring: var(--nav-text); }
 }
 
+/* A control marked aria-disabled stays in the Tab order and is faded with
+ * opacity, which fades its focus outline too: under 3:1, so the focus could
+ * not be seen (WCAG 2.4.13, the list's paging and clear buttons). While it
+ * has keyboard focus it is drawn at full opacity. Outside the layers, so it
+ * wins over the opacity utilities. */
+[aria-disabled='true']:focus-visible {
+  opacity: 1;
+}
+
 /* Icon font styles - supports both material-icons and custom icon fonts.
  * In @layer base so text-size utilities (@layer utilities) can override
  * the default 24px glyph size; unlayered these rules would beat every
@@ -88,7 +97,7 @@
   --app-bg: oklch(98.415% 0.0034 247.86);
   --body-bg: oklch(96.826% 0.0069 247.9);
   --app-text: oklch(27.95% 0.0368 260.03);
-  --text-muted: oklch(55.439% 0.0407 257.42);
+  --text-muted: oklch(44.553% 0.0374 257.28);
   --header-bg: oklch(100% 0 none);
   --header-text: oklch(27.95% 0.0368 260.03);
   --header-border: oklch(92.876% 0.0126 255.51);
@@ -96,7 +105,7 @@
   --content-secondary: oklch(98.415% 0.0034 247.86);
   --content-border: oklch(92.876% 0.0126 255.51);
   --content-text: oklch(27.95% 0.0368 260.03);
-  --content-muted: oklch(55.439% 0.0407 257.42);
+  --content-muted: oklch(44.553% 0.0374 257.28);
 
   /* Login page */
   --login-bg: oklch(97.015% 0 none);
@@ -108,7 +117,7 @@
 
   /* Interactive elements - light theme */
   --input-bg: oklch(100% 0 none);
-  --input-border: oklch(87.168% 0.0093 258.34);
+  --input-border: oklch(55.439% 0.0407 257.42);
   --input-text: oklch(27.95% 0.0368 260.03);
   --input-placeholder: oklch(55.439% 0.0407 257.42);
   --input-focus-border: var(--color-primary);
@@ -170,16 +179,16 @@
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
 }
 
-/* Dark Theme - WCAG AA Compliant */
+/* Dark Theme - text colors reach 7:1 (WCAG 1.4.6) */
 .dark-theme {
   /* Brand colors - adjusted for dark theme with higher contrast */
-  --color-primary: oklch(71.374% 0.1434 254.62);
-  --color-secondary: oklch(75.351% 0.139 232.66);
-  --color-accent: oklch(75.351% 0.139 232.66);
+  --color-primary: oklch(80.907% 0.0956 251.81);
+  --color-secondary: oklch(82.759% 0.1013 230.32);
+  --color-accent: oklch(82.759% 0.1013 230.32);
   --color-success: oklch(80.035% 0.1821 151.71);
   --color-warning: oklch(83.686% 0.1644 84.43);
   --color-danger: oklch(71.063% 0.1661 22.22);
-  --color-info: oklch(71.374% 0.1434 254.62);
+  --color-info: oklch(80.907% 0.0956 251.81);
   --color-on-primary: oklch(20.768% 0.0398 265.75);
 
   /* Navigation colors - dark theme */
@@ -195,7 +204,7 @@
   --app-bg: oklch(20.768% 0.0398 265.75);
   --body-bg: oklch(12.88% 0.0406 264.7);
   --app-text: oklch(96.826% 0.0069 247.9);
-  --text-muted: oklch(71.067% 0.0351 256.79);
+  --text-muted: oklch(86.898% 0.0198 252.89);
   --header-bg: oklch(27.95% 0.0368 260.03);
   --header-text: oklch(96.826% 0.0069 247.9);
   --header-border: oklch(37.17% 0.0392 257.29);
@@ -203,7 +212,7 @@
   --content-secondary: oklch(20.768% 0.0398 265.75);
   --content-border: oklch(37.17% 0.0392 257.29);
   --content-text: oklch(96.826% 0.0069 247.9);
-  --content-muted: oklch(71.067% 0.0351 256.79);
+  --content-muted: oklch(86.898% 0.0198 252.89);
 
   /* Login page - dark theme */
   --login-bg: oklch(20.768% 0.0398 265.75);
@@ -215,7 +224,7 @@
 
   /* Interactive elements - dark theme */
   --input-bg: oklch(27.95% 0.0368 260.03);
-  --input-border: oklch(44.553% 0.0374 257.28);
+  --input-border: oklch(71.067% 0.0351 256.79);
   --input-text: oklch(96.826% 0.0069 247.9);
   --input-placeholder: oklch(71.067% 0.0351 256.79);
   --input-focus-border: var(--color-primary);
@@ -453,7 +462,7 @@ router-outlet + * {
   .btn-info {
     @apply shadow-sm;
     /* Info shares the primary blue by default, so it takes the text color
-       made for it: white on the light-mode blue (5.2:1), dark on the lighter
+       made for it: white on the light-mode blue (8.7:1), dark on the lighter
        dark-mode blue, where white was 2.5:1 (now 7.0:1). */
     color: var(--color-on-primary);
     background-color: var(--color-info);

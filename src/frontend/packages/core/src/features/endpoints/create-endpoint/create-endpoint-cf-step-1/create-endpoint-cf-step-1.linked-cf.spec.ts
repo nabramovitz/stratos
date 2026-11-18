@@ -127,8 +127,30 @@ describe('CreateEndpointCfStep1Component: a type linked to a Cloud Foundry', () 
 
     expect(select('linked-cf')).toBeNull();
     expect(text()).toContain(
-      'Register the Cloud Foundry this autoscaler serves first: no registered Cloud Foundry is on sys.x.com');
+      'No registered Cloud Foundry shares a domain with autoscaler.sys.x.com. ' +
+      'Register the Cloud Foundry this autoscaler serves first. ' +
+      'Registered Cloud Foundry domains: sys.y.com.');
     expect(await valid()).toBe(false);
+  });
+
+  it('names the address typed, not a domain cut from it, and lists each registered domain once', async () => {
+    await open(cf('a', 'api.sys.z.com'), cf('b', 'api.sys.y.com'), cf('c', 'cf.sys.y.com:8443'));
+    await typeUrl('https://example.com');
+
+    expect(text()).toContain(
+      'No registered Cloud Foundry shares a domain with example.com. ' +
+      'Register the Cloud Foundry this autoscaler serves first. ' +
+      'Registered Cloud Foundry domains: sys.y.com, sys.z.com.');
+  });
+
+  it('leaves out the list of domains when no Cloud Foundry is registered', async () => {
+    await open();
+    await typeUrl('https://example.com');
+
+    expect(text()).toContain(
+      'No registered Cloud Foundry shares a domain with example.com. ' +
+      'Register the Cloud Foundry this autoscaler serves first.');
+    expect(text()).not.toContain('Registered Cloud Foundry domains');
   });
 
   it('picks the broker named after the address, and offers none', async () => {
@@ -168,6 +190,41 @@ describe('CreateEndpointCfStep1Component: a type linked to a Cloud Foundry', () 
 
     expect(options('linked-broker')).toEqual(['Not registered in Cloud Foundry yet']);
     expect(await valid()).toBe(true);
+  });
+
+  const note = () => (fixture.nativeElement as HTMLElement).querySelector('#linked-broker-note');
+
+  it('says why the list is empty when a connected Cloud Foundry refuses the brokers', async () => {
+    await open({ ...cf('lab', 'api.sys.x.com'), connectionStatus: 'connected' });
+    await typeUrl('https://autoscaler.sys.x.com');
+    expect(note()).toBeNull();
+    await brokers('lab', 'fail');
+
+    expect(note()!.textContent!.trim()).toBe('Only a Cloud Foundry admin can list service brokers.');
+    expect(note()!.getAttribute('role')).toBe('status');
+    expect(select('linked-broker')!.getAttribute('aria-describedby')).toContain('linked-broker-note');
+    expect(options('linked-broker')).toEqual(['Not registered in Cloud Foundry yet']);
+    expect(await valid()).toBe(true);
+  });
+
+  it('asks to connect, and does not ask for brokers, when the Cloud Foundry is disconnected', async () => {
+    await open({ ...cf('lab', 'api.sys.x.com'), name: 'Lab CF', connectionStatus: 'disconnected' });
+    await typeUrl('https://autoscaler.sys.x.com');
+    http.expectNone(r => r.url.startsWith('/pp/v1/cf/service_brokers'));
+
+    expect(note()!.textContent!.trim()).toBe('Connect to Lab CF to choose its service broker. You can link one later.');
+    expect(note()!.getAttribute('role')).toBe('status');
+    expect(select('linked-broker')!.getAttribute('aria-describedby')).toContain('linked-broker-note');
+    expect(options('linked-broker')).toEqual(['Not registered in Cloud Foundry yet']);
+    expect(await valid()).toBe(true);
+  });
+
+  it('shows no note when the brokers are listed', async () => {
+    await open({ ...cf('lab', 'api.sys.x.com'), connectionStatus: 'connected' });
+    await typeUrl('https://autoscaler.sys.x.com');
+    await brokers('lab', [{ guid: 'b1', name: 'autoscaler', url: 'https://autoscalerservicebroker.sys.x.com' }]);
+
+    expect(note()).toBeNull();
   });
 
   it('registers with the Cloud Foundry and broker chosen', async () => {
