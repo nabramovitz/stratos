@@ -4,6 +4,8 @@ import { ChangeDetectionStrategy, Component, Injector, WritableSignal, inject, s
 import { SignalListComponent, SignalListConfig } from '@stratosui/core';
 
 import { KubernetesNodeService } from '../../services/kubernetes-node.service';
+import { kubernetesPodsEntityType } from '../../kubernetes-entity-factory';
+import { withResourcePreview } from '../../kubernetes-resource-viewer/kubernetes-resource-viewer.component';
 import { KubePod } from '../../../services/endpoint-data/kube-types';
 import { kubeListErrorState, reportKubeListErrors } from '../../list-types/kube-list-errors';
 import {
@@ -36,7 +38,7 @@ export class KubernetesNodePodsComponent {
     const errorState = kubeListErrorState(kubeGuid, this.signalConfig.errors());
     reportKubeListErrors(errorState.errorsByCnsi, this.injector);
 
-    this.listConfig.set({
+    this.listConfig.set(withResourcePreview({
       pagedItems: this.signalConfig.view.pagedItems,
       totalFilteredResults: this.signalConfig.view.totalFilteredResults,
       totalPages: this.signalConfig.view.totalPages,
@@ -56,7 +58,10 @@ export class KubernetesNodePodsComponent {
           header: 'Namespace', key: 'namespace',
           sortField: (p: KubePod) => (p.metadata?.namespace ?? '').toLowerCase(),
           kind: 'link',
-          link: (p: KubePod) => ['/kubernetes', p.metadata?.kubeId ?? '', 'namespaces', p.metadata?.namespace ?? ''],
+          // A namespace has no page of its own (removed in 2020): link to the
+          // Namespaces tab filtered to it.
+          link: (p: KubePod) => ['/kubernetes', p.metadata?.kubeId ?? '', 'namespaces'],
+          linkQueryParams: (p: KubePod) => ({ name: p.metadata?.namespace ?? '' }),
           render: (p: KubePod) => p.metadata?.namespace ?? '',
           widthHint: '12rem',
         },
@@ -92,7 +97,7 @@ export class KubernetesNodePodsComponent {
       onClear: () => this.signalConfig.clearFilters(),
       viewMode: this.signalConfig.viewMode,
       sort: this.signalConfig.sort,
-    });
+    }, kubernetesPodsEntityType, this.injector));
   }
 }
 

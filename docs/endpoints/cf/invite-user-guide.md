@@ -3,12 +3,12 @@ title: Configuring Invite User Support
 sidebar_label: Configuring User Invites
 ---
 
-Stratos provides a way for Cloud Foundry administrators and organization managers to invite users to an organization or space.
+Stratos lets Cloud Foundry administrators and organization managers invite users by email from the **Add User** dialog.
 
 During the invite process the following actions will occur:
 
 - A UAA user and a CF user will be created.
-- Initial roles will be assigned. User will be added as an organization member and, if selected, a space role.
+- The user is added to the organization and given the organization and space roles picked in the dialog.
 - Users will be emailed a verification link. The link directs the user to a UAA site to set their password.
 
 > Note - The user *will not* be able to log in without first setting their password but CF admins, organization managers and space managers *will* be able to set roles for the user.
@@ -22,7 +22,7 @@ In order to enable User Invite support in Stratos:
 1. (Optionally) The email templates used for sending emails should be modified
 1. User Invite support must be enabled in Stratos by an Administrator
 
-Once all of the steps have been completed, CF administrators and organization managers will be able to invite users via the Organization and Space pages under the 'Users' tab.
+Once all of the steps have been completed, CF administrators and organization managers will be able to invite users from the 'Users' tab of a Cloud Foundry, an organization or a space (see [Inviting a user](#inviting-a-user)).
 
 These steps are covered below.
 
@@ -61,6 +61,14 @@ This action must be performed by an Administrator in Stratos.
 
 > Note: If Stratos has been deployed via `cf push` and the steps under the `Pre-configure invite UAA client` header in the  [CF deploy guide](../../deploy/cloud-foundry/cloud-foundry.md)  have been followed, you will not follow these steps for the default CF.
 
+## Inviting a user
+
+1) Open the 'Users' tab of a Cloud Foundry, an organization or a space and click `Add User`.
+1) Choose `Invite`. It shows only to a CF administrator or a manager of the organization, once User Invite support is enabled.
+1) Enter the email address of each user to invite.
+1) Tick the roles to give. From the Cloud Foundry 'Users' tab, first pick an organization you manage: the invitation adds the user to the first organization picked.
+1) Click `Add User`.
+
 ## Configuration for CF Push
 
 When deploying Stratos to Cloud Foundry using `cf push`, User Invites can be configured as follows.
@@ -84,7 +92,7 @@ The following configuration is required in order to configure the SMTP server an
 To use custom email templates, create a folder and add the two templates with the following file names:
 
 1. user-invite-email.txt = Plain text template
-1. user-invite-email.helm = HTML text template
+1. user-invite-email.html = HTML text template
 
 When deploying Stratos with `cf push` set the environment variable `TEMPLATE_DIR` to the folder name where your custom templates are located. This can be done on the command line or by adding this environment variable to the `manifest.yml` file.
 
@@ -119,7 +127,7 @@ kubectl create namespace stratos
 Create a Config Map for the template files - this assumes you have the following two files in the current directory:
 
 1. user-invite-email.txt = Plain text template
-1. user-invite-email.helm = HTML text template
+1. user-invite-email.html = HTML text template
 
 Create the Config Map with:
 
@@ -127,7 +135,7 @@ Create the Config Map with:
 kubectl create configmap stratos-templates --namespace stratos --from-file=./user-invite-email.txt --from-file=./user-invite-email.html
 ```
 
-When deploying Stratos using Helm, ensure you set the the Helm Value:
+When deploying Stratos using Helm, ensure you set the Helm Value:
 
 ```
 console.templatesConfigMapName
@@ -145,7 +153,7 @@ When developing locally, we recommend using [mailcatcher](https://mailcatcher.me
 
 To install mailcatcher via docker, use the following command: `docker run -d -p 1080:80 -p 1025:25 --name mail tophfr/mailcatcher`. Once mailcatcher is installed, continue to follow the instructions below.
 
-SMTP server details can be set via rhe usual environment variable approach or, when running locally, in the `jetstream/config.properties` file (see Backend Development - Configuration in [developers-guide](../../developer/introduction.md)). The config settings, with example values, are as follows:
+SMTP server details can be set via the usual environment variable approach or, when running locally, in the `jetstream/config.properties` file (see Backend Development - Configuration in [developers-guide](../../developer/introduction.md)). The config settings, with example values, are as follows:
 
 ```
 SMTP_FROM_ADDRESS=Stratos<test@test.com>

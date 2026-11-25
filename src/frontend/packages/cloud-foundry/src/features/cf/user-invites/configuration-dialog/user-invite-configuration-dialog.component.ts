@@ -5,7 +5,6 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
 import {
   FormBuilder,
@@ -16,11 +15,16 @@ import {
 } from '@angular/forms';
 import { take } from 'rxjs/operators';
 
-import { AppProgressBarComponent } from '@stratosui/core';
-import { TailwindSnackBarService } from '@stratosui/core';
-import { TailwindDialogRef } from '@stratosui/core';
-import { DialogErrorComponent } from '@stratosui/core';
-import { MAT_DIALOG_DATA } from '@stratosui/core';
+import {
+  AppInputDirective,
+  AppProgressBarComponent,
+  CustomFormFieldComponent,
+  CustomIconComponent,
+  DialogErrorComponent,
+  MAT_DIALOG_DATA,
+  TailwindDialogRef,
+  TailwindSnackBarService,
+} from '@stratosui/core';
 
 import { UserInviteConfigureService } from '../user-invite.service';
 
@@ -32,13 +36,14 @@ interface UserInviteConfigForm {
 @Component({
   selector: 'app-user-invite-configuration-dialog',
   templateUrl: './user-invite-configuration-dialog.component.html',
-  styleUrls: ['./user-invite-configuration-dialog.component.scss'],
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    CommonModule,
     ReactiveFormsModule,
+    AppInputDirective,
     AppProgressBarComponent,
+    CustomFormFieldComponent,
+    CustomIconComponent,
     DialogErrorComponent,
   ],
 })

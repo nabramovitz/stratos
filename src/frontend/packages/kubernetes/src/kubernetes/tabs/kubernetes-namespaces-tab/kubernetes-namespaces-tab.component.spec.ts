@@ -2,9 +2,11 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
-import { provideRouter } from '@angular/router';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+import { SidePanelService } from '../../../../../core/src/shared/services/side-panel.service';
+import { KubernetesResourceViewerComponent } from '../../kubernetes-resource-viewer/kubernetes-resource-viewer.component';
 import { BaseKubeGuid } from '../../kubernetes-page.types';
 import { KubernetesBaseTestModules } from '../../kubernetes.testing.module';
 import { KubernetesEndpointService } from '../../services/kubernetes-endpoint.service';
@@ -76,5 +78,40 @@ describe('KubernetesNamespacesTabComponent', () => {
     expect(el.querySelector('[data-test="empty-error"]')).toBeNull();
     expect(el.querySelector('[data-test="errors"]')).toBeNull();
     expect(el.textContent).toContain('default');
+  });
+
+  // A namespace has no page of its own; its name opens it in the preview.
+  it('a namespace name opens the namespace in the side-panel preview', () => {
+    const show = vi.spyOn(TestBed.inject(SidePanelService), 'show').mockImplementation(() => undefined);
+    fixture = TestBed.createComponent(KubernetesNamespacesTabComponent);
+    const col = fixture.componentInstance.listConfig()!.columns.find(c => c.key === 'name')!;
+    expect(col.link).toBeUndefined();
+
+    col.open!({ metadata: { name: 'ns-a' } } as any);
+
+    expect(show).toHaveBeenCalledWith(KubernetesResourceViewerComponent, expect.objectContaining({ title: 'ns-a' }), expect.anything());
+  });
+});
+
+// Links from pod and service lists carry the namespace as ?name=.
+describe('KubernetesNamespacesTabComponent — ?name=', () => {
+  it('opens filtered to the namespace named in ?name=', async () => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [KubernetesNamespacesTabComponent, ...KubernetesBaseTestModules],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        BaseKubeGuid,
+        provideRouter([]),
+        provideZonelessChangeDetection(),
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({ name: 'ns-a' }) } } },
+      ],
+    }).compileComponents();
+    TestBed.overrideProvider(KubernetesEndpointService, { useValue: { kubeGuid: KUBE_GUID } });
+
+    const fixture = TestBed.createComponent(KubernetesNamespacesTabComponent);
+    expect(fixture.componentInstance.signalConfig.nameFilter()).toBe('ns-a');
+    TestBed.inject(HttpTestingController).match(() => true);
   });
 });

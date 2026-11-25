@@ -268,9 +268,12 @@ export function buildPodsSignalConfig(
     {
       header: 'Namespace', key: 'namespace', kind: 'link',
       sortField: (p: KubePod) => (p.metadata?.namespace ?? '').toLowerCase(),
+      // A namespace has no page of its own (removed in 2020): link to the
+      // Namespaces tab filtered to it.
       link: (p: KubePod) => p.metadata?.namespace
-        ? ['/kubernetes', p.metadata?.kubeId ?? p.kubeGuid, 'namespaces', p.metadata.namespace]
+        ? ['/kubernetes', p.metadata?.kubeId ?? p.kubeGuid, 'namespaces']
         : null,
+      linkQueryParams: (p: KubePod) => p.metadata?.namespace ? { name: p.metadata.namespace } : null,
       render: (p: KubePod) => p.metadata?.namespace ?? '',
       widthHint: '12rem',
     },
@@ -358,9 +361,12 @@ export function buildServicesSignalConfig(
     {
       header: 'Namespace', key: 'namespace', kind: 'link',
       sortField: (s: KubeService) => (s.metadata?.namespace ?? '').toLowerCase(),
+      // A namespace has no page of its own (removed in 2020): link to the
+      // Namespaces tab filtered to it.
       link: (s: KubeService) => s.metadata?.namespace
-        ? ['/kubernetes', s.metadata?.kubeId ?? s.kubeGuid, 'namespaces', s.metadata.namespace]
+        ? ['/kubernetes', s.metadata?.kubeId ?? s.kubeGuid, 'namespaces']
         : null,
+      linkQueryParams: (s: KubeService) => s.metadata?.namespace ? { name: s.metadata.namespace } : null,
       render: (s: KubeService) => s.metadata?.namespace ?? '',
       widthHint: '12rem',
     },
@@ -426,10 +432,10 @@ export function buildNamespacesSignalConfig(
 
   const columns: SignalListConfig<KubeNamespace>['columns'] = [
     {
-      header: 'Name', key: 'name', kind: 'link',
+      // A namespace has no page of its own (removed in 2020): the shell
+      // makes the name open it in the resource preview (withResourcePreview).
+      header: 'Name', key: 'name', kind: 'text',
       sortField: (n: KubeNamespace) => (n.metadata?.name ?? '').toLowerCase(),
-      link: (n: KubeNamespace) =>
-        ['/kubernetes', n.metadata?.kubeId ?? n.kubeGuid, 'namespaces', n.metadata?.name ?? ''],
       render: (n: KubeNamespace) => n.metadata?.name ?? '',
       widthHint: '24rem',
     },
@@ -538,9 +544,12 @@ function namespaceColumn<T extends GenericRow>(): SignalListConfig<T>['columns']
   return {
     header: 'Namespace', key: 'namespace', kind: 'link',
     sortField: (r: T) => (r.metadata?.namespace ?? '').toLowerCase(),
+    // A namespace has no page of its own (removed in 2020): link to the
+    // Namespaces tab filtered to it.
     link: (r: T) => r.metadata?.namespace
-      ? ['/kubernetes', r.metadata?.kubeId ?? r.kubeGuid, 'namespaces', r.metadata.namespace]
+      ? ['/kubernetes', r.metadata?.kubeId ?? r.kubeGuid, 'namespaces']
       : null,
+    linkQueryParams: (r: T) => r.metadata?.namespace ? { name: r.metadata.namespace } : null,
     render: (r: T) => r.metadata?.namespace ?? '',
     widthHint: '12rem',
   };

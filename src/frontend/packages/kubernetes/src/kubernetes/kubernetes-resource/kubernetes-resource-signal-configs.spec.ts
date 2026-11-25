@@ -379,3 +379,55 @@ describe('kubernetes-resource-signal-configs — loading', () => {
     expect(cfg.isAnyLoading()).toBe(false);
   });
 });
+
+// A namespace has no page of its own (the detail page was removed in 2020);
+// the Namespaces tab filtered to it is the namespace's place now.
+describe('kubernetes-resource-signal-configs — namespace links', () => {
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        provideZonelessChangeDetection(),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        KubeEndpointDataRegistry,
+        KubeNamespaceDataService,
+        KubePodDataService,
+        KubeServiceDataService,
+        KubeJobDataService,
+      ],
+    });
+  });
+
+  const ctx = { kubeGuid: 'cnsi-1', selectedNamespace: signal(undefined).asReadonly(), isWorkloadView: false };
+  const column = (cfg: { columns: readonly any[] }, key: string) => cfg.columns.find(c => c.key === key);
+
+  // Config maps, secrets, deployments and the other generic lists share
+  // one Namespace column.
+  it('a job\'s namespace opens the Namespaces tab filtered to it', () => {
+    const col = column(buildJobsSignalConfig(ctx as any, TestBed.inject(Injector)), 'namespace');
+    const job = { kubeGuid: 'cnsi-1', metadata: { kubeId: 'cnsi-1', name: 'j1', namespace: 'ns-c' } };
+    expect(col.link(job)).toEqual(['/kubernetes', 'cnsi-1', 'namespaces']);
+    expect(col.linkQueryParams(job)).toEqual({ name: 'ns-c' });
+  });
+
+  it('a pod\'s namespace opens the Namespaces tab filtered to it', () => {
+    const col = column(buildPodsSignalConfig(ctx as any, TestBed.inject(Injector)), 'namespace');
+    const pod = { kubeGuid: 'cnsi-1', metadata: { kubeId: 'cnsi-1', name: 'p1', namespace: 'ns-a' } };
+    expect(col.link(pod)).toEqual(['/kubernetes', 'cnsi-1', 'namespaces']);
+    expect(col.linkQueryParams(pod)).toEqual({ name: 'ns-a' });
+  });
+
+  it('a service\'s namespace opens the Namespaces tab filtered to it', () => {
+    const col = column(buildServicesSignalConfig(ctx as any, TestBed.inject(Injector)), 'namespace');
+    const svc = { kubeGuid: 'cnsi-1', metadata: { kubeId: 'cnsi-1', name: 's1', namespace: 'ns-b' } };
+    expect(col.link(svc)).toEqual(['/kubernetes', 'cnsi-1', 'namespaces']);
+    expect(col.linkQueryParams(svc)).toEqual({ name: 'ns-b' });
+  });
+
+  it('a namespace list shows names as text, not links to a missing page', () => {
+    const col = column(buildNamespacesSignalConfig(ctx as any, TestBed.inject(Injector)), 'name');
+    expect(col.kind).not.toBe('link');
+    expect(col.link).toBeUndefined();
+  });
+});
